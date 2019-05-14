@@ -1,0 +1,35 @@
+#!/bin/bash
+#SBATCH --job-name=AdvConfTune
+#SBATCH --output=slurm_logs/tune_%j.out
+#SBATCH --error=slurm_logs/tune_%j.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --nodes=1-1
+#SBATCH --partition=vcea,cahnrs
+#SBATCH --time=7-00:00:00
+#SBATCH --mem=4G
+
+#
+# This starts the hyperparameter tuning manager that will start/stop other jobs
+#
+
+. kamiak_config.sh
+
+# Errors
+handle_terminate() {
+    echo "Sigterm or sigint -- exiting"
+    exit 1
+}
+handle_error() {
+    echo "Error occured -- exiting"
+    exit 1
+}
+trap 'handle_terminate' SIGTERM SIGINT
+
+# Depends -- Nevergrad doesn't work with Python 3.5, only 3.6+
+module load python3/3.6.5
+pip install --user nevergrad
+
+# Tune
+cd "$remotedir"
+python3 hyperparameter_tuning_nevergrad.py || handle_error
