@@ -22,7 +22,7 @@ def create_tf_example(x, y):
 def write_tfrecord(filename, x, y):
     """ Output to TF record file """
     assert len(x) == len(y)
-    options = tf.io.TFRecordOptions(tf.io.TFRecordCompressionType.GZIP)
+    options = tf.io.TFRecordOptions(compression_type="GZIP")
 
     with tf.io.TFRecordWriter(filename, options=options) as writer:
         for i in range(len(x)):
