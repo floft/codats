@@ -65,35 +65,35 @@ def to_numpy(value):
     return value
 
 
-def valid_split(images, labels, seed=None, validation_size=1000):
+def valid_split(data, labels, seed=None, validation_size=1000):
     """ Split training data into train/valid as is commonly done, taking 1000
     random (labeled, even if target domain) samples for a validation set """
-    assert len(images) == len(labels), "len(images) != len(labels)"
-    p = shuffle_together_calc(len(images), seed=seed)
-    images = to_numpy(images)[p]
+    assert len(data) == len(labels), "len(data) != len(labels)"
+    p = shuffle_together_calc(len(data), seed=seed)
+    data = to_numpy(data)[p]
     labels = to_numpy(labels)[p]
 
-    valid_images = images[:validation_size]
+    valid_data = data[:validation_size]
     valid_labels = labels[:validation_size]
-    train_images = images[validation_size:]
+    train_data = data[validation_size:]
     train_labels = labels[validation_size:]
 
-    return valid_images, valid_labels, train_images, train_labels
+    return valid_data, valid_labels, train_data, train_labels
 
 
 def save_one(source, target, dataset_name, dataset, seed):
     """ Save single dataset """
-    valid_images, valid_labels, \
-        train_images, train_labels = \
-        valid_split(dataset.train_images, dataset.train_labels,
+    valid_data, valid_labels, \
+        train_data, train_labels = \
+        valid_split(dataset.train_data, dataset.train_labels,
             seed=seed)
 
     write(tfrecord_filename(source, target, dataset_name, "train"),
-        train_images, train_labels)
+        train_data, train_labels)
     write(tfrecord_filename(source, target, dataset_name, "valid"),
-        valid_images, valid_labels)
+        valid_data, valid_labels)
     write(tfrecord_filename(source, target, dataset_name, "test"),
-        dataset.test_images, dataset.test_labels)
+        dataset.test_data, dataset.test_labels)
 
 
 def save_adaptation(source, target, seed=0):
@@ -111,16 +111,7 @@ def save_adaptation(source, target, seed=0):
 def main(argv):
     # Only list one direction since the other direction uses the same data
     adaptation_problems = [
-        ("mnist", "usps"),
-        ("svhn", "mnist"),
-        ("svhn2", "mnist2"),
-        ("mnist", "mnistm"),
-        ("synnumbers", "svhn"),
-        ("synsigns", "gtsrb"),
-        # All combinations of these, so just make one file for each
-        ("office_amazon", None),
-        ("office_dslr", None),
-        ("office_webcam", None),
+        ("utdata_wrist", "utdata_pocket"),
     ]
 
     # Save tfrecord files for each of the adaptation problems
