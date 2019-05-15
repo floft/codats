@@ -3,12 +3,12 @@
 #SBATCH --output=slurm_logs/train_%j.out
 #SBATCH --error=slurm_logs/train_%j.err
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=7
+#SBATCH --cpus-per-task=3
 #SBATCH --nodes=1-1
 #SBATCH --gres=gpu:1
-#SBATCH --partition=taylor
+#SBATCH --partition=cook,cahnrs_gpu,free_gpu,hpc_club,kamiak
 #SBATCH --time=1-00:00:00
-#SBATCH --mem=30G
+#SBATCH --mem=20G
 
 #
 # This script trains one network
@@ -17,13 +17,13 @@
 . kamiak_config.sh
 
 # For on my own computer
-remotedir="$localdir"  # for use on my own computer
+#remotedir="$localdir"  # for use on my own computer
 # SBATCH --cpus-per-task=7
-# SBATCH --partition=taylor
+# SBATCH --partition=cook
 # SBATCH --mem=30G
 # For actual use on Kamiak...
 # SBATCH --cpus-per-task=3
-# SBATCH --partition=taylor,cahnrs_gpu,free_gpu,hpc_club,kamiak
+# SBATCH --partition=cook,cahnrs_gpu,free_gpu,hpc_club,kamiak
 # SBATCH --mem=20G
 
 # Errors
@@ -67,11 +67,11 @@ done
 
 # Depends
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-module load cuda/9.0.176 cudnn/7.1.2_cuda9.0 python3/3.6.5
+module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 # I upgraded tensorflow with:
 #   module load python3/3.6.5
-#   pip install --user --upgrade --no-cache-dir tensorflow-gpu==2.0.0-alpha0 pillow lxml jupyter matplotlib pandas sklearn scipy
-pip install --user tensorflow-gpu==2.0.0-alpha0 pillow lxml jupyter matplotlib pandas sklearn scipy
+#   pip install --user --upgrade --no-cache-dir tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy
+pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy
 
 # Train
 cd "$remotedir"

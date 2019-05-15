@@ -3,12 +3,12 @@
 #SBATCH --output=slurm_logs/eval_%j.out
 #SBATCH --error=slurm_logs/eval_%j.err
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=7
+#SBATCH --cpus-per-task=24
 #SBATCH --nodes=1-1
-#SBATCH --gres=gpu:1
-#SBATCH --partition=taylor
+#SBATCH --gres=gpu:8
+#SBATCH --partition=cook
 #SBATCH --time=1-00:00:00
-#SBATCH --mem=30G
+#SBATCH --mem=220G
 
 #
 # Evaluate models with main_eval.py
@@ -17,12 +17,12 @@
 . kamiak_config.sh
 
 # For on my own computer
-remotedir="$localdir"  # for use on my own computer
+#remotedir="$localdir"  # for use on my own computer
 # SBATCH --cpus-per-task=7
 # SBATCH --gres=gpu:1
 # SBATCH --mem=30G
-gpus=1
-gpumem=0.8
+#gpus=1
+#gpumem=0.8
 # For actual use on Kamiak...
 # SBATCH --cpus-per-task=24
 # SBATCH --gres=gpu:8
@@ -53,8 +53,8 @@ shift
 
 # Depends
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-module load cuda/9.0.176 cudnn/7.1.2_cuda9.0 python3/3.6.5
-pip install --user tensorflow-gpu==2.0.0-alpha0 pillow lxml jupyter matplotlib pandas sklearn scipy
+module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
+pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy
 
 # Evaluate
 from="kamiak"
