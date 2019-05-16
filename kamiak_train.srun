@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=3
 #SBATCH --nodes=1-1
 #SBATCH --gres=gpu:1
-#SBATCH --partition=cook,cahnrs_gpu,free_gpu,hpc_club,kamiak
+#SBATCH --partition=cook,free_gpu
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
 
@@ -17,13 +17,13 @@
 . kamiak_config.sh
 
 # For on my own computer
-#remotedir="$localdir"  # for use on my own computer
+# remotedir="$localdir"  # for use on my own computer
 # SBATCH --cpus-per-task=7
 # SBATCH --partition=cook
 # SBATCH --mem=30G
 # For actual use on Kamiak...
 # SBATCH --cpus-per-task=3
-# SBATCH --partition=cook,cahnrs_gpu,free_gpu,hpc_club,kamiak
+# SBATCH --partition=cook,cahnrs_gpu,free_gpu,kamiak
 # SBATCH --mem=20G
 
 # Errors
@@ -70,11 +70,13 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 # I upgraded tensorflow with:
 #   module load python3/3.6.5
-#   pip install --user --upgrade --no-cache-dir tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy
-pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy
+#   pip install --user --upgrade --no-cache-dir tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly==1.14.0a20190301
+#   pip install --user --upgrade --force-reinstall tf-nightly-gpu-2.0-preview tb-nightly
+pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly
+
 
 # Train
 cd "$remotedir"
 mkdir -p "$logFolder/"
 python3 main.py --logdir "$remotedir/$logFolder" --modeldir "$remotedir/$modelFolder" \
-    --gpumem=0.8 "${program_args[@]}" || handle_error
+    --gpumem=0 "${program_args[@]}" || handle_error

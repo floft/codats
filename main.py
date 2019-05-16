@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Code for:
-Multi-Purposing Domain Adaptation Discriminators for Pseudo Labeling Confidence
+Time-series adaptation
 """
 import os
 import time
@@ -10,7 +9,6 @@ import tensorflow as tf
 from absl import app
 from absl import flags
 from absl import logging
-from tensorflow.python.framework import config as tfconfig
 
 import models
 import load_datasets
@@ -18,6 +16,7 @@ import load_datasets
 from metrics import Metrics
 from checkpoints import CheckpointManager
 from file_utils import last_modified_number, write_finished
+from gpu_memory import set_gpu_memory
 
 FLAGS = flags.FLAGS
 
@@ -299,10 +298,7 @@ def train_step_target(data_b, weights, model, opt, weighted_task_loss):
 
 def main(argv):
     # Allow running multiple at once
-    # https://www.tensorflow.org/guide/using_gpu#allowing_gpu_memory_growth
-    # https://github.com/tensorflow/tensorflow/issues/25138
-    # Note: GPU options must be set at program startup
-    tfconfig.set_gpu_per_process_memory_fraction(FLAGS.gpumem)
+    set_gpu_memory(FLAGS.gpumem)
 
     # Figure out the log and model directory filenames
     model_dir, log_dir = get_directory_names()

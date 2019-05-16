@@ -18,7 +18,6 @@ import tensorflow as tf
 
 from absl import app
 from absl import flags
-from tensorflow.python.framework import config as tfconfig
 
 import models
 import load_datasets
@@ -27,6 +26,7 @@ from pool import run_job_pool
 from models import DomainAdaptationModel
 from metrics import Metrics
 from checkpoints import CheckpointManager
+from gpu_memory import set_gpu_memory
 
 
 FLAGS = flags.FLAGS
@@ -211,7 +211,7 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
     # process. It'll error on any subsequent calls (since the pool re-uses
     # process).
     try:
-        tfconfig.set_gpu_per_process_memory_fraction(gpumem)
+        set_gpu_memory(FLAGS.gpumem)
     except RuntimeError:
         pass  # Ignore: "RuntimeError: GPU options must be set at program startup"
 
