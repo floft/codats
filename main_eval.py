@@ -39,7 +39,7 @@ flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_boolean("target_classifier", True, "Use separate target classifier in ATT or Pseudo[-labeling] methods")
 flags.DEFINE_boolean("best_target", True, "If target_classifier, then pick best model based on target classifier accuracy (not task classifier accuracy)")
 # Specific for evaluation
-flags.DEFINE_float("gpumem", 0.8, "Percentage of GPU memory to let TensorFlow use (divided among jobs)")
+flags.DEFINE_float("gpumem", 8140, "GPU memory to let TensorFlow use, in MiB (divided among jobs)")
 flags.DEFINE_string("match", "*-*-*", "String matching to determine which logs/models to process")
 flags.DEFINE_integer("jobs", 4, "Number of TensorFlow jobs to run at once")
 flags.DEFINE_integer("gpus", 1, "Split jobs between GPUs -- overrides jobs (1 == run multiple jobs on first GPU)")
