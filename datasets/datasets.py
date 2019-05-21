@@ -38,7 +38,7 @@ class Dataset:
     Also, add to the datasets={"something": Something, ...} dictionary below.
     """
     def __init__(self, num_classes, class_labels, window_size, window_overlap,
-            test_percent=0.2):
+            feature_names=None, test_percent=0.2):
         """
         Initialize dataset
 
@@ -61,6 +61,7 @@ class Dataset:
         self.class_labels = class_labels
         self.window_size = window_size
         self.window_overlap = window_overlap
+        self.feature_names = feature_names
         self.test_percent = test_percent
 
         # Load the dataset
@@ -218,11 +219,18 @@ class UTDataBase(Dataset):
         "downstairs", "type", "write", "coffee", "talk", "smoke", "eat"]
     window_size = 250  # 5s of data sampled at 50Hz
     window_overlap = False
+    feature_names = [
+        "acc_x", "acc_y", "acc_z",
+        "lacc_x", "lacc_y", "lacc_z",
+        "gyr_x", "gyr_y", "gyr_z",
+        "mag_x", "mag_y", "mag_z",
+    ]
 
     def __init__(self, utdata_domain, *args, **kwargs):
         self.utdata_domain = utdata_domain
         super().__init__(UTDataBase.num_classes, UTDataBase.class_labels,
             UTDataBase.window_size, UTDataBase.window_overlap,
+            UTDataBase.feature_names,
             *args, **kwargs)
 
     def download(self):

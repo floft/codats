@@ -22,28 +22,28 @@ flags.DEFINE_boolean("test", False, "Show test images instead of training images
 flags.mark_flag_as_required("source")
 
 
-def display(name, images, max_number=16, office=False):
-    fig = plt.figure(figsize=(4, 4))
+def display(name, data, feature_names, example=0):
+    # Shape: examples, time steps, features
+    num_examples, num_samples, num_features = data.shape
+
+    fig, axes = plt.subplots(nrows=num_features, ncols=1,
+        sharex=True, sharey=False)
     fig.suptitle(name)
 
-    for i, image, in enumerate(images[:max_number]):
-        plt.subplot(4, 4, i+1)
-        channels = image.shape[2]
+    for i in range(num_features):
+        ax = axes[i]
 
-        if i == 0:
-            print(name, "shape", image.shape, "min", image.min(),
-                "max", image.max(), "mean", image.mean())
+        x_list = list(range(0, num_samples))  # the x axis... basically ignore
+        values = data[example, :, i]  # data we care about
 
-        if office:
-            plt.imshow(image[:, :, 0])
-        elif channels == 1:
-            plt.imshow(image[:, :, 0] * 127.5 + 127.5, cmap='gray')
-        elif channels == 3:
-            plt.imshow(tf.cast(image[:, :, :] * 127.5 + 127.5, tf.int32))
+        if feature_names is not None:
+            label = feature_names[i]
         else:
-            raise NotImplementedError("display() only supports gray or RGB")
+            label = "#"+str(i)
 
-        plt.axis('off')
+        ax.plot(x_list, values)
+        ax.set_ylabel(label)
+        ax.set_ylim(auto=True)
 
 
 def main(argv):
@@ -58,18 +58,22 @@ def main(argv):
         target_dataset = None
 
     if not FLAGS.test:
-        source_data = source_dataset.train_images
-        target_data = target_dataset.train_images \
+        source_data = source_dataset.train_data
+        target_data = target_dataset.train_data \
             if target_dataset is not None else None
     else:
-        source_data = source_dataset.test_images
-        target_data = target_dataset.test_images \
+        source_data = source_dataset.test_data
+        target_data = target_dataset.test_data \
             if target_dataset is not None else None
 
-    display("Source", source_data, office="office_" in FLAGS.source)
+    source_feature_names = source_dataset.feature_names
+    target_feature_names = target_dataset.feature_names \
+        if target_dataset is not None else None
+
+    display("Source", source_data, source_feature_names)
 
     if target_dataset is not None:
-        display("Target", target_data, office="office_" in FLAGS.target)
+        display("Target", target_data, target_feature_names)
 
     plt.show()
 
