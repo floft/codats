@@ -32,8 +32,8 @@ from datasets.tfrecord import tfrecord_filename
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("train_batch", 128, "Batch size for training")
-flags.DEFINE_integer("eval_batch", 4096, "Batch size for evaluation")
+flags.DEFINE_integer("train_batch", 2048, "Batch size for training")
+flags.DEFINE_integer("eval_batch", 8192, "Batch size for evaluation")
 flags.DEFINE_integer("shuffle_buffer", 60000, "Dataset shuffle buffer size")
 flags.DEFINE_integer("prefetch_buffer", 1, "Dataset prefetch buffer size (0 = autotune)")
 flags.DEFINE_boolean("tune_num_parallel_calls", False, "Autotune num_parallel_calls")
@@ -268,7 +268,7 @@ def main(argv):
     print("Available datasets:", names())
 
     # Example showing that the sizes and number of channels are matched
-    source, target = load_da("mnist", "usps")
+    source, target = load_da("utdata_wrist", "utdata_pocket")
 
     print("Source:", source.train)
     print("Target:", target.train)
