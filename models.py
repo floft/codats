@@ -8,6 +8,7 @@ layer.
 Provides the model DomainAdaptationModel() and its components along with the
 make_{task,domain}_loss() functions. Also, compute_accuracy() if desired.
 """
+import numpy as np
 import tensorflow as tf
 
 from absl import flags
@@ -413,6 +414,75 @@ class DomainAdaptationModel(tf.keras.Model):
             task = self.task_classifier(fe, **kwargs)
 
         return task, domain
+
+
+class CycleGAN(tf.keras.Model):
+    """ Domain mapping model -- based on CycleGAN, but for time-series data
+    instead of image data, also partially based on VRADA model """
+    def __init__(self, source_x_shape, target_x_shape, **kwargs):
+        super().__init__(**kwargs)
+        self.units = 50
+        self.dropout = FLAGS.dropout
+
+        # TODO try convolutional model along time dimension
+        # TODO maybe try random crop for discriminator
+
+        self.source_to_target = self.make_generator(target_x_shape)
+        self.target_to_source = self.make_generator(source_x_shape)
+        self.source_discriminator = self.make_discriminator()
+        self.target_discriminator = self.make_discriminator()
+
+    def make_generator(self, output_dims, layers=5, resnet_layers=2):
+        return tf.keras.Sequential([
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.BatchNormalization(momentum=0.999),
+        ] + [  # First can't be residual since x isn't of size units
+            make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        ] + [  # Residual blocks
+            ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
+        ] + [  # Output needs to be the dimensions of the target (or source, for reverse mapping) data
+            make_dense_bn_dropout(np.prod(output_dims), self.dropout) for _ in range(resnet_layers)
+        ] + [  # Reshape to match desired output shape since dense layer above is flat
+            tf.keras.layers.Reshape(output_dims),
+        ])
+
+    def make_discriminator(self, layers=5):
+        layers = [make_dense_bn_dropout(self.units, self.dropout) for _ in range(layers-1)]
+        last = [
+            tf.keras.layers.Dense(1),
+            tf.keras.layers.Activation("sigmoid"),
+        ]
+        return tf.keras.Sequential(layers + last)
+
+    @property
+    def trainable_variables_generators(self):
+        return self.source_to_target.trainable_variables \
+            + self.target_to_source.trainable_variables
+
+    @property
+    def trainable_variables_discriminators(self):
+        return self.source_discriminator.trainable_variables \
+            + self.target_discriminator.trainable_variables
+
+    def call(self, inputs, direction, training=None, **kwargs):
+        # Manually set the learning phase since we probably aren't using .fit()
+        if training is True:
+            tf.keras.backend.set_learning_phase(1)
+        elif training is False:
+            tf.keras.backend.set_learning_phase(0)
+
+        if direction == "source_to_target":
+            out_G = self.source_to_target(inputs, **kwargs)
+            real_out_D = self.target_discriminator(inputs, **kwargs)
+            fake_out_D = self.target_discriminator(out_G, **kwargs)
+        elif direction == "target_to_source":
+            out_G = self.target_to_source(inputs, **kwargs)
+            real_out_D = self.source_discriminator(inputs, **kwargs)
+            fake_out_D = self.source_discriminator(out_G, **kwargs)
+        else:
+            raise NotImplementedError("direction must be either source_to_target or target_to_source")
+
+        return out_G, real_out_D, fake_out_D
 
 
 def make_task_loss(adapt):

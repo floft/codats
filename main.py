@@ -23,13 +23,14 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "cyclegan", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
 flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
 flags.DEFINE_float("lr", 0.001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 flags.DEFINE_float("lr_target_mult", 0.5, "Learning rate multiplier for training target classifier")
+flags.DEFINE_float("lr_mapping_mult", 1.0, "Learning rate multiplier for training domain mapping GAN")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
@@ -54,6 +55,8 @@ def get_directory_names():
 
     methods_suffix = {
         "none": "",
+        "cyclegan": "-cyclegan",
+        "cycada": "-cycada",
         "dann": "-dann",
         "pseudo": "-pseudo",
         "instance": "-instance",
@@ -128,7 +131,7 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     Feed through separately so we get different batch normalizations for each
     domain. Also optimize in a GAN-like manner rather than with GRL."""
     x_a, y_a = data_a
-    x_b, y_b = data_b
+    x_b, _ = data_b
 
     # The VADA "replacing gradient reversal" (note D(f(x)) = probability of
     # being target) with non-saturating GAN-style training
@@ -296,6 +299,62 @@ def train_step_target(data_b, weights, model, opt, weighted_task_loss):
     opt.apply_gradients(zip(grad, trainable_vars))
 
 
+@tf.function
+def train_step_cyclegan(data_a, data_b, model, opt):
+    """ Training domain mapping with CycleGAN-like setup, return data_a mapped
+    to the target domain (domain B) for training a classifier on it later """
+    x_a, y_a = data_a
+    x_b, _ = data_b
+
+    with tf.GradientTape(persistent=True) as tape:
+        # Generators on original data
+        gen_AtoB = model.source_to_target(x_a, training=True)
+        gen_BtoA = model.target_to_source(x_b, training=True)
+
+        # Generators on fake data to map back to original domain (a full cycle)
+        gen_AtoBtoA = model.target_to_source(gen_AtoB, training=True)
+        gen_BtoAtoB = model.source_to_target(gen_BtoA, training=True)
+
+        # Discriminators on original/real data
+        # Note: these discriminators already pass data through sigmoid function
+        disc_Areal = model.source_discriminator(x_a, training=True)
+        disc_Breal = model.target_discriminator(x_b, training=True)
+
+        # Discriminators on fake data
+        disc_Afake = model.source_discriminator(gen_BtoA, training=True)
+        disc_Bfake = model.target_discriminator(gen_AtoB, training=True)
+
+        # Generators should by cycle consistent
+        cyc_loss = tf.reduce_mean(tf.abs(x_a - gen_AtoBtoA)) \
+            + tf.reduce_mean(tf.abs(x_b - gen_BtoAtoB))
+
+        # We want the discriminator to output a 1, i.e. incorrect label
+        # Note: we're saying 0 is fake and 1 is real, i.e. D(x) = P(x == real)
+        g_loss_A = cyc_loss*10 + tf.reduce_mean(tf.math.squared_difference(disc_Bfake, 1))  # loss for gen_AtoB
+        g_loss_B = cyc_loss*10 + tf.reduce_mean(tf.math.squared_difference(disc_Afake, 1))  # loss for gen_BtoA
+
+        # Discriminator should correctly classify the original real data and the generated fake data
+        d_loss_A = (tf.reduce_mean(tf.square(disc_Afake))
+            + tf.reduce_mean(tf.math.squared_difference(disc_Areal, 1)))/2
+        d_loss_B = (tf.reduce_mean(tf.square(disc_Bfake))
+            + tf.reduce_mean(tf.math.squared_difference(disc_Breal, 1)))/2
+
+    g_AtoB_grad = tape.gradient(g_loss_A, model.source_to_target.trainable_variables)
+    g_BtoA_grad = tape.gradient(g_loss_B, model.target_to_source.trainable_variables)
+    d_A = tape.gradient(d_loss_A, model.source_discriminator.trainable_variables)
+    d_B = tape.gradient(d_loss_B, model.target_discriminator.trainable_variables)
+    del tape
+
+    # No overlapping variables between these, so just use one optimizer
+    opt.apply_gradients(zip(g_AtoB_grad, model.source_to_target.trainable_variables))
+    opt.apply_gradients(zip(g_BtoA_grad, model.target_to_source.trainable_variables))
+    opt.apply_gradients(zip(d_A, model.source_discriminator.trainable_variables))
+    opt.apply_gradients(zip(d_B, model.target_discriminator.trainable_variables))
+
+    # Return source data mapped to target domain, so we have the labels
+    return gen_AtoB, y_a
+
+
 def main(argv):
     # Allow running multiple at once
     set_gpu_memory(FLAGS.gpumem)
@@ -308,8 +367,8 @@ def main(argv):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    # We adapt for any of the methods other than "none" (no adaptation)
-    adapt = FLAGS.method != "none"
+    # We adapt for any method other than "none" or "cyclegan"
+    adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance"]
 
     # For adaptation, we'll be concatenating together half source and half target
     # data, so to keep the batch_size about the same, we'll cut it in half
@@ -359,9 +418,20 @@ def main(argv):
     model = models.DomainAdaptationModel(num_classes, FLAGS.model,
         global_step, FLAGS.steps, use_grl=FLAGS.use_grl)
 
+    if FLAGS.method == "cyclegan":
+        # For the GAN, we need to know the source and target sizes
+        # Note: first dimension is batch size, so drop that
+        source_first_x, _ = next(iter(source_dataset.train))
+        source_x_shape = source_first_x.shape[1:]
+        target_first_x, _ = next(iter(target_dataset.train))
+        target_x_shape = target_first_x.shape[1:]
+
+        mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
+
     # Optimizers
     opt = tf.keras.optimizers.Adam(FLAGS.lr)
     d_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_domain_mult)
+    mapping_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_mapping_mult)
 
     # For GAN-like training (train_step_gan), we'll weight by the GRL schedule
     # to make it more equivalent to when use_grl=True.
@@ -392,6 +462,21 @@ def main(argv):
         data_b = next(target_iter) if target_iter is not None else None
 
         t = time.time()
+
+        # The GAN performing domain mapping, if desired
+        if FLAGS.method == "cyclegan":
+            # Trains GAN to map source data_a to look like target data and
+            # returns the mapped data so we can train a classifier (below
+            # as usual) on the now-labeled target-like data. data_b stays
+            # the same and may be used (if method != none) to further adapt
+            # the classifier to have a fake target vs. real target invariant
+            # representation.
+            data_a = train_step_cyclegan(data_a, data_b,
+                mapping_model, mapping_opt)
+
+            # TODO display mapped data in TensorBoard like we did with VRADA
+
+        # The feature extractor, classifiers, etc.
         step_args = (data_a, data_b, model, opt, d_opt, task_loss, domain_loss)
 
         if adapt and FLAGS.use_grl:
