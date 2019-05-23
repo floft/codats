@@ -427,6 +427,8 @@ def main(argv):
         target_x_shape = target_first_x.shape[1:]
 
         mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
+    else:
+        mapping_model = None
 
     # Optimizers
     opt = tf.keras.optimizers.Adam(FLAGS.lr)
@@ -517,12 +519,16 @@ def main(argv):
 
         # Metrics on training/validation data
         if i%FLAGS.log_train_steps == 0:
-            metrics.train(model, data_a, data_b, global_step, t)
+            # Note: we set mapping_model=None since above we have already mapped
+            # the source data to the target domain. If we set it to the actual
+            # model, then we'd map it twice.
+            metrics.train(model, None, data_a, data_b, global_step, t)
 
         validation_accuracy = None
         if i%FLAGS.log_val_steps == 0:
             validation_accuracy, target_validation_accuracy = metrics.test(
-                model, source_dataset_eval, target_dataset_eval, global_step)
+                model, mapping_model, source_dataset_eval, target_dataset_eval,
+                global_step)
 
         # Checkpoints -- Save either if at the right model step or if we found
         # a new validation accuracy. If this is better than the previous best

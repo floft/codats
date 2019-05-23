@@ -242,29 +242,29 @@ class Metrics:
         # Make sure we sync to disk
         self.writer.flush()
 
-    def _run_partial(self, model, data_a, data_b, dataset, target):
+    def _run_partial(self, model, mapping_model, data_a, data_b, dataset, target):
         """ Run all the data A/B through the model -- data_a and data_b
         should both be of type tf.data.Dataset """
         if data_a is not None:
-            self._run_multi_batch(data_a, model, 0, "source", dataset, target=target)
+            self._run_multi_batch(data_a, model, mapping_model, 0, "source", dataset, target=target)
 
         if self.target_domain and data_b is not None:
-            self._run_multi_batch(data_b, model, 1, "target", dataset, target=target)
+            self._run_multi_batch(data_b, model, mapping_model, 1, "target", dataset, target=target)
 
-    def _run_batch(self, model, data_a, data_b, dataset, target):
+    def _run_batch(self, model, mapping_model, data_a, data_b, dataset, target):
         """ Run a single batch of A/B data through the model -- data_a and data_b
         should both be a tuple of (x, task_y_true) """
         if data_a is not None:
             if target:
-                self._run_single_batch_target(*data_a, model, 0, "source", dataset)
+                self._run_single_batch_target(*data_a, model, mapping_model, 0, "source", dataset)
             else:
-                self._run_single_batch_task(*data_a, model, 0, "source", dataset)
+                self._run_single_batch_task(*data_a, model, mapping_model, 0, "source", dataset)
 
         if self.target_domain and data_b is not None:
             if target:
-                self._run_single_batch_target(*data_b, model, 1, "target", dataset)
+                self._run_single_batch_target(*data_b, model, mapping_model, 1, "target", dataset)
             else:
-                self._run_single_batch_task(*data_b, model, 1, "target", dataset)
+                self._run_single_batch_task(*data_b, model, mapping_model, 1, "target", dataset)
 
     def _run_multi_batch(self, data, *args, target=False, **kwargs):
         """ Evaluate model on all batches in the data (data is a tf.data.Dataset) """
@@ -274,7 +274,7 @@ class Metrics:
             else:
                 self._run_single_batch_task(x, task_y_true, *args, **kwargs)
 
-    def _run_single_batch(self, x, task_y_true, model, domain_num,
+    def _run_single_batch(self, x, task_y_true, model, mapping_model, domain_num,
             domain_name, dataset_name, target):
         """
         Run a batch of data through the model. Call after_batch() afterwards:
@@ -287,6 +287,12 @@ class Metrics:
         assert domain_name in self.domains, "unknown domain "+str(domain_name)
         assert domain_num == 0 or domain_num == 1, \
             "domain_num = 0 or 1 for source or target"
+
+        # If performing mapping (i.e. if we don't pass in mapping_model=None)
+        # then if this data is source domain data, we first need to map to the
+        # target domain since our classifier is for target-like data.
+        if mapping_model is not None and domain_name == "source":
+            x = mapping_model.source_to_target(x, training=False)
 
         # Evaluate model on data
         task_y_pred, domain_y_pred = model(x, target=target, training=False)
@@ -334,7 +340,7 @@ class Metrics:
     def _run_single_batch_target(self, *args, **kwargs):
         return self._run_single_batch(*args, target=True, **kwargs)
 
-    def train(self, model, data_a, data_b, step=None, train_time=None, evaluation=False):
+    def train(self, model, mapping_model, data_a, data_b, step=None, train_time=None, evaluation=False):
         """
         Call this once after evaluating on the training data for domain A and
         domain B
@@ -353,15 +359,15 @@ class Metrics:
 
         # evaluation=True is a tf.data.Dataset, otherwise a single batch
         if evaluation:
-            self._run_partial(model, data_a, data_b, dataset, False)
+            self._run_partial(model, mapping_model, data_a, data_b, dataset, False)
 
             if self.has_target_classifier:
-                self._run_partial(model, data_a, data_b, dataset, True)
+                self._run_partial(model, mapping_model, data_a, data_b, dataset, True)
         else:
-            self._run_batch(model, data_a, data_b, dataset, False)
+            self._run_batch(model, mapping_model, data_a, data_b, dataset, False)
 
             if self.has_target_classifier:
-                self._run_batch(model, data_a, data_b, dataset, True)
+                self._run_batch(model, mapping_model, data_a, data_b, dataset, True)
 
         t = time.time() - t
 
@@ -371,7 +377,7 @@ class Metrics:
             step = int(step)
             self._write_data(step, dataset, t, train_time)
 
-    def test(self, model, eval_data_a, eval_data_b, step=None, evaluation=False):
+    def test(self, model, mapping_model, eval_data_a, eval_data_b, step=None, evaluation=False):
         """
         Evaluate the model on domain A/B but batched to make sure we don't run
         out of memory
@@ -387,10 +393,10 @@ class Metrics:
             eval_data_b = None
 
         t = time.time()
-        self._run_partial(model, eval_data_a, eval_data_b, dataset, False)
+        self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
 
         if self.has_target_classifier:
-            self._run_partial(model, eval_data_a, eval_data_b, dataset, True)
+            self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
         t = time.time() - t
 
         # We use the validation accuracy to save the best model
