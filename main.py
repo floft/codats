@@ -35,6 +35,7 @@ flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
 flags.DEFINE_integer("log_val_steps", 4000, "Log validation information every so many steps (also saves model)")
+flags.DEFINE_integer("log_plots_steps", 4000, "Log plots every so many steps")
 flags.DEFINE_boolean("use_grl", False, "Use gradient reversal layer for training discriminator for adaptation")
 flags.DEFINE_boolean("use_alt_weight", False, "Use alternate weighting for target classifier")
 flags.DEFINE_boolean("use_domain_confidence", True, "Use domain classifier for confidence instead of task classifier")
@@ -476,8 +477,6 @@ def main(argv):
             data_a = train_step_cyclegan(data_a, data_b,
                 mapping_model, mapping_opt)
 
-            # TODO display mapped data in TensorBoard like we did with VRADA
-
         # The feature extractor, classifiers, etc.
         step_args = (data_a, data_b, model, opt, d_opt, task_loss, domain_loss)
 
@@ -537,6 +536,11 @@ def main(argv):
         if i%FLAGS.model_steps == 0 or validation_accuracy is not None:
             checkpoint_manager.save(int(global_step-1), validation_accuracy,
                 target_validation_accuracy)
+
+        # Plots
+        if i%FLAGS.log_plots_steps == 0:
+            metrics.plots(model, mapping_model,
+                source_dataset_eval, target_dataset_eval, adapt, global_step)
 
     # We're done -- used for hyperparameter tuning
     write_finished(log_dir)

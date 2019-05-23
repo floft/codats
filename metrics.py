@@ -30,6 +30,8 @@ import tensorflow as tf
 
 from absl import flags
 
+from plots import generate_plots
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_boolean("best_source", False, "Calculate \"best\" model based on source (vs. target) validation data")
@@ -429,6 +431,33 @@ class Metrics:
             return validation_accuracy, target_validation_accuracy
         else:
             return validation_accuracy, 0
+
+    def plots(self, model, mapping_model, eval_data_a, eval_data_b, adapt,
+            global_step):
+        """ Log plots """
+        # Get first batch of data
+        data_a = next(iter(eval_data_a))
+        data_b = next(iter(eval_data_b))
+
+        # We'll only plot the real plots once since they don't change
+        step = int(global_step)
+        first_time = step == 1
+
+        # Generate plots
+        t = time.time()
+        plots = generate_plots(data_a, data_b, model, mapping_model, adapt,
+            first_time)
+        t = time.time() - t
+
+        # Write all the values to the file
+        with self.writer.as_default():
+            for name, plot in plots:
+                tf.summary.image(name, plot, step=step)
+
+            tf.summary.scalar("step_time/plots", t, step=step)
+
+        # Make sure we sync to disk
+        self.writer.flush()
 
     def results(self):
         """ Returns one dictionary of all the current metric results (floats) """
