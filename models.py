@@ -14,6 +14,8 @@ import tensorflow as tf
 from absl import flags
 from tensorflow.python.keras import backend as K
 
+from tcn import TemporalConvNet
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_float("dropout", 0.05, "Dropout probability")
@@ -432,21 +434,55 @@ class CycleGAN(tf.keras.Model):
         self.source_discriminator = self.make_discriminator()
         self.target_discriminator = self.make_discriminator()
 
-    def make_generator(self, output_dims, layers=5, resnet_layers=2):
+    def make_generator(self, output_dims, layers=4, resnet_layers=2):
+        # return tf.keras.Sequential([
+        #     tf.keras.layers.Flatten(),
+        #     tf.keras.layers.BatchNormalization(momentum=0.999),
+        # ] + [  # First can't be residual since x isn't of size units
+        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        # ] + [  # Residual blocks
+        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
+        # ] + [  # Output needs to be the dimensions of the target (or source, for reverse mapping) data
+        #     make_dense_bn_dropout(np.prod(output_dims), self.dropout) for _ in range(resnet_layers)
+        # ] + [  # Reshape to match desired output shape since dense layer above is flat
+        #     tf.keras.layers.Reshape(output_dims),
+        # ])
+
+        # return tf.keras.Sequential([
+        #     # TODO try tf.keras.layers.GRU too
+        #     # TODO try tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64))
+        #     #tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, unroll=True)),
+        #     #tf.keras.layers.LSTM(64, unroll=True),
+        #     tf.keras.layers.LSTM(512, unroll=True),
+        #     #tf.keras.layers.LSTM(64,
+        #     #    #return_sequences=True,
+        #     #    return_sequences=False,  # This just does last state?
+        #     #    recurrent_initializer='glorot_uniform'),
+        #     # TODO maybe some more dense layers
+        #     tf.keras.layers.Flatten(),
+        #     tf.keras.layers.Dense(np.prod(output_dims)),
+        #     tf.keras.layers.Reshape(output_dims),
+        # ])
+
+        # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
+        # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.BatchNormalization(momentum=0.999),
-        ] + [  # First can't be residual since x isn't of size units
-            make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
-        ] + [  # Residual blocks
-            ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        ] + [  # Output needs to be the dimensions of the target (or source, for reverse mapping) data
-            make_dense_bn_dropout(np.prod(output_dims), self.dropout) for _ in range(resnet_layers)
-        ] + [  # Reshape to match desired output shape since dense layer above is flat
+            TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
+            #tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(np.prod(output_dims)),
             tf.keras.layers.Reshape(output_dims),
         ])
+        # ] + [  # First can't be residual since x isn't of size units
+        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        # ] + [  # Residual blocks
+        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
+        # ] + [  # Output needs to be the dimensions of the target (or source, for reverse mapping) data
+        #     make_dense_bn_dropout(np.prod(output_dims), self.dropout) for _ in range(resnet_layers)
+        # ] + [  # Reshape to match desired output shape since dense layer above is flat
+        #     tf.keras.layers.Reshape(output_dims),
+        # ])
 
-    def make_discriminator(self, layers=5):
+    def make_discriminator(self, layers=4):
         layers = [make_dense_bn_dropout(self.units, self.dropout) for _ in range(layers-1)]
         last = [
             tf.keras.layers.Dense(1),
