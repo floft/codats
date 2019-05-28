@@ -92,6 +92,11 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
                 title='Reconstruction (A to B to A, feature '+str(i)+')')
             plots.append(('feature_'+str(i)+'/source/reconstruction', recon_plot))
 
+            map_plot = plot_real_time_series(
+                gen_BtoA[:, :, i],
+                title='Mapped (B to A, feature '+str(i)+')')
+            plots.append(('mapped_feature_'+str(i)+'/source/mapped', map_plot))
+
             if first_time:
                 real_plot = plot_real_time_series(
                     map_x_a[:, :, i],
@@ -103,6 +108,11 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
                 gen_BtoAtoB[:, :, i],
                 title='Reconstruction (B to A to B, feature '+str(i)+')')
             plots.append(('feature_'+str(i)+'/target/reconstruction', recon_plot))
+
+            map_plot = plot_real_time_series(
+                gen_AtoB[:, :, i],
+                title='Mapped (A to B, feature '+str(i)+')')
+            plots.append(('mapped_feature_'+str(i)+'/target/mapped', map_plot))
 
             if first_time:
                 real_plot = plot_real_time_series(
