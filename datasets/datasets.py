@@ -7,6 +7,7 @@ in generate_tfrecords.py
 import os
 import rarfile  # pip install rarfile
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 
 from sklearn.model_selection import train_test_split
@@ -324,10 +325,140 @@ class UTDataPocket(UTDataBase):
         super().__init__("pocket", *args, **kwargs)
 
 
+class UnivariateCSVBase(Dataset):
+    """ Base class for loading UCR-like univarate datasets """
+    feature_names = ["univariate"]
+
+    def __init__(self, train_filename, test_filename, num_classes, class_labels,
+            *args, **kwargs):
+        self.train_filename = train_filename
+        self.test_filename = test_filename
+        super().__init__(num_classes, class_labels, None, None,
+            UnivariateCSVBase.feature_names, *args, **kwargs)
+
+    def load_file(self, filename):
+        """
+        Load CSV files in UCR time-series data format
+
+        Load a time-series dataset. This is set up to load data in the format of the
+        UCR time-series datasets (http://www.cs.ucr.edu/~eamonn/time_series_data/).
+        Or, see the generate_trivial_datasets.py for a trivial dataset.
+
+        Returns:
+            data - numpy array with data of shape (num_examples, num_features)
+            labels - numpy array with labels of shape: (num_examples, 1)
+        """
+        df = pd.read_csv(filename, header=None)
+        df_data = df.drop(0, axis=1).values.astype(np.float32)
+        df_labels = df.loc[:, df.columns == 0].values.astype(np.uint8)
+        return df_data, df_labels
+
+    def load(self):
+        train_data, train_labels = self.load_file(self.train_filename)
+        test_data, test_labels = self.load_file(self.test_filename)
+
+        return train_data, train_labels, test_data, test_labels
+
+    def process(self, data, labels):
+        """ Normalize, one-hot encode labels
+        Note: UCR datasets are index-one """
+        # For if we only have one feature
+        # [examples, time_steps] --> [examples, time_steps, 1]
+        if len(data.shape) < 3:
+            data = np.expand_dims(data, axis=2)
+
+        labels = self.one_hot(labels, index_one=True)
+        return super().process(data, labels)
+
+
+class SyntheticPositiveSlope(UnivariateCSVBase):
+    num_classes = 2
+    class_labels = ["negative", "positive"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            "trivial/positive_slope_TRAIN",
+            "trivial/positive_slope_TEST",
+            SyntheticPositiveSlope.num_classes,
+            SyntheticPositiveSlope.class_labels,
+            *args, **kwargs)
+
+
+class SyntheticPositiveSlopeLow(UnivariateCSVBase):
+    num_classes = 2
+    class_labels = ["negative", "positive"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            "trivial/positive_slope_low_TRAIN",
+            "trivial/positive_slope_low_TEST",
+            SyntheticPositiveSlopeLow.num_classes,
+            SyntheticPositiveSlopeLow.class_labels,
+            *args, **kwargs)
+
+
+class SyntheticPositiveSlopeNoise(UnivariateCSVBase):
+    num_classes = 2
+    class_labels = ["negative", "positive"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            "trivial/positive_slope_noise_TRAIN",
+            "trivial/positive_slope_noise_TEST",
+            SyntheticPositiveSlopeNoise.num_classes,
+            SyntheticPositiveSlopeNoise.class_labels,
+            *args, **kwargs)
+
+
+class SyntheticPositiveSine(UnivariateCSVBase):
+    num_classes = 2
+    class_labels = ["negative", "positive"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            "trivial/positive_sine_TRAIN",
+            "trivial/positive_sine_TEST",
+            SyntheticPositiveSine.num_classes,
+            SyntheticPositiveSine.class_labels,
+            *args, **kwargs)
+
+
+class SyntheticPositiveSineLow(UnivariateCSVBase):
+    num_classes = 2
+    class_labels = ["negative", "positive"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            "trivial/positive_sine_low_TRAIN",
+            "trivial/positive_sine_low_TEST",
+            SyntheticPositiveSineLow.num_classes,
+            SyntheticPositiveSineLow.class_labels,
+            *args, **kwargs)
+
+
+class SyntheticPositiveSineNoise(UnivariateCSVBase):
+    num_classes = 2
+    class_labels = ["negative", "positive"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            "trivial/positive_sine_noise_TRAIN",
+            "trivial/positive_sine_noise_TEST",
+            SyntheticPositiveSineNoise.num_classes,
+            SyntheticPositiveSineNoise.class_labels,
+            *args, **kwargs)
+
+
 # List of datasets
 datasets = {
     "utdata_wrist": UTDataWrist,
     "utdata_pocket": UTDataPocket,
+    "positive_slope": SyntheticPositiveSlope,
+    "positive_slope_low": SyntheticPositiveSlopeLow,
+    "positive_slope_noise": SyntheticPositiveSlopeNoise,
+    "positive_sine": SyntheticPositiveSine,
+    "positive_sine_low": SyntheticPositiveSineLow,
+    "positive_sine_noise": SyntheticPositiveSineNoise,
 }
 
 

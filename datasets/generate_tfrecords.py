@@ -112,6 +112,10 @@ def main(argv):
     # Only list one direction since the other direction uses the same data
     adaptation_problems = [
         ("utdata_wrist", "utdata_pocket"),
+        ("positive_slope", "positive_slope_low"),
+        ("positive_slope", "positive_slope_noise"),
+        ("positive_sine", "positive_sine_low"),
+        ("positive_sine", "positive_sine_noise"),
     ]
 
     # Save tfrecord files for each of the adaptation problems

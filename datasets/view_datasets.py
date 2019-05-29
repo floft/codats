@@ -31,7 +31,10 @@ def display(name, data, feature_names, example=0):
     fig.suptitle(name)
 
     for i in range(num_features):
-        ax = axes[i]
+        if num_features == 1:
+            ax = axes
+        else:
+            ax = axes[i]
 
         x_list = list(range(0, num_samples))  # the x axis... basically ignore
         values = data[example, :, i]  # data we care about
