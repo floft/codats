@@ -467,8 +467,8 @@ class CycleGAN(tf.keras.Model):
         # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
         # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
-            TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
-            #tf.keras.layers.Flatten(),
+            #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
+            TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
             tf.keras.layers.Dense(np.prod(output_dims)),
             tf.keras.layers.Reshape(output_dims),
         ])
@@ -482,7 +482,7 @@ class CycleGAN(tf.keras.Model):
         #     tf.keras.layers.Reshape(output_dims),
         # ])
 
-    def make_discriminator(self, layers=4):
+    def make_discriminator(self, layers=2):
         layers = [make_dense_bn_dropout(self.units, self.dropout) for _ in range(layers-1)]
         last = [
             tf.keras.layers.Dense(1),
