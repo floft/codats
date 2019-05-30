@@ -335,10 +335,10 @@ def train_step_cyclegan(data_a, data_b, model, opt):
         g_loss_B = cyc_loss*10 + tf.reduce_mean(tf.math.squared_difference(disc_Afake, 1))  # loss for gen_BtoA
 
         # Discriminator should correctly classify the original real data and the generated fake data
-        d_loss_A = (tf.reduce_mean(tf.square(disc_Afake))
-            + tf.reduce_mean(tf.math.squared_difference(disc_Areal, 1)))/2
-        d_loss_B = (tf.reduce_mean(tf.square(disc_Bfake))
-            + tf.reduce_mean(tf.math.squared_difference(disc_Breal, 1)))/2
+        d_loss_A = tf.reduce_mean(tf.square(disc_Afake)) \
+            + tf.reduce_mean(tf.math.squared_difference(disc_Areal, 1))
+        d_loss_B = tf.reduce_mean(tf.square(disc_Bfake)) \
+            + tf.reduce_mean(tf.math.squared_difference(disc_Breal, 1))
 
     g_AtoB_grad = tape.gradient(g_loss_A, model.source_to_target.trainable_variables)
     g_BtoA_grad = tape.gradient(g_loss_B, model.target_to_source.trainable_variables)
