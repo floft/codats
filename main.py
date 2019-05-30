@@ -326,7 +326,6 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
         disc_Bfake = model.target_discriminator(gen_AtoB, training=True)
 
         # Need a/b for both since they could be of different sizes
-        # Source domain = 0, target domain = 1
         zeros_a = tf.zeros_like(disc_Areal)
         zeros_b = tf.zeros_like(disc_Breal)
         ones_a = tf.ones_like(disc_Areal)
@@ -338,25 +337,20 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
 
         # We want the discriminator to output a 1, i.e. incorrect label
         # Note: we're saying 0 is fake and 1 is real, i.e. D(x) = P(x == real)
-        g_loss_A = cyc_loss*10 + loss(disc_Bfake, ones_b)  # loss for gen_AtoB
-        g_loss_B = cyc_loss*10 + loss(disc_Afake, ones_a)  # loss for gen_BtoA
+        g_loss = cyc_loss*10 + loss(disc_Bfake, ones_b) + loss(disc_Afake, ones_a)
 
-        # Discriminator should correctly classify the original real data and the generated fake data
-        d_loss_A = loss(disc_Afake, zeros_a) + loss(disc_Areal, ones_a)
-        d_loss_B = loss(disc_Bfake, zeros_b) + loss(disc_Breal, ones_b)
+        # Discriminator should correctly classify the original real data and the
+        # generated fake data
+        d_loss = loss(disc_Afake, zeros_a) + loss(disc_Areal, ones_a) \
+            + loss(disc_Bfake, zeros_b) + loss(disc_Breal, ones_b)
 
-    # TODO combine g_loss_{A,B} and update both generators together?
-    g_AtoB_grad = tape.gradient(g_loss_A, model.source_to_target.trainable_variables)
-    g_BtoA_grad = tape.gradient(g_loss_B, model.target_to_source.trainable_variables)
-    d_A = tape.gradient(d_loss_A, model.source_discriminator.trainable_variables)
-    d_B = tape.gradient(d_loss_B, model.target_discriminator.trainable_variables)
+    g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
+    d_grad = tape.gradient(d_loss, model.trainable_variables_discriminators)
     del tape
 
     # No overlapping variables between these, so just use one optimizer
-    opt.apply_gradients(zip(g_AtoB_grad, model.source_to_target.trainable_variables))
-    opt.apply_gradients(zip(g_BtoA_grad, model.target_to_source.trainable_variables))
-    opt.apply_gradients(zip(d_A, model.source_discriminator.trainable_variables))
-    opt.apply_gradients(zip(d_B, model.target_discriminator.trainable_variables))
+    opt.apply_gradients(zip(g_grad, model.trainable_variables_generators))
+    opt.apply_gradients(zip(d_grad, model.trainable_variables_discriminators))
 
     # Return source data mapped to target domain, so we have the labels
     return gen_AtoB, y_a
