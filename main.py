@@ -301,7 +301,7 @@ def train_step_target(data_b, weights, model, opt, weighted_task_loss):
 
 
 @tf.function
-def train_step_cyclegan(data_a, data_b, model, opt):
+def train_step_cyclegan(data_a, data_b, model, opt, loss):
     """ Training domain mapping with CycleGAN-like setup, return data_a mapped
     to the target domain (domain B) for training a classifier on it later """
     x_a, y_a = data_a
@@ -325,21 +325,27 @@ def train_step_cyclegan(data_a, data_b, model, opt):
         disc_Afake = model.source_discriminator(gen_BtoA, training=True)
         disc_Bfake = model.target_discriminator(gen_AtoB, training=True)
 
+        # Need a/b for both since they could be of different sizes
+        # Source domain = 0, target domain = 1
+        zeros_a = tf.zeros_like(disc_Areal)
+        zeros_b = tf.zeros_like(disc_Breal)
+        ones_a = tf.ones_like(disc_Areal)
+        ones_b = tf.ones_like(disc_Breal)
+
         # Generators should by cycle consistent
         cyc_loss = tf.reduce_mean(tf.abs(x_a - gen_AtoBtoA)) \
             + tf.reduce_mean(tf.abs(x_b - gen_BtoAtoB))
 
         # We want the discriminator to output a 1, i.e. incorrect label
         # Note: we're saying 0 is fake and 1 is real, i.e. D(x) = P(x == real)
-        g_loss_A = cyc_loss*10 + tf.reduce_mean(tf.math.squared_difference(disc_Bfake, 1))  # loss for gen_AtoB
-        g_loss_B = cyc_loss*10 + tf.reduce_mean(tf.math.squared_difference(disc_Afake, 1))  # loss for gen_BtoA
+        g_loss_A = cyc_loss*10 + loss(disc_Bfake, ones_b)  # loss for gen_AtoB
+        g_loss_B = cyc_loss*10 + loss(disc_Afake, ones_a)  # loss for gen_BtoA
 
         # Discriminator should correctly classify the original real data and the generated fake data
-        d_loss_A = tf.reduce_mean(tf.square(disc_Afake)) \
-            + tf.reduce_mean(tf.math.squared_difference(disc_Areal, 1))
-        d_loss_B = tf.reduce_mean(tf.square(disc_Bfake)) \
-            + tf.reduce_mean(tf.math.squared_difference(disc_Breal, 1))
+        d_loss_A = loss(disc_Afake, zeros_a) + loss(disc_Areal, ones_a)
+        d_loss_B = loss(disc_Bfake, zeros_b) + loss(disc_Breal, ones_b)
 
+    # TODO combine g_loss_{A,B} and update both generators together?
     g_AtoB_grad = tape.gradient(g_loss_A, model.source_to_target.trainable_variables)
     g_BtoA_grad = tape.gradient(g_loss_B, model.target_to_source.trainable_variables)
     d_A = tape.gradient(d_loss_A, model.source_discriminator.trainable_variables)
@@ -411,6 +417,7 @@ def main(argv):
     task_loss = models.make_task_loss(adapt and FLAGS.use_grl)
     domain_loss = models.make_domain_loss(adapt)
     weighted_task_loss = models.make_weighted_loss()
+    mapping_loss = models.make_mapping_loss()
 
     # We need to know where we are in training for the GRL lambda schedule
     global_step = tf.Variable(0, name="global_step", trainable=False)
@@ -475,7 +482,7 @@ def main(argv):
             # the classifier to have a fake target vs. real target invariant
             # representation.
             data_a = train_step_cyclegan(data_a, data_b,
-                mapping_model, mapping_opt)
+                mapping_model, mapping_opt, mapping_loss)
 
         # The feature extractor, classifiers, etc.
         step_args = (data_a, data_b, model, opt, d_opt, task_loss, domain_loss)

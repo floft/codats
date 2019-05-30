@@ -484,10 +484,7 @@ class CycleGAN(tf.keras.Model):
 
     def make_discriminator(self, layers=2):
         layers = [make_dense_bn_dropout(self.units, self.dropout) for _ in range(layers-1)]
-        last = [
-            tf.keras.layers.Dense(1),
-            tf.keras.layers.Activation("sigmoid"),
-        ]
+        last = [tf.keras.layers.Dense(1)]
         return tf.keras.Sequential(layers + last)
 
     @property
@@ -585,6 +582,22 @@ def make_domain_loss(use_domain_loss):
             return 0
 
     return domain_loss
+
+
+def make_mapping_loss():
+    """
+    Just CategoricalCrossentropy() but for consistency with make_task_loss()
+    """
+    # from_logits=True means we didn't pass the Dense(1) layer through any
+    # activation function like sigmoid. If we need the "probability" later,
+    # then we'll have to manually pass it through a sigmoid function.
+    cce = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+
+    def mapping_loss(y_true, y_pred):
+        """ Compute loss on the outputs of the discriminators """
+        return cce(y_true, y_pred)
+
+    return mapping_loss
 
 
 def compute_accuracy(y_true, y_pred):
