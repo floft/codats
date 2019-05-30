@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("max_plot_embedding", 100, "Max points to plot in t-SNE and PCA plots")
-flags.DEFINE_integer("max_plot_reconstruction", 5, "Max points to plot in reconstruction plots")
+flags.DEFINE_integer("max_plot_embedding", 100, "Max points to plot in t-SNE and PCA plots (0 = skip these plots)")
+flags.DEFINE_integer("max_plot_reconstruction", 5, "Max points to plot in reconstruction plots (0 = skip these plots)")
 
 
 def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
@@ -27,51 +27,52 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
     generate and return the PCA and t-SNE plots. Optionally, save these to a file
     as well.
     """
+    plots = []
     x_a, y_a = data_a
     x_b, y_b = data_b
 
     #
     # TSNE and PCA
     #
-    emb_x_a = x_a[:FLAGS.max_plot_embedding]
-    emb_x_b = x_b[:FLAGS.max_plot_embedding]
-    emb_y_a = y_a[:FLAGS.max_plot_embedding]
-    emb_y_b = y_b[:FLAGS.max_plot_embedding]
+    if FLAGS.max_plot_embedding > 0:
+        emb_x_a = x_a[:FLAGS.max_plot_embedding]
+        emb_x_b = x_b[:FLAGS.max_plot_embedding]
+        emb_y_a = y_a[:FLAGS.max_plot_embedding]
+        emb_y_b = y_b[:FLAGS.max_plot_embedding]
 
-    # Source then target
-    combined_x = tf.concat((emb_x_a, emb_x_b), axis=0)
-    combined_labels = tf.concat((emb_y_a, emb_y_b), axis=0)
-    source_domain = tf.zeros([tf.shape(emb_x_a)[0], 1], dtype=tf.int32)
-    target_domain = tf.ones([tf.shape(emb_x_b)[0], 1], dtype=tf.int32)
-    combined_domain = tf.concat((source_domain, target_domain), axis=0)
+        # Source then target
+        combined_x = tf.concat((emb_x_a, emb_x_b), axis=0)
+        combined_labels = tf.concat((emb_y_a, emb_y_b), axis=0)
+        source_domain = tf.zeros([tf.shape(emb_x_a)[0], 1], dtype=tf.int32)
+        target_domain = tf.ones([tf.shape(emb_x_b)[0], 1], dtype=tf.int32)
+        combined_domain = tf.concat((source_domain, target_domain), axis=0)
 
-    # Run through model's feature extractor
-    embedding = model.feature_extractor(combined_x, training=False)
+        # Run through model's feature extractor
+        embedding = model.feature_extractor(combined_x, training=False)
 
-    # Compute TSNE and PCA
-    tsne = TSNE(n_components=2, init='pca', n_iter=3000).fit_transform(embedding)
-    pca = PCA(n_components=2).fit_transform(embedding)
+        # Compute TSNE and PCA
+        tsne = TSNE(n_components=2, init='pca', n_iter=3000).fit_transform(embedding)
+        pca = PCA(n_components=2).fit_transform(embedding)
 
-    if adapt:
-        title = "Domain Adaptation"
-    else:
-        title = "No Adaptation"
+        if adapt:
+            title = "Domain Adaptation"
+        else:
+            title = "No Adaptation"
 
-    tsne_plot = plot_embedding(tsne, tf.argmax(combined_labels, axis=1),
-        tf.squeeze(combined_domain), title=title + " - t-SNE")
-    pca_plot = plot_embedding(pca, tf.argmax(combined_labels, axis=1),
-        tf.squeeze(combined_domain), title=title + " - PCA")
+        tsne_plot = plot_embedding(tsne, tf.argmax(combined_labels, axis=1),
+            tf.squeeze(combined_domain), title=title + " - t-SNE")
+        pca_plot = plot_embedding(pca, tf.argmax(combined_labels, axis=1),
+            tf.squeeze(combined_domain), title=title + " - PCA")
 
-    plots = []
-    if tsne_plot is not None:
-        plots.append(('tsne', tsne_plot))
-    if pca_plot is not None:
-        plots.append(('pca', pca_plot))
+        if tsne_plot is not None:
+            plots.append(('tsne', tsne_plot))
+        if pca_plot is not None:
+            plots.append(('pca', pca_plot))
 
     #
     # Domain mapping
     #
-    if mapping_model is not None:
+    if mapping_model is not None and FLAGS.max_plot_reconstruction > 0:
         map_x_a = x_a[:FLAGS.max_plot_reconstruction]
         map_x_b = x_b[:FLAGS.max_plot_reconstruction]
 
