@@ -341,8 +341,9 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
 
         # Discriminator should correctly classify the original real data and the
         # generated fake data
-        d_loss = loss(disc_Afake, zeros_a) + loss(disc_Areal, ones_a) \
-            + loss(disc_Bfake, zeros_b) + loss(disc_Breal, ones_b)
+        # Note: divided by two, see CycleGAN paper 7.1
+        d_loss = (loss(disc_Afake, zeros_a) + loss(disc_Areal, ones_a)
+            + loss(disc_Bfake, zeros_b) + loss(disc_Breal, ones_b))/2
 
     g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
     d_grad = tape.gradient(d_loss, model.trainable_variables_discriminators)
