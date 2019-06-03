@@ -428,13 +428,15 @@ class CycleGAN(tf.keras.Model):
 
         # TODO try convolutional model along time dimension
         # TODO maybe try random crop for discriminator
+        assert target_x_shape == source_x_shape, \
+            "Right now only support homogenous adaptation"
 
         self.source_to_target = self.make_generator(target_x_shape)
         self.target_to_source = self.make_generator(source_x_shape)
         self.source_discriminator = self.make_discriminator()
         self.target_discriminator = self.make_discriminator()
 
-    def make_generator(self, output_dims, layers=4, resnet_layers=2):
+    def make_generator(self, output_dims, layers=2, resnet_layers=2):
         # return tf.keras.Sequential([
         #     tf.keras.layers.Flatten(),
         #     tf.keras.layers.BatchNormalization(momentum=0.999),
@@ -467,11 +469,19 @@ class CycleGAN(tf.keras.Model):
         # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
         # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(momentum=0.999),
+            #tf.keras.layers.BatchNormalization(),
             #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
             #TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
-            #tf.keras.layers.Dense(np.prod(output_dims)),
-            #tf.keras.layers.Reshape(output_dims),
+            tf.keras.layers.Flatten(),
+        # ] + [  # First can't be residual since x isn't of size units
+        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        # ] + [  # Residual blocks
+        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
+        # ] + [
+        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        ] + [
+            tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
+            tf.keras.layers.Reshape(output_dims),
         ])
         # ] + [  # First can't be residual since x isn't of size units
         #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
@@ -490,12 +500,13 @@ class CycleGAN(tf.keras.Model):
 
         return tf.keras.Sequential([
             tf.keras.layers.Flatten(),
+            #tf.keras.layers.BatchNormalization(),
         ] + [  # First can't be residual since x isn't of size units
             make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [  # Residual blocks
             ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        ] + [
-            make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        #] + [
+        #    make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [
             tf.keras.layers.Dense(1)
         ])
