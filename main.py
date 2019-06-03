@@ -337,13 +337,15 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
 
         # We want the discriminator to output a 1, i.e. incorrect label
         # Note: we're saying 0 is fake and 1 is real, i.e. D(x) = P(x == real)
-        g_loss = cyc_loss*10 + loss(disc_Bfake, ones_b) + loss(disc_Afake, ones_a)
+        g_loss = cyc_loss*10 + loss(ones_b, disc_Bfake) + loss(ones_a, disc_Afake)
 
         # Discriminator should correctly classify the original real data and the
         # generated fake data
         # Note: divided by two, see CycleGAN paper 7.1
-        d_loss = (loss(disc_Afake, zeros_a) + loss(disc_Areal, ones_a)
-            + loss(disc_Bfake, zeros_b) + loss(disc_Breal, ones_b))/2
+        d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
+            + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
+
+        tf.print(cyc_loss, loss(ones_b, disc_Bfake), loss(ones_a, disc_Afake), d_loss)
 
     g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
     d_grad = tape.gradient(d_loss, model.trainable_variables_discriminators)
