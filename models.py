@@ -88,7 +88,7 @@ class StopGradient(tf.keras.layers.Layer):
 
 def make_dense_bn_dropout(units, dropout):
     return tf.keras.Sequential([
-        tf.keras.layers.Dense(units),
+        tf.keras.layers.Dense(units, use_bias=False),  # BN has a bias term
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(dropout),
