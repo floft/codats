@@ -449,7 +449,8 @@ def main(argv):
 
     # Checkpoints
     checkpoint = tf.train.Checkpoint(
-        global_step=global_step, opt=opt, d_opt=d_opt, t_opt=t_opt, model=model)
+        global_step=global_step, opt=opt, d_opt=d_opt, t_opt=t_opt,
+        mapping_opt=mapping_opt, model=model, mapping_model=mapping_model)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir,
         target=has_target_classifier)
     checkpoint_manager.restore_latest()
