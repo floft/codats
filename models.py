@@ -438,19 +438,6 @@ class CycleGAN(tf.keras.Model):
 
     def make_generator(self, output_dims, layers=2, resnet_layers=2):
         # return tf.keras.Sequential([
-        #     tf.keras.layers.Flatten(),
-        #     tf.keras.layers.BatchNormalization(momentum=0.999),
-        # ] + [  # First can't be residual since x isn't of size units
-        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
-        # ] + [  # Residual blocks
-        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        # ] + [  # Output needs to be the dimensions of the target (or source, for reverse mapping) data
-        #     make_dense_bn_dropout(np.prod(output_dims), self.dropout) for _ in range(resnet_layers)
-        # ] + [  # Reshape to match desired output shape since dense layer above is flat
-        #     tf.keras.layers.Reshape(output_dims),
-        # ])
-
-        # return tf.keras.Sequential([
         #     # TODO try tf.keras.layers.GRU too
         #     # TODO try tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64))
         #     #tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, unroll=True)),
@@ -477,27 +464,12 @@ class CycleGAN(tf.keras.Model):
         #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         # ] + [  # Residual blocks
         #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        # ] + [
-        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [
             tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
             tf.keras.layers.Reshape(output_dims),
         ])
-        # ] + [  # First can't be residual since x isn't of size units
-        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
-        # ] + [  # Residual blocks
-        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        # ] + [  # Output needs to be the dimensions of the target (or source, for reverse mapping) data
-        #     make_dense_bn_dropout(np.prod(output_dims), self.dropout) for _ in range(resnet_layers)
-        # ] + [  # Reshape to match desired output shape since dense layer above is flat
-        #     tf.keras.layers.Reshape(output_dims),
-        # ])
 
     def make_discriminator(self, layers=2, resnet_layers=2):
-        # layers = [make_dense_bn_dropout(self.units, self.dropout) for _ in range(layers-1)]
-        # last = [tf.keras.layers.Dense(1)]
-        # return tf.keras.Sequential(layers + last)
-
         return tf.keras.Sequential([
             tf.keras.layers.BatchNormalization(momentum=0.999),
             tf.keras.layers.Flatten(),
@@ -505,8 +477,6 @@ class CycleGAN(tf.keras.Model):
             make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [  # Residual blocks
             ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        #] + [
-        #    make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [
             tf.keras.layers.Dense(1)
         ])
