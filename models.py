@@ -469,7 +469,7 @@ class CycleGAN(tf.keras.Model):
         # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
         # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
-            #tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.BatchNormalization(momentum=0.999),
             #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
             #TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
             tf.keras.layers.Flatten(),
@@ -499,8 +499,8 @@ class CycleGAN(tf.keras.Model):
         # return tf.keras.Sequential(layers + last)
 
         return tf.keras.Sequential([
+            tf.keras.layers.BatchNormalization(momentum=0.999),
             tf.keras.layers.Flatten(),
-            #tf.keras.layers.BatchNormalization(),
         ] + [  # First can't be residual since x isn't of size units
             make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [  # Residual blocks
