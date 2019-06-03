@@ -489,7 +489,7 @@ class CycleGAN(tf.keras.Model):
         # return tf.keras.Sequential(layers + last)
 
         return tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(momentum=0.999),
+            tf.keras.layers.Flatten(),
         ] + [  # First can't be residual since x isn't of size units
             make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [  # Residual blocks
