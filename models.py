@@ -471,10 +471,10 @@ class CycleGAN(tf.keras.Model):
             #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
             #TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
             tf.keras.layers.Flatten(),
-        # ] + [  # First can't be residual since x isn't of size units
-        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
-        # ] + [  # Residual blocks
-        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
+        ] + [  # First can't be residual since x isn't of size units
+            make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        ] + [  # Residual blocks
+            ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
         ] + [
             tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
             tf.keras.layers.Reshape(output_dims),
