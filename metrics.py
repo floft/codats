@@ -294,7 +294,7 @@ class Metrics:
         # then if this data is source domain data, we first need to map to the
         # target domain since our classifier is for target-like data.
         if mapping_model is not None and domain_name == "source":
-            x = mapping_model.source_to_target(x, training=False)
+            x = mapping_model.map_to_target(x)
 
         # Evaluate model on data
         task_y_pred, domain_y_pred = model(x, target=target, training=False)

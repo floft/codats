@@ -436,6 +436,18 @@ class CycleGAN(tf.keras.Model):
         self.source_discriminator = self.make_discriminator()
         self.target_discriminator = self.make_discriminator()
 
+        # Pass source/target data through these layers first, but only set
+        # training=True when feeding through real data
+        #
+        # source_pre -- run on source-like data, before source_to_target model
+        self.source_pre = tf.keras.Sequential([
+            tf.keras.layers.BatchNormalization(),
+        ])
+        # target_pre -- run on target-like data, before target_to_source model
+        self.target_pre = tf.keras.Sequential([
+            tf.keras.layers.BatchNormalization(),
+        ])
+
     def make_generator(self, output_dims, layers=2, resnet_layers=2):
         # return tf.keras.Sequential([
         #     # TODO try tf.keras.layers.GRU too
@@ -456,7 +468,6 @@ class CycleGAN(tf.keras.Model):
         # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
         # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(momentum=0.999),
             #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
             #TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
             tf.keras.layers.Flatten(),
@@ -471,7 +482,6 @@ class CycleGAN(tf.keras.Model):
 
     def make_discriminator(self, layers=2, resnet_layers=2):
         return tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(momentum=0.999),
             tf.keras.layers.Flatten(),
         ] + [  # First can't be residual since x isn't of size units
             make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
@@ -489,32 +499,88 @@ class CycleGAN(tf.keras.Model):
     @property
     def trainable_variables_generators(self):
         return self.source_to_target.trainable_variables \
-            + self.target_to_source.trainable_variables
+            + self.target_to_source.trainable_variables \
+            + self.source_pre.trainable_variables \
+            + self.target_pre.trainable_variables
 
     @property
     def trainable_variables_discriminators(self):
         return self.source_discriminator.trainable_variables \
             + self.target_discriminator.trainable_variables
 
-    def call(self, inputs, direction, training=None, **kwargs):
-        # Manually set the learning phase since we probably aren't using .fit()
+    def set_learning_phase(self, training=None):
+        """ Manually set the learning phase since we probably aren't using .fit() """
         if training is True:
             tf.keras.backend.set_learning_phase(1)
         elif training is False:
             tf.keras.backend.set_learning_phase(0)
 
-        if direction == "source_to_target":
-            out_G = self.source_to_target(inputs, **kwargs)
-            real_out_D = self.target_discriminator(inputs, **kwargs)
-            fake_out_D = self.target_discriminator(out_G, **kwargs)
-        elif direction == "target_to_source":
-            out_G = self.target_to_source(inputs, **kwargs)
-            real_out_D = self.source_discriminator(inputs, **kwargs)
-            fake_out_D = self.source_discriminator(out_G, **kwargs)
-        else:
-            raise NotImplementedError("direction must be either source_to_target or target_to_source")
+    def call(self, inputs, dest, training=None, **kwargs):
+        """
+        Example for training:
+            gen_AtoB, gen_AtoBtoA, disc_Areal, disc_Bfake = model(x_a, "target", training=True)
+            gen_BtoA, gen_BtoAtoB, disc_Breal, disc_Afake = model(x_b, "source", training=True)
 
-        return out_G, real_out_D, fake_out_D
+        Example for testing:
+            gen_AtoB, gen_AtoBtoA, _, _ = model(map_x_a, "target", training=False)
+            gen_BtoA, gen_BtoAtoB, _, _ = model(map_x_b, "source", training=False)
+        """
+        self.set_learning_phase(training)
+
+        if dest == "target":  # A to B
+            x_a = inputs
+
+            # BN for normalization, train batch norm only on original data
+            x_a_norm = self.source_pre(x_a, training=training)
+
+            # Map to target
+            gen_AtoB = self.source_to_target(x_a_norm, training=training, **kwargs)
+
+            # BN for normalization, but never train on the fake data
+            x_b_fake_norm = self.target_pre(gen_AtoB, training=False)
+
+            # Map back to source
+            gen_AtoBtoA = self.target_to_source(x_b_fake_norm, training=training, **kwargs)
+
+            # Discriminator outputs, both run on the normalized data
+            disc_Areal = self.source_discriminator(x_a_norm, training=training, **kwargs)
+            disc_Bfake = self.target_discriminator(x_b_fake_norm, training=training, **kwargs)
+
+            return gen_AtoB, gen_AtoBtoA, disc_Areal, disc_Bfake
+
+        elif dest == "source":  # B to A
+            x_b = inputs
+
+            # BN for normalization, train batch norm only on original data
+            x_b_norm = self.target_pre(x_b, training=training)
+
+            # Map to source
+            gen_BtoA = self.target_to_source(x_b_norm, training=training, **kwargs)
+
+            # BN for normalization, but never train on the fake data
+            x_a_fake_norm = self.source_pre(gen_BtoA, training=False)
+
+            # Map back to target
+            gen_BtoAtoB = self.source_to_target(x_a_fake_norm, training=training, **kwargs)
+
+            # Discriminator outputs, both run on the normalized data
+            disc_Breal = self.target_discriminator(x_b_norm, training=training, **kwargs)
+            disc_Afake = self.source_discriminator(x_a_fake_norm, training=training, **kwargs)
+
+            return gen_BtoA, gen_BtoAtoB, disc_Breal, disc_Afake
+
+        else:
+            raise NotImplementedError("dest can only be either source or target")
+
+    def map_to_target(self, x):
+        """ Map source data to target, but make sure we don't update BN stats """
+        self.set_learning_phase(False)
+        return self.source_to_target(self.source_pre(x, training=False), training=False)
+
+    def map_to_source(self, x):
+        """ Map target data to source, but make sure we don't update BN stats """
+        self.set_learning_phase(False)
+        return self.target_to_source(self.target_pre(x, training=False), training=False)
 
 
 def make_task_loss(adapt):

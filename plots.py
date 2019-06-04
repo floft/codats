@@ -80,12 +80,16 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
         num_features_b = tf.shape(map_x_b)[2]
 
         # Generators on original data
-        gen_AtoB = mapping_model.source_to_target(map_x_a, training=False)
-        gen_BtoA = mapping_model.target_to_source(map_x_b, training=False)
+        gen_AtoB = mapping_model.map_to_target(map_x_a)
+        gen_BtoA = mapping_model.map_to_source(map_x_b)
 
         # Generators on fake data to map back to original domain (a full cycle)
-        gen_AtoBtoA = mapping_model.target_to_source(gen_AtoB, training=False)
-        gen_BtoAtoB = mapping_model.source_to_target(gen_BtoA, training=False)
+        gen_AtoBtoA = mapping_model.map_to_source(gen_AtoB)
+        gen_BtoAtoB = mapping_model.map_to_target(gen_BtoA)
+
+        # Run model on data -- alternative, but slightly slower than the above
+        # gen_AtoB, gen_AtoBtoA, _, _ = mapping_model(map_x_a, "target", training=False)
+        # gen_BtoA, gen_BtoAtoB, _, _ = mapping_model(map_x_b, "source", training=False)
 
         for i in range(num_features_a):
             recon_plot = plot_real_time_series(

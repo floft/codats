@@ -308,22 +308,8 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
     x_b, _ = data_b
 
     with tf.GradientTape(persistent=True) as tape:
-        # Generators on original data
-        gen_AtoB = model.source_to_target(x_a, training=True)
-        gen_BtoA = model.target_to_source(x_b, training=True)
-
-        # Generators on fake data to map back to original domain (a full cycle)
-        gen_AtoBtoA = model.target_to_source(gen_AtoB, training=True)
-        gen_BtoAtoB = model.source_to_target(gen_BtoA, training=True)
-
-        # Discriminators on original/real data
-        # Note: these discriminators already pass data through sigmoid function
-        disc_Areal = model.source_discriminator(x_a, training=True)
-        disc_Breal = model.target_discriminator(x_b, training=True)
-
-        # Discriminators on fake data
-        disc_Afake = model.source_discriminator(gen_BtoA, training=True)
-        disc_Bfake = model.target_discriminator(gen_AtoB, training=True)
+        gen_AtoB, gen_AtoBtoA, disc_Areal, disc_Bfake = model(x_a, "target", training=True)
+        gen_BtoA, gen_BtoAtoB, disc_Breal, disc_Afake = model(x_b, "source", training=True)
 
         # Need a/b for both since they could be of different sizes
         zeros_a = tf.zeros_like(disc_Areal)
@@ -423,7 +409,7 @@ def main(argv):
     model = models.DomainAdaptationModel(num_classes, FLAGS.model,
         global_step, FLAGS.steps, use_grl=FLAGS.use_grl)
 
-    if FLAGS.method == "cyclegan":
+    if FLAGS.method in ["cyclegan", "cycada"]:
         # For the GAN, we need to know the source and target sizes
         # Note: first dimension is batch size, so drop that
         source_first_x, _ = next(iter(source_dataset.train))
@@ -472,7 +458,7 @@ def main(argv):
         t = time.time()
 
         # The GAN performing domain mapping, if desired
-        if FLAGS.method == "cyclegan":
+        if mapping_model is not None:
             # Trains GAN to map source data_a to look like target data and
             # returns the mapped data so we can train a classifier (below
             # as usual) on the now-labeled target-like data. data_b stays
