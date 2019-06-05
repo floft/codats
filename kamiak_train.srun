@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=AdvConf
+#SBATCH --job-name=train
 #SBATCH --output=slurm_logs/train_%j.out
 #SBATCH --error=slurm_logs/train_%j.err
 #SBATCH --ntasks=1

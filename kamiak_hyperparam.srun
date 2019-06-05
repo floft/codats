@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=AdvConfTune
+#SBATCH --job-name=tune
 #SBATCH --output=slurm_logs/tune_%j.out
 #SBATCH --error=slurm_logs/tune_%j.err
 #SBATCH --ntasks=1

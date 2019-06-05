@@ -331,7 +331,7 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
         d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
             + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
 
-        tf.print(cyc_loss, loss(ones_b, disc_Bfake), loss(ones_a, disc_Afake), d_loss)
+        #tf.print(cyc_loss, loss(ones_b, disc_Bfake), loss(ones_a, disc_Afake), d_loss)
 
     g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
     d_grad = tape.gradient(d_loss, model.trainable_variables_discriminators)

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=AdvConfEval
+#SBATCH --job-name=eval
 #SBATCH --output=slurm_logs/eval_%j.out
 #SBATCH --error=slurm_logs/eval_%j.err
 #SBATCH --ntasks=1
