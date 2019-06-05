@@ -448,7 +448,7 @@ class CycleGAN(tf.keras.Model):
             tf.keras.layers.BatchNormalization(),
         ])
 
-    def make_generator(self, output_dims, layers=2, resnet_layers=2):
+    def make_generator(self, output_dims, layers=4, resnet_layers=2):
         # return tf.keras.Sequential([
         #     # TODO try tf.keras.layers.GRU too
         #     # TODO try tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64))
@@ -480,7 +480,7 @@ class CycleGAN(tf.keras.Model):
             tf.keras.layers.Reshape(output_dims),
         ])
 
-    def make_discriminator(self, layers=2, resnet_layers=2):
+    def make_discriminator(self, layers=4, resnet_layers=2):
         return tf.keras.Sequential([
             tf.keras.layers.Flatten(),
         ] + [  # First can't be residual since x isn't of size units
