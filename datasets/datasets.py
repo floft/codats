@@ -371,94 +371,58 @@ class UnivariateCSVBase(Dataset):
         return super().process(data, labels)
 
 
-class SyntheticPositiveSlope(UnivariateCSVBase):
-    num_classes = 2
-    class_labels = ["negative", "positive"]
+def make_trivial_negpos(filename_prefix):
+    """ make a -/+ dataset object, since we have a bunch of these """
+    class Trivial(UnivariateCSVBase):
+        num_classes = 2
+        class_labels = ["negative", "positive"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            "trivial/positive_slope_TRAIN",
-            "trivial/positive_slope_TEST",
-            SyntheticPositiveSlope.num_classes,
-            SyntheticPositiveSlope.class_labels,
-            *args, **kwargs)
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                "trivial/"+filename_prefix+"_TRAIN",
+                "trivial/"+filename_prefix+"_TEST",
+                Trivial.num_classes,
+                Trivial.class_labels,
+                *args, **kwargs)
 
-
-class SyntheticPositiveSlopeLow(UnivariateCSVBase):
-    num_classes = 2
-    class_labels = ["negative", "positive"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            "trivial/positive_slope_low_TRAIN",
-            "trivial/positive_slope_low_TEST",
-            SyntheticPositiveSlopeLow.num_classes,
-            SyntheticPositiveSlopeLow.class_labels,
-            *args, **kwargs)
+    return Trivial
 
 
-class SyntheticPositiveSlopeNoise(UnivariateCSVBase):
-    num_classes = 2
-    class_labels = ["negative", "positive"]
+def make_trivial_lowhigh(filename_prefix):
+    """ make a low/high dataset object, since we have a bunch of these """
+    class Trivial(UnivariateCSVBase):
+        num_classes = 2
+        class_labels = ["low", "high"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            "trivial/positive_slope_noise_TRAIN",
-            "trivial/positive_slope_noise_TEST",
-            SyntheticPositiveSlopeNoise.num_classes,
-            SyntheticPositiveSlopeNoise.class_labels,
-            *args, **kwargs)
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                "trivial/"+filename_prefix+"_TRAIN",
+                "trivial/"+filename_prefix+"_TEST",
+                Trivial.num_classes,
+                Trivial.class_labels,
+                *args, **kwargs)
 
-
-class SyntheticPositiveSine(UnivariateCSVBase):
-    num_classes = 2
-    class_labels = ["negative", "positive"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            "trivial/positive_sine_TRAIN",
-            "trivial/positive_sine_TEST",
-            SyntheticPositiveSine.num_classes,
-            SyntheticPositiveSine.class_labels,
-            *args, **kwargs)
-
-
-class SyntheticPositiveSineLow(UnivariateCSVBase):
-    num_classes = 2
-    class_labels = ["negative", "positive"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            "trivial/positive_sine_low_TRAIN",
-            "trivial/positive_sine_low_TEST",
-            SyntheticPositiveSineLow.num_classes,
-            SyntheticPositiveSineLow.class_labels,
-            *args, **kwargs)
-
-
-class SyntheticPositiveSineNoise(UnivariateCSVBase):
-    num_classes = 2
-    class_labels = ["negative", "positive"]
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(
-            "trivial/positive_sine_noise_TRAIN",
-            "trivial/positive_sine_noise_TEST",
-            SyntheticPositiveSineNoise.num_classes,
-            SyntheticPositiveSineNoise.class_labels,
-            *args, **kwargs)
+    return Trivial
 
 
 # List of datasets
 datasets = {
     "utdata_wrist": UTDataWrist,
     "utdata_pocket": UTDataPocket,
-    "positive_slope": SyntheticPositiveSlope,
-    "positive_slope_low": SyntheticPositiveSlopeLow,
-    "positive_slope_noise": SyntheticPositiveSlopeNoise,
-    "positive_sine": SyntheticPositiveSine,
-    "positive_sine_low": SyntheticPositiveSineLow,
-    "positive_sine_noise": SyntheticPositiveSineNoise,
+    "positive_slope": make_trivial_negpos("positive_slope"),
+    "positive_slope_low": make_trivial_negpos("positive_slope_low"),
+    "positive_slope_noise": make_trivial_negpos("positive_slope_noise"),
+    "positive_sine": make_trivial_negpos("positive_sine"),
+    "positive_sine_low": make_trivial_negpos("positive_sine_low"),
+    "positive_sine_noise": make_trivial_negpos("positive_sine_noise"),
+    "freq_low": make_trivial_lowhigh("freq_low"),
+    "freq_high": make_trivial_lowhigh("freq_high"),
+    "freq_low_amp_noise": make_trivial_lowhigh("freq_low_amp_noise"),
+    "freq_high_amp_noise": make_trivial_lowhigh("freq_high_amp_noise"),
+    "freq_low_freq_noise": make_trivial_lowhigh("freq_low_freq_noise"),
+    "freq_high_freq_noise": make_trivial_lowhigh("freq_high_freq_noise"),
+    "freq_low_freqamp_noise": make_trivial_lowhigh("freq_low_freqamp_noise"),
+    "freq_high_freqamp_noise": make_trivial_lowhigh("freq_high_freqamp_noise"),
 }
 
 
