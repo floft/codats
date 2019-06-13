@@ -42,6 +42,7 @@ flags.DEFINE_boolean("use_domain_confidence", True, "Use domain classifier for c
 flags.DEFINE_boolean("domain_invariant", True, "Train feature extractor to be domain-invariant")
 flags.DEFINE_boolean("compile_metrics", True, "Compile metrics loop with tf.function for subsequent speed (disable if std::terminate)")
 flags.DEFINE_boolean("test", False, "Use real test set for evaluation rather than validation set")
+flags.DEFINE_boolean("subdir", True, "Save models/logs in subdirectory of prefix")
 flags.DEFINE_boolean("debug", False, "Start new log/model/images rather than continuing from previous run")
 flags.DEFINE_integer("debugnum", -1, "Specify exact log/model/images number to use rather than incrementing from last. (Don't pass both this and --debug at the same time.)")
 
@@ -84,9 +85,12 @@ def get_directory_names():
         log_dir = os.path.join(FLAGS.logdir, prefix)
     # If no debugging modes, use the model and log directory with only the "prefix"
     # (even though it's not actually a prefix in this case, it's the whole name)
-    else:
+    elif FLAGS.subdir:
         model_dir = os.path.join(FLAGS.modeldir, prefix)
         log_dir = os.path.join(FLAGS.logdir, prefix)
+    else:
+        model_dir = FLAGS.modeldir
+        log_dir = FLAGS.logdir
 
     return model_dir, log_dir
 

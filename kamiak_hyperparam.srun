@@ -32,4 +32,4 @@ pip install --user nevergrad
 
 # Tune
 cd "$remotedir"
-python3 hyperparameter_tuning_nevergrad.py || handle_error
+python3 hyperparameter_tuning_nevergrad.py "$@" || handle_error

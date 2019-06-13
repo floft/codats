@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=3
 #SBATCH --nodes=1-1
 #SBATCH --gres=gpu:1
-#SBATCH --partition=cook,cahnrs_gpu,free_gpu,kamiak
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
 
