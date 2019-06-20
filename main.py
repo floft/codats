@@ -24,6 +24,7 @@ flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, ["none", "cyclegan", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("cyclegan_loss", "lsgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
 flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
@@ -304,6 +305,34 @@ def train_step_target(data_b, weights, model, opt, weighted_task_loss):
     opt.apply_gradients(zip(grad, trainable_vars))
 
 
+def wgan_gradient_penalty(real, fake, discriminator):
+    """
+    Calculating WGAN-GP gradient penalty
+
+    See:
+    https://github.com/eriklindernoren/Keras-GAN/blob/master/wgan_gp/wgan_gp.py#L106
+    """
+    epsilon = tf.random.uniform(tf.shape(real))
+    x_hat = epsilon*real + (1 - epsilon)*fake
+
+    # Run x_hat through D
+    disc = discriminator(x_hat, training=False)
+
+    grad = tf.gradients(disc, x_hat)[0]
+    # compute the euclidean norm by squaring ...
+    grad_sqr = tf.square(grad)
+    # ... summing over the rows ...
+    grad_sqr_sum = tf.reduce_sum(grad_sqr,
+        axis=tf.keras.backend.arange(1, len(grad.shape)))
+    # ... and sqrt
+    grad_l2_norm = tf.sqrt(grad_sqr_sum)
+    # compute lambda*(1-||grad||)^2 still for each single sample
+    gradient_penalty = tf.math.squared_difference(grad_l2_norm, 1)
+
+    # return the mean as loss over all the batch samples
+    return tf.reduce_mean(gradient_penalty)
+
+
 @tf.function
 def train_step_cyclegan(data_a, data_b, model, opt, loss):
     """ Training domain mapping with CycleGAN-like setup, return data_a mapped
@@ -325,15 +354,38 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
         cyc_loss = tf.reduce_mean(tf.abs(x_a - gen_AtoBtoA)) \
             + tf.reduce_mean(tf.abs(x_b - gen_BtoAtoB))
 
-        # We want the discriminator to output a 1, i.e. incorrect label
-        # Note: we're saying 0 is fake and 1 is real, i.e. D(x) = P(x == real)
-        g_loss = cyc_loss*10 + loss(ones_b, disc_Bfake) + loss(ones_a, disc_Afake)
+        g_loss = cyc_loss*10
 
-        # Discriminator should correctly classify the original real data and the
-        # generated fake data
-        # Note: divided by two, see CycleGAN paper 7.1
-        d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
-            + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
+        # For generator step, we want the discriminator to output a 1, i.e.
+        # incorrect label
+        # For discriminator step, the discriminator should correctly classify
+        # the original real data and the generated fake data
+        # Note: we're saying 0 is fake and 1 is real, i.e. D(x) = P(x == real)
+        if FLAGS.cyclegan_loss == "wgan" or FLAGS.cyclegan_loss == "wgan-gp":
+            g_loss += -tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Afake)
+            d_loss = ((tf.reduce_mean(disc_Afake) - tf.reduce_mean(disc_Areal))
+                + (tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Breal)))/2
+            # d_loss *= 5  # WGAN trains 5 iterations, so this is ~equivalent?
+
+            if FLAGS.cyclegan_loss == "wgan-gp":
+                model.set_learning_phase(False)  # Don't update BN stats
+                gp1 = wgan_gradient_penalty(x_a, gen_BtoA, model.source_discriminator)
+                gp2 = wgan_gradient_penalty(x_b, gen_AtoB, model.target_discriminator)
+                d_loss += 10*(gp1 + gp2)
+        elif FLAGS.cyclegan_loss == "lsgan":
+            g_loss += tf.reduce_mean(tf.math.squared_difference(disc_Bfake, 1)) \
+                + tf.reduce_mean(tf.math.squared_difference(disc_Afake, 1))
+            d_loss = (
+                tf.reduce_mean(tf.math.squared_difference(disc_Afake, 0))
+                + tf.reduce_mean(tf.math.squared_difference(disc_Areal, 1))
+                + tf.reduce_mean(tf.math.squared_difference(disc_Bfake, 0))
+                + tf.reduce_mean(tf.math.squared_difference(disc_Breal, 1))
+            )/2
+        elif FLAGS.cyclegan_loss == "gan":
+            g_loss += loss(ones_b, disc_Bfake) + loss(ones_a, disc_Afake)
+            # Note: divided by two, see CycleGAN paper 7.1
+            d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
+               + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
 
         #tf.print(cyc_loss, loss(ones_b, disc_Bfake), loss(ones_a, disc_Afake), d_loss)
 
@@ -344,6 +396,11 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
     # No overlapping variables between these, so just use one optimizer
     opt.apply_gradients(zip(g_grad, model.trainable_variables_generators))
     opt.apply_gradients(zip(d_grad, model.trainable_variables_discriminators))
+
+    # WGAN weight clipping
+    if FLAGS.cyclegan_loss == "wgan":
+        for weight in model.trainable_variables_discriminators:
+            weight.assign(tf.clip_by_value(weight, -0.01, 0.01))
 
     # Return source data mapped to target domain, so we have the labels
     return gen_AtoB, y_a
@@ -428,7 +485,10 @@ def main(argv):
     # Optimizers
     opt = tf.keras.optimizers.Adam(FLAGS.lr)
     d_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_domain_mult)
-    mapping_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_mapping_mult)
+    if FLAGS.cyclegan_loss == "wgan":
+        mapping_opt = tf.keras.optimizers.RMSprop(FLAGS.lr*FLAGS.lr_mapping_mult)
+    else:
+        mapping_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_mapping_mult)
 
     # For GAN-like training (train_step_gan), we'll weight by the GRL schedule
     # to make it more equivalent to when use_grl=True.
@@ -439,10 +499,15 @@ def main(argv):
     has_target_classifier = FLAGS.method in ["pseudo", "instance"]
     t_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_target_mult)
 
-    # Checkpoints
-    checkpoint = tf.train.Checkpoint(
-        global_step=global_step, opt=opt, d_opt=d_opt, t_opt=t_opt,
-        mapping_opt=mapping_opt, model=model, mapping_model=mapping_model)
+    # Checkpoints -- can't handle None in checkpoint
+    if mapping_model is None:
+        checkpoint = tf.train.Checkpoint(
+            global_step=global_step, opt=opt, d_opt=d_opt, t_opt=t_opt,
+            mapping_opt=mapping_opt, model=model)
+    else:
+        checkpoint = tf.train.Checkpoint(
+            global_step=global_step, opt=opt, d_opt=d_opt, t_opt=t_opt,
+            mapping_opt=mapping_opt, model=model, mapping_model=mapping_model)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir,
         target=has_target_classifier)
     checkpoint_manager.restore_latest()
