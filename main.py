@@ -365,7 +365,6 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
             g_loss += -tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Afake)
             d_loss = ((tf.reduce_mean(disc_Afake) - tf.reduce_mean(disc_Areal))
                 + (tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Breal)))/2
-            # d_loss *= 5  # WGAN trains 5 iterations, so this is ~equivalent?
 
             if FLAGS.cyclegan_loss == "wgan-gp":
                 model.set_learning_phase(False)  # Don't update BN stats
@@ -386,6 +385,9 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
             # Note: divided by two, see CycleGAN paper 7.1
             d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
                + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
+
+        # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent?
+        d_loss *= 5
 
         #tf.print(cyc_loss, loss(ones_b, disc_Bfake), loss(ones_a, disc_Afake), d_loss)
 
