@@ -95,11 +95,23 @@ def make_dense_bn_dropout(units, dropout):
     ])
 
 
+def make_dense_ln_dropout(units, dropout):
+    return tf.keras.Sequential([
+        tf.keras.layers.Dense(units, use_bias=False),  # BN has a bias term
+        tf.keras.layers.LayerNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(dropout),
+    ])
+
+
 class ResnetBlock(tf.keras.layers.Layer):
     """ Block consisting of other blocks but with residual connections """
-    def __init__(self, units, dropout, layers, **kwargs):
+    def __init__(self, units, dropout, layers, layer_norm=False, **kwargs):
         super().__init__(**kwargs)
-        self.blocks = [make_dense_bn_dropout(units, dropout) for _ in range(layers)]
+        if layer_norm:
+            self.blocks = [make_dense_ln_dropout(units, dropout) for _ in range(layers)]
+        else:
+            self.blocks = [make_dense_bn_dropout(units, dropout) for _ in range(layers)]
         self.add = tf.keras.layers.Add()
 
     def call(self, inputs, **kwargs):
@@ -472,9 +484,9 @@ class CycleGAN(tf.keras.Model):
             #TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
             tf.keras.layers.Flatten(),
         ] + [  # First can't be residual since x isn't of size units
-            make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+            make_dense_ln_dropout(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [  # Residual blocks
-            ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
+            ResnetBlock(self.units, self.dropout, resnet_layers, layer_norm=True) for _ in range(layers-1)
         ] + [
             tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
             tf.keras.layers.Reshape(output_dims),
