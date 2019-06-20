@@ -4,7 +4,7 @@
 #
 if [[ -z $1 ]]; then
     echo "Usage:"
-    echo "  ./kamiak_queue_all.sh suffix <other arguments>"
+    echo "  ./kamiak_queue.sh suffix <other arguments>"
     echo "  Note: outputs to kamiak-{models,logs}-suffix"
     exit 1
 fi
