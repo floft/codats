@@ -477,6 +477,13 @@ class CycleGAN(tf.keras.Model):
         #     tf.keras.layers.Reshape(output_dims),
         # ])
 
+        if FLAGS.cyclegan_loss == "wgan-gp":
+            layer_func = make_dense_ln_dropout
+            layer_norm = True
+        else:
+            layer_func = make_dense_bn_dropout
+            layer_norm = False
+
         # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
         # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
@@ -484,9 +491,9 @@ class CycleGAN(tf.keras.Model):
             #TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
             tf.keras.layers.Flatten(),
         ] + [  # First can't be residual since x isn't of size units
-            make_dense_ln_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+            layer_func(self.units, self.dropout) for _ in range(resnet_layers)
         ] + [  # Residual blocks
-            ResnetBlock(self.units, self.dropout, resnet_layers, layer_norm=True) for _ in range(layers-1)
+            ResnetBlock(self.units, self.dropout, resnet_layers, layer_norm=layer_norm) for _ in range(layers-1)
         ] + [
             tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
             tf.keras.layers.Reshape(output_dims),

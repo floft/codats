@@ -387,7 +387,7 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
                + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
 
         # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent?
-        d_loss *= 5
+        #d_loss *= 5
 
         #tf.print(cyc_loss, loss(ones_b, disc_Bfake), loss(ones_a, disc_Afake), d_loss)
 
@@ -575,7 +575,7 @@ def main(argv):
         global_step.assign_add(1)
         t = time.time() - t
 
-        if i%10 == 0:
+        if i%100 == 0:
             logging.info("step %d took %f seconds", int(global_step), t)
 
         # Metrics on training/validation data
