@@ -336,7 +336,7 @@ def plot_fft(data, title=None, filename=None):
         if i == num_examples-1:
             axes[i].set_xlabel('seconds')
 
-        axes[i].set_ylabel("psd")
+        #axes[i].set_ylabel("psd")
 
         # See: https://stackoverflow.com/a/49037495
         divider = make_axes_locatable(axes[i])
