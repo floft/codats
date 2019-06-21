@@ -261,5 +261,5 @@ if __name__ == '__main__':
     np.random.seed(0)
     save_data(lambda x, dsp: generate_multi_freq(x, [2, 6, 8], [7, 9, 11], display=dsp), 'freqshift_low', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, [8, 12, 14], [13, 15, 17], display=dsp), 'freqshift_high', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, [2, 6, 8], [7, 9, 11], display=dsp), 'freqshift_low', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, [2, 6, 8], [7, 9, 11], display=dsp), 'freqscale_low', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, [4, 12, 16], [14, 18, 22], display=dsp), 'freqscale_high', dsp)
