@@ -423,6 +423,10 @@ datasets = {
     "freq_high_freq_noise": make_trivial_lowhigh("freq_high_freq_noise"),
     "freq_low_freqamp_noise": make_trivial_lowhigh("freq_low_freqamp_noise"),
     "freq_high_freqamp_noise": make_trivial_lowhigh("freq_high_freqamp_noise"),
+    "freqshift_low": make_trivial_lowhigh("freqshift_low"),
+    "freqshift_high": make_trivial_lowhigh("freqshift_high"),
+    "freqscale_low": make_trivial_lowhigh("freqscale_low"),
+    "freqscale_high": make_trivial_lowhigh("freqscale_high"),
 }
 
 

@@ -127,6 +127,9 @@ def main(argv):
         ("freq_high", "freq_high_freqamp_noise"),
         ("freq_low", "freq_high_freqamp_noise"),
         ("freq_high", "freq_low_freqamp_noise"),
+
+        ("freqshift_low", "freqshift_high"),
+        ("freqscale_low", "freqscale_high"),
     ]
 
     # Save tfrecord files for each of the adaptation problems
