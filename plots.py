@@ -8,6 +8,7 @@ import tensorflow as tf
 from absl import flags
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 # Make sure matplotlib is not interactive
 import matplotlib as mpl
@@ -18,7 +19,10 @@ import matplotlib.pyplot as plt
 FLAGS = flags.FLAGS
 
 flags.DEFINE_integer("max_plot_embedding", 100, "Max points to plot in t-SNE and PCA plots (0 = skip these plots)")
-flags.DEFINE_integer("max_plot_reconstruction", 5, "Max points to plot in reconstruction plots (0 = skip these plots)")
+flags.DEFINE_integer("max_plot_mapping", 5, "Max samples to plot in reconstruction/spectrogram plots (0 = skip these plots)")
+flags.DEFINE_float("freq", 50.0, "Sampling frequency in Hz of accelerometers, etc. (for plotting spectrogram)")
+flags.DEFINE_integer("nfft", 64, "NFFT for spectrogram, samples per FFT block")
+flags.DEFINE_integer("noverlap", 63, "noverlap for spectrogram, overlap between subsequent windows for FFT")
 
 
 def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
@@ -72,9 +76,9 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
     #
     # Domain mapping
     #
-    if mapping_model is not None and FLAGS.max_plot_reconstruction > 0:
-        map_x_a = x_a[:FLAGS.max_plot_reconstruction]
-        map_x_b = x_b[:FLAGS.max_plot_reconstruction]
+    if mapping_model is not None and FLAGS.max_plot_mapping > 0:
+        map_x_a = x_a[:FLAGS.max_plot_mapping]
+        map_x_b = x_b[:FLAGS.max_plot_mapping]
 
         num_features_a = tf.shape(map_x_a)[2]
         num_features_b = tf.shape(map_x_b)[2]
@@ -95,35 +99,55 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
             recon_plot = plot_real_time_series(
                 gen_AtoBtoA[:, :, i],
                 title='Reconstruction (A to B to A, feature '+str(i)+')')
-            plots.append(('feature_'+str(i)+'/source/reconstruction', recon_plot))
+            plots.append(('reconstruction_feature_'+str(i)+'/source', recon_plot))
 
             map_plot = plot_real_time_series(
                 gen_BtoA[:, :, i],
                 title='Mapped (B to A, feature '+str(i)+')')
-            plots.append(('mapped_feature_'+str(i)+'/source/mapped', map_plot))
+            plots.append(('mapped_feature_'+str(i)+'/source', map_plot))
+
+            map_fft_plot = plot_fft(
+                gen_BtoA[:, :, i],
+                title='FFT Mapped (B to A, feature '+str(i)+')')
+            plots.append(('mapped_fft_feature_'+str(i)+'/source', map_fft_plot))
 
             if first_time:
                 real_plot = plot_real_time_series(
                     map_x_a[:, :, i],
                     title='Real Data (domain A, feature '+str(i)+')')
-                plots.append(('feature_'+str(i)+'/source/real', real_plot))
+                plots.append(('real_feature_'+str(i)+'/source', real_plot))
+
+                real_fft_plot = plot_fft(
+                    map_x_a[:, :, i],
+                    title='FFT Real (domain A, feature '+str(i)+')')
+                plots.append(('real_fft_feature_'+str(i)+'/source', real_fft_plot))
 
         for i in range(num_features_b):
             recon_plot = plot_real_time_series(
                 gen_BtoAtoB[:, :, i],
                 title='Reconstruction (B to A to B, feature '+str(i)+')')
-            plots.append(('feature_'+str(i)+'/target/reconstruction', recon_plot))
+            plots.append(('reconstruction_feature_'+str(i)+'/target', recon_plot))
 
             map_plot = plot_real_time_series(
                 gen_AtoB[:, :, i],
                 title='Mapped (A to B, feature '+str(i)+')')
-            plots.append(('mapped_feature_'+str(i)+'/target/mapped', map_plot))
+            plots.append(('mapped_feature_'+str(i)+'/target', map_plot))
+
+            map_fft_plot = plot_fft(
+                gen_AtoB[:, :, i],
+                title='FFT Mapped (A to B, feature '+str(i)+')')
+            plots.append(('mapped_fft_feature_'+str(i)+'/target', map_fft_plot))
 
             if first_time:
                 real_plot = plot_real_time_series(
                     map_x_b[:, :, i],
                     title='Real Data (domain B, feature '+str(i)+')')
-                plots.append(('feature_'+str(i)+'/target/real', real_plot))
+                plots.append(('real_feature_'+str(i)+'/target', real_plot))
+
+                real_fft_plot = plot_fft(
+                    map_x_b[:, :, i],
+                    title='FFT Real (domain B, feature '+str(i)+')')
+                plots.append(('real_fft_feature_'+str(i)+'/target', real_fft_plot))
 
     return plots
 
@@ -220,7 +244,7 @@ def plot_random_time_series(mu, sigma, title=None, filename=None):
     # x axis is just 0, 1, 2, 3, ...
     x = np.arange(length)
 
-    # y is values sampled from mu and simga
+    # y is values sampled from mu and sigma
     y = sigma*np.random.normal(0, 1, (num_samples, length)) + mu
 
     fig = plt.figure()
@@ -265,5 +289,58 @@ def plot_real_time_series(y, title=None, filename=None):
 
     if filename is not None:
         plt.savefig(filename, bbox_inches='tight', pad_inches=0, transparent=True)
+
+    return plot_to_image(fig)
+
+
+def hide_border(ax):
+    """ Hide the four borders of a plot """
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+
+
+def plot_fft(data, title=None, filename=None):
+    """
+    Create the FFT figure
+    data.shape = (num_examples, time_step) since this is called once per feature
+    """
+    num_examples = data.shape[0]
+    time_steps = data.shape[1]
+    t = np.arange(0.0, time_steps/FLAGS.freq, 1/FLAGS.freq)
+    # For some reason sometimes t ends up being one more sample than data
+    t = t[:time_steps]
+
+    fig, axes = plt.subplots(nrows=num_examples, sharex=True,
+        figsize=(5, 2*num_examples))
+
+    if title is not None:
+        plt.suptitle(title)
+        #fig.canvas.set_window_title(title)
+
+    fig.subplots_adjust(left=0.1, bottom=0.1, right=0.9, top=0.9,
+        wspace=0.2, hspace=0.1)
+
+    # For each of the FLAGS.max_plot_mapping
+    for i, y in enumerate(data):
+        y = np.array(y)
+
+        Pxx, freqs, bins, im = axes[i].specgram(y, NFFT=FLAGS.nfft,
+            Fs=FLAGS.freq, noverlap=FLAGS.noverlap, mode="psd",
+            xextent=(t[0], t[-1]))
+        hide_border(axes[i])
+        axes[i].margins(x=0)
+
+        # Only bottom one
+        if i == num_examples-1:
+            axes[i].set_xlabel('seconds')
+
+        axes[i].set_ylabel("psd")
+
+        # See: https://stackoverflow.com/a/49037495
+        divider = make_axes_locatable(axes[i])
+        cax = divider.append_axes('right', size='5%', pad=0.05)
+        fig.colorbar(im, cax=cax, orientation='vertical')
 
     return plot_to_image(fig)
