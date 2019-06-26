@@ -19,11 +19,11 @@
 # For on my own computer
 # remotedir="$localdir"  # for use on my own computer
 # SBATCH --cpus-per-task=7
-# SBATCH --partition=cook
+# SBATCH --partition=compute
 # SBATCH --mem=30G
 # For actual use on Kamiak...
 # SBATCH --cpus-per-task=3
-# SBATCH --partition=cook,cahnrs_gpu,free_gpu,kamiak
+# SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 # SBATCH --mem=20G
 
 # Errors
