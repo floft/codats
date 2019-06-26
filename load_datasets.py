@@ -133,6 +133,9 @@ class Dataset:
             lambda x: tf.data.TFRecordDataset(x, compression_type='GZIP').prefetch(100),
             cycle_length=len(filenames), block_length=1)
 
+        # TODO maybe use .cache() or .cache(filename)
+        # See: https://www.tensorflow.org/beta/tutorials/load_data/images
+
         # If desired, take the first max_examples examples
         if evaluation and self.eval_max_examples != 0:
             dataset = dataset.take(self.eval_max_examples)
