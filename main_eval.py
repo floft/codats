@@ -188,7 +188,7 @@ def print_results(results):
 
         print()
         print()
-        print("Averages over", len(source_train), "runs (each home is 3-fold CV)")
+        print("Averages over", len(source_train), "runs")
         # Task classifier
         print("Train A \t Avg:", source_train.mean(), "\t Std:", source_train.std())
         print("Test A  \t Avg:", source_test.mean(), "\t Std:", source_test.std())
@@ -259,6 +259,18 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
     model = DomainAdaptationModel(num_classes, model_name,
         global_step, num_steps)
 
+    if method_name in ["cyclegan", "cycada"]:
+        # For the GAN, we need to know the source and target sizes
+        # Note: first dimension is batch size, so drop that
+        source_first_x, _ = next(iter(source_dataset.train))
+        source_x_shape = source_first_x.shape[1:]
+        target_first_x, _ = next(iter(target_dataset.train))
+        target_x_shape = target_first_x.shape[1:]
+
+        mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
+    else:
+        mapping_model = None
+
     # Does this method use a target classifier?
     has_target_classifier = method_name in ["pseudo", "instance"] \
         and FLAGS.target_classifier
@@ -300,8 +312,8 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
             enable_compile=False)
 
     # Evaluate on both datasets
-    metrics.train(model, source_dataset_train, target_dataset_train, evaluation=True)
-    metrics.test(model, source_dataset_test, target_dataset_test, evaluation=True)
+    metrics.train(model, mapping_model, source_dataset_train, target_dataset_train, evaluation=True)
+    metrics.test(model, mapping_model, source_dataset_test, target_dataset_test, evaluation=True)
 
     # Get results
     results = metrics.results()

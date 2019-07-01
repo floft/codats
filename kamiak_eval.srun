@@ -43,12 +43,14 @@ trap 'handle_terminate' SIGTERM SIGINT
 
 # Suffix
 suffix="$1"
-if [[ -z $suffix ]]; then
-    echo "Usage: sbatch kamiak_eval.srun suffix <other arguments>"
+outputname="$2"
+if [[ -z $suffix || -z $outputname ]]; then
+    echo "Usage: sbatch kamiak_eval.srun suffix outputname <other arguments>"
     exit 1
 else
     echo "Args: $@"
 fi
+shift
 shift
 
 # Depends
@@ -60,7 +62,7 @@ pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pan
 from="kamiak"
 models="$remotedir/$from-models-$suffix"
 logs="$remotedir/$from-logs-$suffix"
-out="$remotedir/results_$suffix.txt"
+out="$remotedir/results_${suffix}_${outputname}.txt"
 
 echo "Args: $@" > "$out"
 cd "$remotedir"
