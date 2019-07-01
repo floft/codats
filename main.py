@@ -24,7 +24,7 @@ flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, ["none", "cyclegan", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
-flags.DEFINE_enum("cyclegan_loss", "lsgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
+flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
 flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
@@ -355,6 +355,9 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
             + tf.reduce_mean(tf.abs(x_b - gen_BtoAtoB))
 
         g_loss = cyc_loss*10
+
+        # TODO ForecastGAN pass gen_AtoB (fake domain B) through target forecast
+        # model and use reduce_mean(abs(x_b[forecasted amount] - forecast))
 
         # For generator step, we want the discriminator to output a 1, i.e.
         # incorrect label
