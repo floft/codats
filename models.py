@@ -125,6 +125,53 @@ class ResnetBlock(tf.keras.layers.Layer):
         return self.add([shortcut, net], **kwargs)
 
 
+class WangResnetBlock(tf.keras.layers.Layer):
+    """
+    ResNet block for the "ResNet" model by Wang et al. (2017)
+    See make_resnet_model()
+    """
+    def __init__(self, n_feature_maps, shortcut_resize=True, **kwargs):
+        super().__init__(**kwargs)
+        self.blocks = [
+            tf.keras.Sequential([
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=8, padding="same"),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Activation("relu"),
+            ]),
+            tf.keras.Sequential([
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=5, padding="same"),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Activation("relu"),
+            ]),
+            tf.keras.Sequential([
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=3, padding="same"),
+                tf.keras.layers.BatchNormalization(),
+            ]),
+        ]
+        if shortcut_resize:
+            self.shortcut = tf.keras.Sequential([
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=1, padding="same"),
+                tf.keras.layers.BatchNormalization(),
+            ])
+        else:
+            self.shortcut = tf.keras.Sequential([
+                tf.keras.layers.BatchNormalization(),
+            ])
+        self.add = tf.keras.layers.Add()
+        self.act = tf.keras.layers.Activation("relu")
+
+    def call(self, inputs, **kwargs):
+        net = inputs
+
+        for block in self.blocks:
+            net = block(net, **kwargs)
+
+        shortcut = self.shortcut(inputs, **kwargs)
+        add = self.add([net, shortcut], **kwargs)
+
+        return self.act(add, **kwargs)
+
+
 def make_vrada_model(num_classes, global_step, grl_schedule):
     """
     Create model inspired by the VRADA paper model for time-series data
@@ -167,6 +214,157 @@ def make_vrada_model(num_classes, global_step, grl_schedule):
     domain_classifier = tf.keras.Sequential([
         FlipGradient(global_step, grl_schedule),
         make_binary_classifier(domain_layers),
+    ])
+    return feature_extractor, task_classifier, domain_classifier
+
+
+def make_timenet_model(num_classes, global_step, grl_schedule):
+    """
+    TimeNet https://arxiv.org/pdf/1706.08838.pdf
+    So, basically 3-layer GRU with 60 units followed by the rest in my "flat"
+    model above in make_vrada_model(). TimeNet doesn't seem to use dropout,
+    though HealthNet in https://arxiv.org/pdf/1904.00655.pdf does.
+    """
+    fe_layers = 5
+    task_layers = 1
+    domain_layers = 2
+    resnet_layers = 2
+    units = 50
+    dropout = FLAGS.dropout
+
+    # General classifier used in both the task/domain classifiers
+    def make_classifier(layers, num_outputs):
+        layers = [make_dense_bn_dropout(units, dropout) for _ in range(layers-1)]
+        last = [
+            tf.keras.layers.Dense(num_outputs),
+            tf.keras.layers.Activation("softmax"),
+        ]
+        return tf.keras.Sequential(layers + last)
+
+    def make_binary_classifier(layers):
+        layers = [make_dense_bn_dropout(units, dropout) for _ in range(layers-1)]
+        last = [tf.keras.layers.Dense(1)]
+        return tf.keras.Sequential(layers + last)
+
+    feature_extractor = tf.keras.Sequential([
+        # Normalize along features, shape is (batch_size, time_steps, features)
+        # since for GRU the data probably needs to be normalized
+        tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
+        tf.keras.layers.GRU(60, return_sequences=True),
+        tf.keras.layers.GRU(60, return_sequences=True),
+        tf.keras.layers.GRU(60),
+        tf.keras.layers.Flatten(),
+    ] + [  # First can't be residual since x isn't of size units
+        make_dense_bn_dropout(units, dropout) for _ in range(resnet_layers)
+    ] + [
+        ResnetBlock(units, dropout, resnet_layers) for _ in range(fe_layers-1)
+    ])
+    task_classifier = tf.keras.Sequential([
+        make_classifier(task_layers, num_classes),
+    ])
+    domain_classifier = tf.keras.Sequential([
+        FlipGradient(global_step, grl_schedule),
+        make_binary_classifier(domain_layers),
+    ])
+    return feature_extractor, task_classifier, domain_classifier
+
+
+def make_mlp_model(num_classes, global_step, grl_schedule):
+    """
+    MLP -- but split task/domain classifier at last dense layer
+
+    From: https://arxiv.org/pdf/1611.06455.pdf
+    Tested in: https://arxiv.org/pdf/1809.04356.pdf
+    Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/mlp.py
+    """
+    feature_extractor = tf.keras.Sequential([
+        # Normalize along features, shape is (batch_size, time_steps, features)
+        tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dropout(0.1),
+        tf.keras.layers.Dense(500, activation="relu"),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(500, activation="relu"),
+        tf.keras.layers.Dropout(0.2),
+    ])
+    task_classifier = tf.keras.Sequential([
+        tf.keras.layers.Dense(500, activation="relu"),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(num_classes, activation="softmax"),
+    ])
+    domain_classifier = tf.keras.Sequential([
+        FlipGradient(global_step, grl_schedule),
+        tf.keras.layers.Dense(500, activation="relu"),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(1),
+    ])
+    return feature_extractor, task_classifier, domain_classifier
+
+
+def make_fcn_model(num_classes, global_step, grl_schedule):
+    """
+    FCN (fully CNN) -- but domain classifier has additional dense layer
+
+    From: https://arxiv.org/pdf/1611.06455.pdf
+    Tested in: https://arxiv.org/pdf/1809.04356.pdf
+    Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/fcn.py
+    """
+    feature_extractor = tf.keras.Sequential([
+        # Normalize along features, shape is (batch_size, time_steps, features)
+        tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
+
+        tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same"),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+
+        tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same"),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+
+        tf.keras.layers.Conv1D(128, kernel_size=3, padding="same"),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+
+        tf.keras.layers.GlobalAveragePooling1D(),
+    ])
+    task_classifier = tf.keras.Sequential([
+        tf.keras.layers.Dense(num_classes, activation="softmax"),
+    ])
+    domain_classifier = tf.keras.Sequential([
+        # Note: alternative is Dense(128, activation="tanh") like used by
+        # https://arxiv.org/pdf/1902.09820.pdf
+        FlipGradient(global_step, grl_schedule),
+        tf.keras.layers.Dense(500, activation="relu"),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(1),
+    ])
+    return feature_extractor, task_classifier, domain_classifier
+
+
+def make_resnet_model(num_classes, global_step, grl_schedule):
+    """
+    ResNet -- but domain classifier has additional dense layer
+
+    From: https://arxiv.org/pdf/1611.06455.pdf
+    Tested in: https://arxiv.org/pdf/1809.04356.pdf
+    Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/resnet.py
+    """
+    feature_extractor = tf.keras.Sequential([
+        # Normalize along features, shape is (batch_size, time_steps, features)
+        tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
+        WangResnetBlock(64),
+        WangResnetBlock(128),
+        WangResnetBlock(128, shortcut_resize=False),
+        tf.keras.layers.GlobalAveragePooling1D(),
+    ])
+    task_classifier = tf.keras.Sequential([
+        tf.keras.layers.Dense(num_classes, activation="softmax"),
+    ])
+    domain_classifier = tf.keras.Sequential([
+        FlipGradient(global_step, grl_schedule),
+        tf.keras.layers.Dense(500, activation="relu"),
+        tf.keras.layers.Dropout(0.3),
+        tf.keras.layers.Dense(1),
     ])
     return feature_extractor, task_classifier, domain_classifier
 
@@ -370,6 +568,14 @@ class DomainAdaptationModel(tf.keras.Model):
 
         if model_name == "flat":
             fe, task, domain = make_vrada_model(*args)
+        elif model_name == "timenet":
+            fe, task, domain = make_timenet_model(*args)
+        elif model_name == "mlp":
+            fe, task, domain = make_mlp_model(*args)
+        elif model_name == "fcn":
+            fe, task, domain = make_fcn_model(*args)
+        elif model_name == "resnet":
+            fe, task, domain = make_resnet_model(*args)
         elif model_name == "dann_mnist":
             fe, task, domain = make_dann_mnist_model(*args)
         elif model_name == "dann_svhn":
@@ -481,7 +687,9 @@ class CycleGAN(tf.keras.Model):
         # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
             #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
-            #TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
+            TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
+            #TemporalConvNet([16]*5, 3, self.dropout, return_sequences=False),
+            #TemporalConvNet([8, 16, 32, 64, 64], 3, self.dropout, return_sequences=False),
             tf.keras.layers.Flatten(),
         ] + [  # First can't be residual since x isn't of size units
             make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
@@ -693,6 +901,10 @@ def compute_accuracy(y_true, y_pred):
 # List of names
 models = [
     "flat",
+    "timenet",
+    "mlp",
+    "fcn",
+    "resnet",
     "dann_mnist",
     "dann_svhn",
     "dann_gtsrb",
