@@ -134,23 +134,27 @@ class WangResnetBlock(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.blocks = [
             tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=8, padding="same"),
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=8,
+                    padding="same", use_bias=False),
                 tf.keras.layers.BatchNormalization(),
                 tf.keras.layers.Activation("relu"),
             ]),
             tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=5, padding="same"),
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=5,
+                    padding="same", use_bias=False),
                 tf.keras.layers.BatchNormalization(),
                 tf.keras.layers.Activation("relu"),
             ]),
             tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=3, padding="same"),
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=3,
+                    padding="same", use_bias=False),
                 tf.keras.layers.BatchNormalization(),
             ]),
         ]
         if shortcut_resize:
             self.shortcut = tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=1, padding="same"),
+                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=1,
+                    padding="same", use_bias=False),
                 tf.keras.layers.BatchNormalization(),
             ])
         else:
@@ -170,6 +174,28 @@ class WangResnetBlock(tf.keras.layers.Layer):
         add = self.add([net, shortcut], **kwargs)
 
         return self.act(add, **kwargs)
+
+
+class Conv1DTranspose(tf.keras.layers.Layer):
+    """
+    Conv2DTranspose modified for 1D tensors, for use with time series data
+    See: https://stackoverflow.com/a/45788699
+
+    Note: Conv2DTranspose requires 4D tensor (batch_size, x, y, channels), so
+    we expand our data to (batch_size, time_steps, 1, num_features).
+    """
+    def __init__(self, filters, kernel_size, padding="same", strides=1,
+            use_bias=True, **kwargs):
+        super().__init__(**kwargs)
+        self.conv2d = tf.keras.layers.Conv2DTranspose(filters=filters,
+            kernel_size=(kernel_size, 1), padding=padding, strides=(strides, 1),
+            use_bias=use_bias)
+
+    def call(self, inputs, **kwargs):
+        net = tf.expand_dims(inputs, 2)
+        net = self.conv2d(net, **kwargs)
+        net = tf.squeeze(net, axis=2)
+        return net
 
 
 def make_vrada_model(num_classes, global_step, grl_schedule):
@@ -271,7 +297,8 @@ def make_timenet_model(num_classes, global_step, grl_schedule):
 
 def make_mlp_model(num_classes, global_step, grl_schedule):
     """
-    MLP -- but split task/domain classifier at last dense layer
+    MLP -- but split task/domain classifier at last dense layer, and additional
+    dense layer for domain classifier
 
     From: https://arxiv.org/pdf/1611.06455.pdf
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
@@ -294,8 +321,17 @@ def make_mlp_model(num_classes, global_step, grl_schedule):
     ])
     domain_classifier = tf.keras.Sequential([
         FlipGradient(global_step, grl_schedule),
-        tf.keras.layers.Dense(500, activation="relu"),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(0.3),
+
         tf.keras.layers.Dense(1),
     ])
     return feature_extractor, task_classifier, domain_classifier
@@ -303,7 +339,7 @@ def make_mlp_model(num_classes, global_step, grl_schedule):
 
 def make_fcn_model(num_classes, global_step, grl_schedule):
     """
-    FCN (fully CNN) -- but domain classifier has additional dense layer
+    FCN (fully CNN) -- but domain classifier has additional dense layers
 
     From: https://arxiv.org/pdf/1611.06455.pdf
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
@@ -313,15 +349,18 @@ def make_fcn_model(num_classes, global_step, grl_schedule):
         # Normalize along features, shape is (batch_size, time_steps, features)
         tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
 
-        tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same"),
+        tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
+            use_bias=False),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
 
-        tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same"),
+        tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
+            use_bias=False),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
 
-        tf.keras.layers.Conv1D(128, kernel_size=3, padding="same"),
+        tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
+            use_bias=False),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
 
@@ -332,10 +371,20 @@ def make_fcn_model(num_classes, global_step, grl_schedule):
     ])
     domain_classifier = tf.keras.Sequential([
         # Note: alternative is Dense(128, activation="tanh") like used by
-        # https://arxiv.org/pdf/1902.09820.pdf
+        # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
+        # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
         FlipGradient(global_step, grl_schedule),
-        tf.keras.layers.Dense(500, activation="relu"),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(0.3),
+
         tf.keras.layers.Dense(1),
     ])
     return feature_extractor, task_classifier, domain_classifier
@@ -343,7 +392,7 @@ def make_fcn_model(num_classes, global_step, grl_schedule):
 
 def make_resnet_model(num_classes, global_step, grl_schedule):
     """
-    ResNet -- but domain classifier has additional dense layer
+    ResNet -- but domain classifier has additional dense layers
 
     From: https://arxiv.org/pdf/1611.06455.pdf
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
@@ -362,8 +411,17 @@ def make_resnet_model(num_classes, global_step, grl_schedule):
     ])
     domain_classifier = tf.keras.Sequential([
         FlipGradient(global_step, grl_schedule),
-        tf.keras.layers.Dense(500, activation="relu"),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(0.3),
+
         tf.keras.layers.Dense(1),
     ])
     return feature_extractor, task_classifier, domain_classifier
@@ -644,7 +702,6 @@ class CycleGAN(tf.keras.Model):
         self.units = 50
         self.dropout = FLAGS.dropout
 
-        # TODO try convolutional model along time dimension
         # TODO maybe try random crop for discriminator
         assert target_x_shape == source_x_shape, \
             "Right now only support homogenous adaptation"
@@ -655,15 +712,16 @@ class CycleGAN(tf.keras.Model):
         self.target_discriminator = self.make_discriminator()
 
         # Pass source/target data through these layers first, but only set
-        # training=True when feeding through real data
+        # training=True when feeding through real data. Note: axis=2 to be the
+        # feature axis. Defaults to 1 I think, which would be the time axis.
         #
         # source_pre -- run on source-like data, before source_to_target model
         self.source_pre = tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
         ])
         # target_pre -- run on target-like data, before target_to_source model
         self.target_pre = tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
         ])
 
     def make_generator(self, output_dims, layers=4, resnet_layers=2):
@@ -685,37 +743,128 @@ class CycleGAN(tf.keras.Model):
 
         # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
         # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
+        # return tf.keras.Sequential([
+        #     #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
+        #     TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
+        #     #TemporalConvNet([16]*5, 3, self.dropout, return_sequences=False),
+        #     #TemporalConvNet([8, 16, 32, 64, 64], 3, self.dropout, return_sequences=False),
+        #     tf.keras.layers.Flatten(),
+        # ] + [  # First can't be residual since x isn't of size units
+        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
+        # ] + [  # Residual blocks
+        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
+        # ] + [
+        #     tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
+        #     tf.keras.layers.Reshape(output_dims),
+        # ])
+
+        assert len(output_dims) == 2, \
+            "output_dims should be length 2, (time_steps, num_features)"
+        num_features = output_dims[1]
+
         return tf.keras.Sequential([
-            #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
-            TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
-            #TemporalConvNet([16]*5, 3, self.dropout, return_sequences=False),
-            #TemporalConvNet([8, 16, 32, 64, 64], 3, self.dropout, return_sequences=False),
+            tf.keras.layers.Conv1D(filters=8, kernel_size=8, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.Conv1D(filters=16, kernel_size=5, padding="same",
+                strides=2, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.Conv1D(filters=32, kernel_size=3, padding="same",
+                strides=2, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            WangResnetBlock(32, shortcut_resize=False),
+            WangResnetBlock(32, shortcut_resize=False),
+
+            Conv1DTranspose(filters=16, kernel_size=3, padding="same",
+                strides=2, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            Conv1DTranspose(filters=8, kernel_size=5, padding="same",
+                strides=2, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.Conv1D(filters=num_features, kernel_size=8,
+                padding="same", use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            # For bias mainly, so output can have any range of values
             tf.keras.layers.Flatten(),
-        ] + [  # First can't be residual since x isn't of size units
-            make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
-        ] + [  # Residual blocks
-            ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        ] + [
             tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
             tf.keras.layers.Reshape(output_dims),
         ])
 
     def make_discriminator(self, layers=4, resnet_layers=2):
-        if FLAGS.cyclegan_loss == "wgan-gp":
-            layer_func = make_dense_ln_dropout
-            layer_norm = True
-        else:
-            layer_func = make_dense_bn_dropout
-            layer_norm = False
+        # if FLAGS.cyclegan_loss == "wgan-gp":
+        #     layer_func = make_dense_ln_dropout
+        #     layer_norm = True
+        # else:
+        #     layer_func = make_dense_bn_dropout
+        #     layer_norm = False
 
+        # return tf.keras.Sequential([
+        #     tf.keras.layers.Flatten(),
+        # ] + [  # First can't be residual since x isn't of size units
+        #     layer_func(self.units, self.dropout) for _ in range(resnet_layers)
+        # ] + [  # Residual blocks
+        #     ResnetBlock(self.units, self.dropout, resnet_layers, layer_norm=layer_norm) for _ in range(layers-1)
+        # ] + [
+        #     tf.keras.layers.Dense(1)
+        # ])
+
+        # Same as for MLP, FCN, and ResNet
+        # return tf.keras.Sequential([
+        #     tf.keras.layers.Flatten(),
+
+        #     tf.keras.layers.Dense(500, use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+        #     tf.keras.layers.Dropout(0.3),
+
+        #     tf.keras.layers.Dense(500, use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+        #     tf.keras.layers.Dropout(0.3),
+
+        #     tf.keras.layers.Dense(1),
+        # ])
+
+        # Based on ResNet classifier
+        # return tf.keras.Sequential([
+        #     WangResnetBlock(32),
+        #     WangResnetBlock(64),
+        #     WangResnetBlock(64, shortcut_resize=False),
+        #     tf.keras.layers.GlobalAveragePooling1D(),
+        #     tf.keras.layers.Dense(1),
+        # ])
+
+        # FCN classifier
         return tf.keras.Sequential([
-            tf.keras.layers.Flatten(),
-        ] + [  # First can't be residual since x isn't of size units
-            layer_func(self.units, self.dropout) for _ in range(resnet_layers)
-        ] + [  # Residual blocks
-            ResnetBlock(self.units, self.dropout, resnet_layers, layer_norm=layer_norm) for _ in range(layers-1)
-        ] + [
-            tf.keras.layers.Dense(1)
+            tf.keras.layers.Conv1D(filters=64, kernel_size=8, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.Conv1D(filters=128, kernel_size=5, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.Conv1D(filters=64, kernel_size=3, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.GlobalAveragePooling1D(),
+            tf.keras.layers.Dense(1),
         ])
 
         # return tf.keras.Sequential([
