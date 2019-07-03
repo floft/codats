@@ -699,10 +699,6 @@ class CycleGAN(tf.keras.Model):
     instead of image data, also partially based on VRADA model """
     def __init__(self, source_x_shape, target_x_shape, **kwargs):
         super().__init__(**kwargs)
-        self.units = 50
-        self.dropout = FLAGS.dropout
-
-        # TODO maybe try random crop for discriminator
         assert target_x_shape == source_x_shape, \
             "Right now only support homogenous adaptation"
 
@@ -724,40 +720,7 @@ class CycleGAN(tf.keras.Model):
             tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
         ])
 
-    def make_generator(self, output_dims, layers=4, resnet_layers=2):
-        # return tf.keras.Sequential([
-        #     # TODO try tf.keras.layers.GRU too
-        #     # TODO try tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64))
-        #     #tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64, unroll=True)),
-        #     #tf.keras.layers.LSTM(64, unroll=True),
-        #     tf.keras.layers.LSTM(512, unroll=True),
-        #     #tf.keras.layers.LSTM(64,
-        #     #    #return_sequences=True,
-        #     #    return_sequences=False,  # This just does last state?
-        #     #    recurrent_initializer='glorot_uniform'),
-        #     # TODO maybe some more dense layers
-        #     tf.keras.layers.Flatten(),
-        #     tf.keras.layers.Dense(np.prod(output_dims)),
-        #     tf.keras.layers.Reshape(output_dims),
-        # ])
-
-        # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 250
-        # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
-        # return tf.keras.Sequential([
-        #     #TemporalConvNet([8, 16, 32, 64, 128, 256], 3, self.dropout, return_sequences=False),
-        #     TemporalConvNet([8, 16, 32, 64, 128], 3, self.dropout, return_sequences=False),
-        #     #TemporalConvNet([16]*5, 3, self.dropout, return_sequences=False),
-        #     #TemporalConvNet([8, 16, 32, 64, 64], 3, self.dropout, return_sequences=False),
-        #     tf.keras.layers.Flatten(),
-        # ] + [  # First can't be residual since x isn't of size units
-        #     make_dense_bn_dropout(self.units, self.dropout) for _ in range(resnet_layers)
-        # ] + [  # Residual blocks
-        #     ResnetBlock(self.units, self.dropout, resnet_layers) for _ in range(layers-1)
-        # ] + [
-        #     tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
-        #     tf.keras.layers.Reshape(output_dims),
-        # ])
-
+    def make_generator(self, output_dims):
         assert len(output_dims) == 2, \
             "output_dims should be length 2, (time_steps, num_features)"
         num_features = output_dims[1]
@@ -802,51 +765,10 @@ class CycleGAN(tf.keras.Model):
             tf.keras.layers.Reshape(output_dims),
         ])
 
-    def make_discriminator(self, layers=4, resnet_layers=2):
-        # if FLAGS.cyclegan_loss == "wgan-gp":
-        #     layer_func = make_dense_ln_dropout
-        #     layer_norm = True
-        # else:
-        #     layer_func = make_dense_bn_dropout
-        #     layer_norm = False
-
-        # return tf.keras.Sequential([
-        #     tf.keras.layers.Flatten(),
-        # ] + [  # First can't be residual since x isn't of size units
-        #     layer_func(self.units, self.dropout) for _ in range(resnet_layers)
-        # ] + [  # Residual blocks
-        #     ResnetBlock(self.units, self.dropout, resnet_layers, layer_norm=layer_norm) for _ in range(layers-1)
-        # ] + [
-        #     tf.keras.layers.Dense(1)
-        # ])
-
-        # Same as for MLP, FCN, and ResNet
-        # return tf.keras.Sequential([
-        #     tf.keras.layers.Flatten(),
-
-        #     tf.keras.layers.Dense(500, use_bias=False),
-        #     tf.keras.layers.BatchNormalization(),
-        #     tf.keras.layers.Activation("relu"),
-        #     tf.keras.layers.Dropout(0.3),
-
-        #     tf.keras.layers.Dense(500, use_bias=False),
-        #     tf.keras.layers.BatchNormalization(),
-        #     tf.keras.layers.Activation("relu"),
-        #     tf.keras.layers.Dropout(0.3),
-
-        #     tf.keras.layers.Dense(1),
-        # ])
-
-        # Based on ResNet classifier
-        # return tf.keras.Sequential([
-        #     WangResnetBlock(32),
-        #     WangResnetBlock(64),
-        #     WangResnetBlock(64, shortcut_resize=False),
-        #     tf.keras.layers.GlobalAveragePooling1D(),
-        #     tf.keras.layers.Dense(1),
-        # ])
-
-        # FCN classifier
+    def make_discriminator(self):
+        # FCN classifier, but slightly smaller
+        # TODO use layernorm not batchnorm when FLAGS.cyclegan_loss == "wgan-gp"
+        # TODO maybe try random crop for discriminator
         return tf.keras.Sequential([
             tf.keras.layers.Conv1D(filters=64, kernel_size=8, padding="same",
                 use_bias=False),
@@ -866,11 +788,6 @@ class CycleGAN(tf.keras.Model):
             tf.keras.layers.GlobalAveragePooling1D(),
             tf.keras.layers.Dense(1),
         ])
-
-        # return tf.keras.Sequential([
-        #     TemporalConvNet([8, 16], 3, self.dropout, return_sequences=False),
-        #     tf.keras.layers.Dense(1),
-        # ])
 
     @property
     def trainable_variables_generators(self):
