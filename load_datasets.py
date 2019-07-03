@@ -144,8 +144,8 @@ class Dataset:
             pass
         elif evaluation:  # don't repeat since we want to evaluate entire set
             dataset = dataset.shuffle(self.shuffle_buffer, seed=self.eval_shuffle_seed)
-        else:  # repeat, shuffle, and batch
-            dataset = dataset.apply(tf.data.experimental.shuffle_and_repeat(self.shuffle_buffer))
+        else:  # repeat and shuffle
+            dataset = dataset.shuffle(self.shuffle_buffer).repeat()
 
         # Whether to do autotuning of prefetch or num_parallel_calls
         prefetch_buffer = self.prefetch_buffer
@@ -155,10 +155,9 @@ class Dataset:
         if self.prefetch_buffer == 0:
             prefetch_buffer = tf.data.experimental.AUTOTUNE
 
-        dataset = dataset.apply(tf.data.experimental.map_and_batch(
-            _parse_example_function, batch_size,
-            num_parallel_calls=num_parallel_calls))
-
+        dataset = dataset.map(_parse_example_function,
+            num_parallel_calls=num_parallel_calls)
+        dataset = dataset.batch(batch_size)
         dataset = dataset.prefetch(prefetch_buffer)
 
         return dataset
