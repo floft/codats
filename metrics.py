@@ -342,7 +342,8 @@ class Metrics:
     def _run_single_batch_target(self, *args, **kwargs):
         return self._run_single_batch(*args, target=True, **kwargs)
 
-    def train(self, model, mapping_model, data_a, data_b, step=None, train_time=None, evaluation=False):
+    def train(self, model, mapping_model, data_a, data_b, step=None,
+            train_time=None, evaluation=False, already_mapped=False):
         """
         Call this once after evaluating on the training data for domain A and
         domain B
@@ -357,29 +358,44 @@ class Metrics:
         if not self.target_domain:
             data_b = None
 
-        t = time.time()
+        # Mapping evaluation
+        if mapping_model is not None:
+            # TODO calculate correct mapping with actual inverse function
+            # TODO plot normalized root mean squared error (averaged over batch)
+            pass
 
-        # evaluation=True is a tf.data.Dataset, otherwise a single batch
-        if evaluation:
-            self._run_partial(model, mapping_model, data_a, data_b, dataset, False)
+        # Task-based evaluation
+        if model is not None:
+            # When training, normally we already have mapped it to the target data
+            # since this is computed when training the mapping. Thus, to save time,
+            # we pass that already-mapped data through rather than mapping it again.
+            if already_mapped:
+                mapping_model = None
 
-            if self.has_target_classifier:
-                self._run_partial(model, mapping_model, data_a, data_b, dataset, True)
-        else:
-            self._run_batch(model, mapping_model, data_a, data_b, dataset, False)
+            t = time.time()
 
-            if self.has_target_classifier:
-                self._run_batch(model, mapping_model, data_a, data_b, dataset, True)
+            # evaluation=True is a tf.data.Dataset, otherwise a single batch
+            if evaluation:
+                self._run_partial(model, mapping_model, data_a, data_b, dataset, False)
 
-        t = time.time() - t
+                if self.has_target_classifier:
+                    self._run_partial(model, mapping_model, data_a, data_b, dataset, True)
+            else:
+                self._run_batch(model, mapping_model, data_a, data_b, dataset, False)
 
-        if not evaluation:
-            assert step is not None and train_time is not None, \
-                "Must pass step and train_time to train() if evaluation=False"
-            step = int(step)
-            self._write_data(step, dataset, t, train_time)
+                if self.has_target_classifier:
+                    self._run_batch(model, mapping_model, data_a, data_b, dataset, True)
 
-    def test(self, model, mapping_model, eval_data_a, eval_data_b, step=None, evaluation=False):
+            t = time.time() - t
+
+            if not evaluation:
+                assert step is not None and train_time is not None, \
+                    "Must pass step and train_time to train() if evaluation=False"
+                step = int(step)
+                self._write_data(step, dataset, t, train_time)
+
+    def test(self, model, mapping_model, eval_data_a, eval_data_b, step=None,
+            evaluation=False):
         """
         Evaluate the model on domain A/B but batched to make sure we don't run
         out of memory
@@ -394,43 +410,53 @@ class Metrics:
         if not self.target_domain:
             eval_data_b = None
 
-        t = time.time()
-        self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
+        # Mapping evaluation
+        if mapping_model is not None:
+            # TODO calculate correct mapping with actual inverse function
+            # TODO plot normalized root mean squared error (averaged over batch)
+            pass
 
-        if self.has_target_classifier:
-            self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
-        t = time.time() - t
-
-        # We use the validation accuracy to save the best model
-        #
-        # If best_source then use source validation accuracy (so we never look)
-        # at labeled target data. However, as is commonly done, another approach
-        # is tuning based on 1000 random labeled target samples.
-        if FLAGS.best_source:
-            acc = self.batch_metrics["validation"]["accuracy_task/source/validation"]
+        # Task-based evaluation
+        if model is not None:
+            t = time.time()
+            self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
 
             if self.has_target_classifier:
-                target_acc = self.batch_metrics["validation"]["accuracy_target/source/validation"]
-        else:
-            acc = self.batch_metrics["validation"]["accuracy_task/target/validation"]
+                self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
+            t = time.time() - t
+
+            # We use the validation accuracy to save the best model
+            #
+            # If best_source then use source validation accuracy (so we never look)
+            # at labeled target data. However, as is commonly done, another approach
+            # is tuning based on 1000 random labeled target samples.
+            if FLAGS.best_source:
+                acc = self.batch_metrics["validation"]["accuracy_task/source/validation"]
+
+                if self.has_target_classifier:
+                    target_acc = self.batch_metrics["validation"]["accuracy_target/source/validation"]
+            else:
+                acc = self.batch_metrics["validation"]["accuracy_task/target/validation"]
+
+                if self.has_target_classifier:
+                    target_acc = self.batch_metrics["validation"]["accuracy_target/target/validation"]
+
+            validation_accuracy = float(acc.result())
 
             if self.has_target_classifier:
-                target_acc = self.batch_metrics["validation"]["accuracy_target/target/validation"]
+                target_validation_accuracy = float(target_acc.result())
 
-        validation_accuracy = float(acc.result())
+            if not evaluation:
+                assert step is not None, "Must pass step to test() if evaluation=False"
+                step = int(step)
+                self._write_data(step, dataset, t)
 
-        if self.has_target_classifier:
-            target_validation_accuracy = float(target_acc.result())
-
-        if not evaluation:
-            assert step is not None, "Must pass step to test() if evaluation=False"
-            step = int(step)
-            self._write_data(step, dataset, t)
-
-        if self.has_target_classifier:
-            return validation_accuracy, target_validation_accuracy
+            if self.has_target_classifier:
+                return validation_accuracy, target_validation_accuracy
+            else:
+                return validation_accuracy, 0
         else:
-            return validation_accuracy, 0
+            return None, None
 
     def plots(self, model, mapping_model, eval_data_a, eval_data_b, adapt,
             global_step):

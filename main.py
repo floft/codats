@@ -24,6 +24,7 @@ flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, ["none", "cyclegan", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
@@ -426,6 +427,9 @@ def main(argv):
     # We adapt for any method other than "none" or "cyclegan"
     adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance"]
 
+    assert not (adapt and not FLAGS.task), \
+        "If adapting (e.g. method=dann), must not pass --notask"
+
     # For adaptation, we'll be concatenating together half source and half target
     # data, so to keep the batch_size about the same, we'll cut it in half
     train_batch = FLAGS.train_batch
@@ -471,9 +475,12 @@ def main(argv):
     # We need to know where we are in training for the GRL lambda schedule
     global_step = tf.Variable(0, name="global_step", trainable=False)
 
-    # Build our model
-    model = models.DomainAdaptationModel(num_classes, FLAGS.model,
-        global_step, FLAGS.steps, use_grl=FLAGS.use_grl)
+    # Build the (mapping and/or task) models
+    if FLAGS.task:
+        model = models.DomainAdaptationModel(num_classes, FLAGS.model,
+            global_step, FLAGS.steps, use_grl=FLAGS.use_grl)
+    else:
+        model = None
 
     if FLAGS.method in ["cyclegan", "cycada"]:
         # For the GAN, we need to know the source and target sizes
@@ -504,15 +511,21 @@ def main(argv):
     has_target_classifier = FLAGS.method in ["pseudo", "instance"]
     t_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_target_mult)
 
-    # Checkpoints -- can't handle None in checkpoint
-    if mapping_model is None:
-        checkpoint = tf.train.Checkpoint(
-            global_step=global_step, opt=opt, d_opt=d_opt, t_opt=t_opt,
-            mapping_opt=mapping_opt, model=model)
-    else:
-        checkpoint = tf.train.Checkpoint(
-            global_step=global_step, opt=opt, d_opt=d_opt, t_opt=t_opt,
-            mapping_opt=mapping_opt, model=model, mapping_model=mapping_model)
+    # Checkpoints -- but can't handle None in checkpoint
+    checkpoint = {
+        "global_step": global_step,
+        "opt": opt,
+        "d_opt": d_opt,
+        "t_opt": t_opt,
+        "mapping_opt": mapping_opt,
+    }
+
+    if model is not None:
+        checkpoint["model"] = model
+    if mapping_model is not None:
+        checkpoint["mapping_model"] = mapping_model
+
+    checkpoint = tf.train.Checkpoint(**checkpoint)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir,
         target=has_target_classifier)
     checkpoint_manager.restore_latest()
@@ -542,38 +555,40 @@ def main(argv):
             data_a = train_step_cyclegan(data_a, data_b,
                 mapping_model, mapping_opt, mapping_loss)
 
-        # The feature extractor, classifiers, etc.
-        step_args = (data_a, data_b, model, opt, d_opt, task_loss, domain_loss)
+        # Train the task model (possibly with adaptation)
+        if model is not None:
+            # The feature extractor, classifiers, etc.
+            step_args = (data_a, data_b, model, opt, d_opt, task_loss, domain_loss)
 
-        if adapt and FLAGS.use_grl:
-            train_step_grl(*step_args)
-        elif adapt:
-            instance_weights = train_step_gan(*step_args, grl_schedule, global_step)
-        else:
-            train_step_none(*step_args)
-
-        if FLAGS.method == "pseudo":
-            # We'll ignore the real labels, so just get the data
-            x, _ = data_b
-
-            # Pseudo-label target data
-            if FLAGS.use_domain_confidence:
-                task_y_pred, weights = pseudo_label_domain(x, model)
+            if adapt and FLAGS.use_grl:
+                train_step_grl(*step_args)
+            elif adapt:
+                instance_weights = train_step_gan(*step_args, grl_schedule, global_step)
             else:
-                task_y_pred, weights = pseudo_label_task(x, model)
+                train_step_none(*step_args)
 
-            # Create new data with same input by pseudo-labels not true labels
-            data_b_pseudo = (x, task_y_pred)
+            if FLAGS.method == "pseudo":
+                # We'll ignore the real labels, so just get the data
+                x, _ = data_b
 
-            # Train target classifier on pseudo-labeled data, weighted
-            # by probability that it's source data (i.e. higher confidence)
-            train_step_target(data_b_pseudo, weights, model,
-                t_opt, weighted_task_loss)
-        elif FLAGS.method == "instance":
-            # Train target classifier on source data, but weighted
-            # by probability that it's target data
-            train_step_target(data_a, instance_weights, model,
-                t_opt, weighted_task_loss)
+                # Pseudo-label target data
+                if FLAGS.use_domain_confidence:
+                    task_y_pred, weights = pseudo_label_domain(x, model)
+                else:
+                    task_y_pred, weights = pseudo_label_task(x, model)
+
+                # Create new data with same input by pseudo-labels not true labels
+                data_b_pseudo = (x, task_y_pred)
+
+                # Train target classifier on pseudo-labeled data, weighted
+                # by probability that it's source data (i.e. higher confidence)
+                train_step_target(data_b_pseudo, weights, model,
+                    t_opt, weighted_task_loss)
+            elif FLAGS.method == "instance":
+                # Train target classifier on source data, but weighted
+                # by probability that it's target data
+                train_step_target(data_a, instance_weights, model,
+                    t_opt, weighted_task_loss)
 
         global_step.assign_add(1)
         t = time.time() - t
@@ -583,12 +598,14 @@ def main(argv):
 
         # Metrics on training/validation data
         if i%FLAGS.log_train_steps == 0:
-            # Note: we set mapping_model=None since above we have already mapped
-            # the source data to the target domain. If we set it to the actual
-            # model, then we'd map it twice.
-            metrics.train(model, None, data_a, data_b, global_step, t)
+            # Note: we set already_mapped=True since above we have already mapped
+            # the source data to the target domain. If we didn't, then we'd map
+            # it twice. This only applies if mapping_model != None.
+            metrics.train(model, mapping_model, data_a, data_b,
+                global_step, t, already_mapped=True)
 
         validation_accuracy = None
+        target_validation_accuracy = None
         if i%FLAGS.log_val_steps == 0:
             validation_accuracy, target_validation_accuracy = metrics.test(
                 model, mapping_model, source_dataset_eval, target_dataset_eval,

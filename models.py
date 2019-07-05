@@ -760,6 +760,8 @@ class CycleGAN(tf.keras.Model):
             tf.keras.layers.Activation("relu"),
 
             # For bias mainly, so output can have any range of values
+            # TODO replace Flatten() with a per-feature flattening when dealing
+            # with multivariate data?
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
             tf.keras.layers.Reshape(output_dims),
