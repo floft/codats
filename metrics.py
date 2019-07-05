@@ -218,28 +218,36 @@ class Metrics:
                 name = n%(classifier, class_name, domain, dataset)
                 self.per_class_metrics[dataset][name](acc_y_true, acc_y_pred)
 
-    def _write_data(self, step, dataset, eval_time, train_time=None):
+    def _write_data(self, step, dataset, eval_time, train_time=None,
+            log_mapping=False, log_task=False):
         """ Write either the training or validation data """
         assert dataset in self.datasets, "unknown dataset "+str(dataset)
 
         # Write all the values to the file
         with self.writer.as_default():
-            for key, metric in self.batch_metrics[dataset].items():
-                tf.summary.scalar(key, metric.result(), step=step)
+            # Mapping evaluation
+            if log_mapping:
+                pass
 
-            for key, metric in self.per_class_metrics[dataset].items():
-                tf.summary.scalar(key, metric.result(), step=step)
+            # Task evaluation
+            if log_task:
+                for key, metric in self.batch_metrics[dataset].items():
+                    tf.summary.scalar(key, metric.result(), step=step)
 
+                for key, metric in self.per_class_metrics[dataset].items():
+                    tf.summary.scalar(key, metric.result(), step=step)
+
+                # Only log losses on training data
+                if dataset == "training":
+                    tf.summary.scalar("loss/total", self.loss_total.result(), step=step)
+                    tf.summary.scalar("loss/task", self.loss_task.result(), step=step)
+                    tf.summary.scalar("loss/domain", self.loss_domain.result(), step=step)
+
+            # Regardless of mapping/task, log times
             tf.summary.scalar("step_time/metrics/%s"%(dataset), eval_time, step=step)
 
             if train_time is not None:
                 tf.summary.scalar("step_time/%s"%(dataset), train_time, step=step)
-
-            # Only log losses on training data
-            if dataset == "training":
-                tf.summary.scalar("loss/total", self.loss_total.result(), step=step)
-                tf.summary.scalar("loss/task", self.loss_task.result(), step=step)
-                tf.summary.scalar("loss/domain", self.loss_domain.result(), step=step)
 
         # Make sure we sync to disk
         self.writer.flush()
@@ -354,6 +362,7 @@ class Metrics:
         """
         dataset = "training"
         self._reset_states(dataset)
+        t = time.time()
 
         if not self.target_domain:
             data_b = None
@@ -372,8 +381,6 @@ class Metrics:
             if already_mapped:
                 mapping_model = None
 
-            t = time.time()
-
             # evaluation=True is a tf.data.Dataset, otherwise a single batch
             if evaluation:
                 self._run_partial(model, mapping_model, data_a, data_b, dataset, False)
@@ -386,13 +393,15 @@ class Metrics:
                 if self.has_target_classifier:
                     self._run_batch(model, mapping_model, data_a, data_b, dataset, True)
 
-            t = time.time() - t
+        t = time.time() - t
 
-            if not evaluation:
-                assert step is not None and train_time is not None, \
-                    "Must pass step and train_time to train() if evaluation=False"
-                step = int(step)
-                self._write_data(step, dataset, t, train_time)
+        if not evaluation:
+            assert step is not None and train_time is not None, \
+                "Must pass step and train_time to train() if evaluation=False"
+            step = int(step)
+            self._write_data(step, dataset, t, train_time,
+                log_mapping=mapping_model is not None,
+                log_task=model is not None)
 
     def test(self, model, mapping_model, eval_data_a, eval_data_b, step=None,
             evaluation=False):
@@ -406,6 +415,7 @@ class Metrics:
         """
         dataset = "validation"
         self._reset_states(dataset)
+        t = time.time()
 
         if not self.target_domain:
             eval_data_b = None
@@ -418,12 +428,10 @@ class Metrics:
 
         # Task-based evaluation
         if model is not None:
-            t = time.time()
             self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
 
             if self.has_target_classifier:
                 self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
-            t = time.time() - t
 
             # We use the validation accuracy to save the best model
             #
@@ -446,11 +454,19 @@ class Metrics:
             if self.has_target_classifier:
                 target_validation_accuracy = float(target_acc.result())
 
-            if not evaluation:
-                assert step is not None, "Must pass step to test() if evaluation=False"
-                step = int(step)
-                self._write_data(step, dataset, t)
+        t = time.time() - t
 
+        if not evaluation:
+            assert step is not None, "Must pass step to test() if evaluation=False"
+            step = int(step)
+            self._write_data(step, dataset, t,
+                log_mapping=mapping_model is not None,
+                log_task=model is not None)
+
+        # These validation accuracy values are for the task-based evaluation,
+        # otherwise we don't have a "best" model on the task. TODO maybe we could
+        # save the model with the lowest mapping error?
+        if model is not None:
             if self.has_target_classifier:
                 return validation_accuracy, target_validation_accuracy
             else:
