@@ -91,13 +91,13 @@ class Metrics:
                     n = "accuracy_%s/%s/%s"%(name, domain, dataset)
                     self.batch_metrics[dataset][n] = tf.keras.metrics.CategoricalAccuracy(name=n)
 
-                n = "mapping_rmse/%s/%s"%(domain, dataset)
+                n = "mapping_rmse/to_%s/%s"%(domain, dataset)
                 self.map_batch_metrics[dataset][n] = tf.keras.metrics.RootMeanSquaredError(name=n)
 
-                n = "mapping_mse/%s/%s"%(domain, dataset)
+                n = "mapping_mse/to_%s/%s"%(domain, dataset)
                 self.map_batch_metrics[dataset][n] = tf.keras.metrics.MeanSquaredError(name=n)
 
-                n = "mapping_mae/%s/%s"%(domain, dataset)
+                n = "mapping_mae/to_%s/%s"%(domain, dataset)
                 self.map_batch_metrics[dataset][n] = tf.keras.metrics.MeanAbsoluteError(name=n)
 
         for domain in self.domains:
@@ -194,9 +194,9 @@ class Metrics:
     def _process_map_batch(self, map_true, map_pred, domain, dataset):
         """ Update metrics for mapping error over entire batch for domain-dataset """
         task_names = [
-            "mapping_rmse/%s/%s",
-            "mapping_mse/%s/%s",
-            "mapping_mae/%s/%s",
+            "mapping_rmse/to_%s/%s",
+            "mapping_mse/to_%s/%s",
+            "mapping_mae/to_%s/%s",
         ]
 
         # Reshape from (batch_size, time_steps, features) to (batch_size, values)
@@ -341,7 +341,7 @@ class Metrics:
 
                 if self.invertible:
                     map_true = inversions.map_to_target[self.source_dataset.invert_name](x)
-                    self._process_map_batch(map_true, mapped, domain_name, dataset_name)
+                    self._process_map_batch(map_true, mapped, "target", dataset_name)
 
                 # We'll run the task model on the mapped source to target data
                 x = mapped
@@ -351,7 +351,7 @@ class Metrics:
                 if self.invertible:
                     mapped = mapping_model.map_to_source(x)
                     map_true = inversions.map_to_source[self.source_dataset.invert_name](x)
-                    self._process_map_batch(map_true, mapped, domain_name, dataset_name)
+                    self._process_map_batch(map_true, mapped, "source", dataset_name)
 
         # If performing a task
         if model is not None:
