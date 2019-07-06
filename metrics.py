@@ -208,7 +208,7 @@ class Metrics:
 
         for n in task_names:
             name = n%(domain, dataset)
-            self.batch_metrics[dataset][name](map_true, map_pred)
+            self.map_batch_metrics[dataset][name](map_true, map_pred)
 
     def _process_per_class(self, results, classifier, domain, dataset):
         """ Update metrics for accuracy over per-class portions of batch for domain-dataset """
