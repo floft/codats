@@ -31,6 +31,7 @@ import tensorflow as tf
 from absl import flags
 
 from plots import generate_plots
+from datasets import inversions
 
 FLAGS = flags.FLAGS
 
@@ -66,6 +67,7 @@ class Metrics:
         self.domain_loss = domain_loss if domain_loss is not None else lambda y_true, y_pred: 0
         self.target_domain = target_domain  # whether we have just source or both
         self.has_target_classifier = target_classifier
+        self.invertible = self.source_dataset.invert_name is not None
 
         if not target_domain:
             self.domains = ["source"]
@@ -79,6 +81,7 @@ class Metrics:
 
         # Create all entire-batch metrics
         self.batch_metrics = {dataset: {} for dataset in self.datasets}
+        self.map_batch_metrics = {dataset: {} for dataset in self.datasets}
         for domain in self.domains:
             for dataset in self.datasets:
                 n = "accuracy_domain/%s/%s"%(domain, dataset)
@@ -87,6 +90,15 @@ class Metrics:
                 for name in self.classifiers:
                     n = "accuracy_%s/%s/%s"%(name, domain, dataset)
                     self.batch_metrics[dataset][n] = tf.keras.metrics.CategoricalAccuracy(name=n)
+
+                n = "mapping_rmse/%s/%s"%(domain, dataset)
+                self.map_batch_metrics[dataset][n] = tf.keras.metrics.RootMeanSquaredError(name=n)
+
+                n = "mapping_mse/%s/%s"%(domain, dataset)
+                self.map_batch_metrics[dataset][n] = tf.keras.metrics.MeanSquaredError(name=n)
+
+                n = "mapping_mae/%s/%s"%(domain, dataset)
+                self.map_batch_metrics[dataset][n] = tf.keras.metrics.MeanAbsoluteError(name=n)
 
         for domain in self.domains:
             for dataset in self.datasets:
@@ -179,6 +191,25 @@ class Metrics:
             name = n%(classifier, domain, dataset)
             self.batch_metrics[dataset][name](task_y_true, task_y_pred)
 
+    def _process_map_batch(self, map_true, map_pred, domain, dataset):
+        """ Update metrics for mapping error over entire batch for domain-dataset """
+        task_names = [
+            "mapping_rmse/%s/%s",
+            "mapping_mse/%s/%s",
+            "mapping_mae/%s/%s",
+        ]
+
+        # Reshape from (batch_size, time_steps, features) to (batch_size, values)
+        # since RMSE is for normal single-prediction type of data, like with a
+        # class label predicted but a real value. However, we "predict" something
+        # for each time step.
+        map_true = tf.reshape(map_true, [tf.shape(map_true)[0], -1])
+        map_pred = tf.reshape(map_pred, [tf.shape(map_pred)[0], -1])
+
+        for n in task_names:
+            name = n%(domain, dataset)
+            self.batch_metrics[dataset][name](map_true, map_pred)
+
     def _process_per_class(self, results, classifier, domain, dataset):
         """ Update metrics for accuracy over per-class portions of batch for domain-dataset """
         task_y_true, task_y_pred, _, _, _, _, _ = results
@@ -225,9 +256,11 @@ class Metrics:
 
         # Write all the values to the file
         with self.writer.as_default():
-            # Mapping evaluation
-            if log_mapping:
-                pass
+            # Mapping evaluation -- but only if the mapping was invertible,
+            # otherwise we can't calculate the mapping error.
+            if log_mapping and self.invertible:
+                for key, metric in self.map_batch_metrics[dataset].items():
+                    tf.summary.scalar(key, metric.result(), step=step)
 
             # Task evaluation
             if log_task:
@@ -301,42 +334,60 @@ class Metrics:
         # If performing mapping (i.e. if we don't pass in mapping_model=None)
         # then if this data is source domain data, we first need to map to the
         # target domain since our classifier is for target-like data.
-        if mapping_model is not None and domain_name == "source":
-            x = mapping_model.map_to_target(x)
+        if mapping_model is not None:
+            # Evaluate source -> target mapping
+            if domain_name == "source":
+                mapped = mapping_model.map_to_target(x)
 
-        # Evaluate model on data
-        task_y_pred, domain_y_pred = model(x, target=target, training=False)
+                if self.invertible:
+                    map_true = inversions.map_to_target[self.source_dataset.invert_name](x)
+                    self._process_map_batch(map_true, mapped, domain_name, dataset_name)
 
-        # Match the number of examples
-        if domain_num == 0:
-            domain_y_true = tf.zeros_like(domain_y_pred)  # source domain
-        else:
-            domain_y_true = tf.ones_like(domain_y_pred)  # target domain
+                # We'll run the task model on the mapped source to target data
+                x = mapped
 
-        # Calculate losses
-        task_l = self.task_loss(task_y_true, task_y_pred, training=False)
-        domain_l = self.domain_loss(domain_y_true, domain_y_pred)
-        total_l = task_l + domain_l
+            # Evaluate target -> source mapping
+            elif domain_name == "target":
+                if self.invertible:
+                    mapped = mapping_model.map_to_source(x)
+                    map_true = inversions.map_to_source[self.source_dataset.invert_name](x)
+                    self._process_map_batch(map_true, mapped, domain_name, dataset_name)
 
-        # We'll compute the accuracy based on a binary output, not the logits
-        # which we used for the loss function
-        domain_y_pred = tf.sigmoid(domain_y_pred)
+        # If performing a task
+        if model is not None:
+            # Evaluate model on data
+            task_y_pred, domain_y_pred = model(x, target=target, training=False)
 
-        # Process this batch
-        results = [
-            task_y_true, task_y_pred, domain_y_true, domain_y_pred,
-            total_l, task_l, domain_l,
-        ]
+            # Match the number of examples
+            if domain_num == 0:
+                domain_y_true = tf.zeros_like(domain_y_pred)  # source domain
+            else:
+                domain_y_true = tf.ones_like(domain_y_pred)  # target domain
 
-        # Which classifier's task_y_pred are we looking at?
-        classifier = "target" if target else "task"
+            # Calculate losses
+            task_l = self.task_loss(task_y_true, task_y_pred, training=False)
+            domain_l = self.domain_loss(domain_y_true, domain_y_pred)
+            total_l = task_l + domain_l
 
-        self._process_batch(results, classifier, domain_name, dataset_name)
-        self._process_per_class(results, classifier, domain_name, dataset_name)
+            # We'll compute the accuracy based on a binary output, not the logits
+            # which we used for the loss function
+            domain_y_pred = tf.sigmoid(domain_y_pred)
 
-        # Only log losses on training data with the task classifier (not target)
-        if dataset_name == "training" and not target:
-            self._process_losses(results)
+            # Process this batch
+            results = [
+                task_y_true, task_y_pred, domain_y_true, domain_y_pred,
+                total_l, task_l, domain_l,
+            ]
+
+            # Which classifier's task_y_pred are we looking at?
+            classifier = "target" if target else "task"
+
+            self._process_batch(results, classifier, domain_name, dataset_name)
+            self._process_per_class(results, classifier, domain_name, dataset_name)
+
+            # Only log losses on training data with the task classifier (not target)
+            if dataset_name == "training" and not target:
+                self._process_losses(results)
 
     # Compile separate _run_single_batch functions since if we pass in varying
     # values of target=True/False it ends up dying with the error:
@@ -350,8 +401,8 @@ class Metrics:
     def _run_single_batch_target(self, *args, **kwargs):
         return self._run_single_batch(*args, target=True, **kwargs)
 
-    def train(self, model, mapping_model, data_a, data_b, step=None,
-            train_time=None, evaluation=False, already_mapped=False):
+    def train(self, model, mapping_model, non_mapped_data_a, data_a, data_b,
+            step=None, train_time=None, evaluation=False):
         """
         Call this once after evaluating on the training data for domain A and
         domain B
@@ -367,31 +418,27 @@ class Metrics:
         if not self.target_domain:
             data_b = None
 
-        # Mapping evaluation
-        if mapping_model is not None:
-            # TODO calculate correct mapping with actual inverse function
-            # TODO plot normalized root mean squared error (averaged over batch)
-            pass
+        # If we're going to calculate mapping error, then we need to pass the
+        # non-mapped data so we can map it (now that the model is updated)
+        # then calculate the error.
+        if self.invertible:
+            data_a = non_mapped_data_a
+        # Otherwise, use the already-mapped data as is and don't map it again.
+        # This ends up being a bit faster since we do one less mapping.
+        else:
+            mapping_model = None
 
-        # Task-based evaluation
-        if model is not None:
-            # When training, normally we already have mapped it to the target data
-            # since this is computed when training the mapping. Thus, to save time,
-            # we pass that already-mapped data through rather than mapping it again.
-            if already_mapped:
-                mapping_model = None
+        # evaluation=True is a tf.data.Dataset, otherwise a single batch
+        if evaluation:
+            self._run_partial(model, mapping_model, data_a, data_b, dataset, False)
 
-            # evaluation=True is a tf.data.Dataset, otherwise a single batch
-            if evaluation:
-                self._run_partial(model, mapping_model, data_a, data_b, dataset, False)
+            if self.has_target_classifier:
+                self._run_partial(model, mapping_model, data_a, data_b, dataset, True)
+        else:
+            self._run_batch(model, mapping_model, data_a, data_b, dataset, False)
 
-                if self.has_target_classifier:
-                    self._run_partial(model, mapping_model, data_a, data_b, dataset, True)
-            else:
-                self._run_batch(model, mapping_model, data_a, data_b, dataset, False)
-
-                if self.has_target_classifier:
-                    self._run_batch(model, mapping_model, data_a, data_b, dataset, True)
+            if self.has_target_classifier:
+                self._run_batch(model, mapping_model, data_a, data_b, dataset, True)
 
         t = time.time() - t
 
@@ -420,19 +467,13 @@ class Metrics:
         if not self.target_domain:
             eval_data_b = None
 
-        # Mapping evaluation
-        if mapping_model is not None:
-            # TODO calculate correct mapping with actual inverse function
-            # TODO plot normalized root mean squared error (averaged over batch)
-            pass
+        self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
 
-        # Task-based evaluation
+        if self.has_target_classifier:
+            self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
+
+        # These are metrics only filled out when there's a task model
         if model is not None:
-            self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
-
-            if self.has_target_classifier:
-                self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
-
             # We use the validation accuracy to save the best model
             #
             # If best_source then use source validation accuracy (so we never look)

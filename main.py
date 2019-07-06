@@ -540,6 +540,7 @@ def main(argv):
     for i in range(int(global_step), FLAGS.steps+1):
         # Get data for this iteration
         data_a = next(source_iter)
+        orig_data_a = data_a  # needed for evaluation
         data_b = next(target_iter) if target_iter is not None else None
 
         t = time.time()
@@ -598,11 +599,12 @@ def main(argv):
 
         # Metrics on training/validation data
         if i%FLAGS.log_train_steps == 0:
-            # Note: we set already_mapped=True since above we have already mapped
-            # the source data to the target domain. If we didn't, then we'd map
-            # it twice. This only applies if mapping_model != None.
-            metrics.train(model, mapping_model, data_a, data_b,
-                global_step, t, already_mapped=True)
+            # Note: orig_data_a is not mapped whereas data_a is (assuming)
+            # we have a mapping model. If we are evaluating the RMSE of the
+            # mapping when we have an invertible synthetic mapping, we need
+            # the original data. Otherwise, we can just use the mapped data.
+            metrics.train(model, mapping_model, orig_data_a, data_a, data_b,
+                global_step, t)
 
         validation_accuracy = None
         target_validation_accuracy = None

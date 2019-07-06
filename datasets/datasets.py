@@ -39,7 +39,7 @@ class Dataset:
     Also, add to the datasets={"something": Something, ...} dictionary below.
     """
     def __init__(self, num_classes, class_labels, window_size, window_overlap,
-            feature_names=None, test_percent=0.2):
+            feature_names=None, invertible=False, test_percent=0.2):
         """
         Initialize dataset
 
@@ -58,6 +58,7 @@ class Dataset:
             "num_classes != len(class_labels)"
 
         # Set parameters
+        self.invertible = invertible
         self.num_classes = num_classes
         self.class_labels = class_labels
         self.window_size = window_size
@@ -215,6 +216,7 @@ class Dataset:
 
 class UTDataBase(Dataset):
     """ Base class for loading the wrist or pocket UT-Data-Complex datasets """
+    invertible = False
     num_classes = 13
     class_labels = ["walk", "stand", "jog", "sit", "bike", "upstairs",
         "downstairs", "type", "write", "coffee", "talk", "smoke", "eat"]
@@ -231,7 +233,7 @@ class UTDataBase(Dataset):
         self.utdata_domain = utdata_domain
         super().__init__(UTDataBase.num_classes, UTDataBase.class_labels,
             UTDataBase.window_size, UTDataBase.window_overlap,
-            UTDataBase.feature_names,
+            UTDataBase.feature_names, UTDataBase.invertible,
             *args, **kwargs)
 
     def download(self):
@@ -327,6 +329,7 @@ class UTDataPocket(UTDataBase):
 
 class UnivariateCSVBase(Dataset):
     """ Base class for loading UCR-like univarate datasets """
+    invertible = False
     feature_names = ["univariate"]
 
     def __init__(self, train_filename, test_filename, num_classes, class_labels,
@@ -334,7 +337,8 @@ class UnivariateCSVBase(Dataset):
         self.train_filename = train_filename
         self.test_filename = test_filename
         super().__init__(num_classes, class_labels, None, None,
-            UnivariateCSVBase.feature_names, *args, **kwargs)
+            UnivariateCSVBase.feature_names, UnivariateCSVBase.invertible,
+            *args, **kwargs)
 
     def load_file(self, filename):
         """

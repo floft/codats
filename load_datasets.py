@@ -27,7 +27,7 @@ import tensorflow as tf
 from absl import app
 from absl import flags
 
-from datasets import datasets
+from datasets import datasets, inversions
 from datasets.tfrecord import tfrecord_filename
 
 FLAGS = flags.FLAGS
@@ -46,7 +46,7 @@ flags.DEFINE_boolean("train_on_target_valid", False, "Train on target validation
 class Dataset:
     """ Load datasets from tfrecord files """
     def __init__(self, num_classes, class_labels,
-            train_filenames, test_filenames,
+            train_filenames, test_filenames, invert_name=None,
             train_batch=None, eval_batch=None,
             shuffle_buffer=None, prefetch_buffer=None,
             eval_shuffle_seed=None, eval_max_examples=None,
@@ -65,6 +65,7 @@ class Dataset:
             "num_classes != len(class_labels)"
 
         # Set parameters
+        self.invert_name = invert_name  # either None or source_name
         self.num_classes = num_classes
         self.class_labels = class_labels
         self.train_batch = train_batch
@@ -74,6 +75,13 @@ class Dataset:
         self.eval_shuffle_seed = eval_shuffle_seed
         self.eval_max_examples = eval_max_examples
         self.tune_num_parallel_calls = tune_num_parallel_calls
+
+        # Check inversions exist
+        if invert_name is not None:
+            assert invert_name in inversions.map_to_source, \
+                "If invertible, must specify map_to_source() in datasets.inversions"
+            assert invert_name in inversions.map_to_target, \
+                "If invertible, must specify map_to_target() in datasets.inversions"
 
         # Set defaults if not specified
         if self.train_batch is None:
@@ -202,6 +210,7 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
     source_class_labels = datasets.datasets[source_name].class_labels
     target_num_classes = datasets.datasets[target_name].num_classes
     target_class_labels = datasets.datasets[target_name].class_labels
+    invert_name = source_name if datasets.datasets[source_name].invertible else None
 
     # Get dataset tfrecord filenames
     def _path(filename):
@@ -249,10 +258,10 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
     # Create all the train, test, evaluation, ... tf.data.Dataset objects within
     # a Dataset() class that stores them
     source_dataset = Dataset(source_num_classes, source_class_labels,
-        source_train_filenames, source_test_filenames,
+        source_train_filenames, source_test_filenames, invert_name,
         *args, **kwargs)
     target_dataset = Dataset(target_num_classes, target_class_labels,
-        target_train_filenames, target_test_filenames,
+        target_train_filenames, target_test_filenames, invert_name,
         *args, **kwargs)
 
     return source_dataset, target_dataset
