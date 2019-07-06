@@ -3,6 +3,7 @@
 Generate some extremely simple time-series datasets that the RNNs should be
 able to get 100% classification accuracy on
 
+v1:
 Positive-slope -- Identify if the slope of a line is positive (2) or negative (1)
 Positive-slope-noise -- same but with noise
 Positive-sine -- Identify if a sine wave (2) or negative sine wave (1)
@@ -26,6 +27,9 @@ FreqShift-low  -- + (2): 2,6,8 Hz; - (1): 7,9,11 Hz (some noise in freq/amp/phas
 FreqShift-high -- +6 -- +: 8,12,14 Hz; -: 13,15,17 Hz (...)
 FreqScale-low  -- +: 2,6,8 Hz; -: 7,9,11 Hz (...)
 FreqScale-high -- *2 -- +: 4,12,16 Hz; -: 14,18,22 Hz (...)
+
+v2 (invertible):
+
 """
 import os
 import numpy as np
@@ -33,7 +37,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def linear(m, b, length=25, minvalue=0, maxvalue=10):
+def linear(m, b, length=100, minvalue=0, maxvalue=2):
     x = np.arange(minvalue, maxvalue, (maxvalue-minvalue)/length).reshape(-1, 1).astype(np.float32)
     y = m*x + b
     return x, y
@@ -56,9 +60,9 @@ def to_pandas(y, labels):
 
 
 def generate_positive_slope_data(n, display=False, add_noise=False,
-        bmin=0.0, bmax=10.0, m_mu=0.0, m_std=0.25):
+        bmin=0.0, bmax=10.0, m_min=-1.0, m_max=1.0):
     """ Positive or negative slope lines """
-    m = np.random.normal(m_mu, m_std, (1, n))
+    m = np.random.uniform(m_min, m_max, (1, n))
     b = np.random.uniform(bmin, bmax, (1, n))
     x, y = linear(m, b)
     labels = m > 0
@@ -74,7 +78,7 @@ def generate_positive_slope_data(n, display=False, add_noise=False,
 
 
 def sine(m=1.0, b=0.0, f=None, freq_noise=1.0, phase_shift=5.0,
-        length=25, mint=0, maxt=10):
+        length=100, mint=0, maxt=2):
     """
     Generate a single or multiple sine waves (multiple if f is list)
 
@@ -147,11 +151,11 @@ def sine(m=1.0, b=0.0, f=None, freq_noise=1.0, phase_shift=5.0,
 
 
 def generate_positive_sine_data(n, display=False, add_noise=False,
-        bmin=0.0, bmax=10.0, m_mu=0.0, m_std=1.0):
+        bmin=0.0, bmax=10.0, m_min=-1.0, m_max=1.0):
     """ Sine wave multiplied by positive or negative number and offset some """
-    m = np.random.normal(m_mu, m_std, (1, n))
+    m = np.random.uniform(m_min, m_max, (1, n))
     b = np.random.uniform(bmin, bmax, (1, n))
-    x, y = sine(m=m, b=b)
+    x, y = sine(m=m, b=b, freq_noise=None, phase_shift=None)
     labels = m > 0
 
     if add_noise:
@@ -224,7 +228,7 @@ def save_data(func, fn, display=False):
     """ Use func to create examples that are saved to fn_TRAIN and fn_TEST """
     print(fn)
     func(10000, False).to_csv('trivial/'+fn+'_TRAIN', header=False, index=False)
-    func(200, display).to_csv('trivial/'+fn+'_TEST', header=False, index=False)
+    func(2000, display).to_csv('trivial/'+fn+'_TEST', header=False, index=False)
 
 
 if __name__ == '__main__':
@@ -234,32 +238,54 @@ if __name__ == '__main__':
     # Whether to display
     dsp = False
 
-    # For reproducibility
-    np.random.seed(0)
-    # No noise
-    save_data(lambda x, dsp: generate_positive_slope_data(x, display=dsp), 'positive_slope', dsp)
-    save_data(lambda x, dsp: generate_positive_sine_data(x, display=dsp), 'positive_sine', dsp)
-    # Noisy
-    save_data(lambda x, dsp: generate_positive_slope_data(x, add_noise=True, display=dsp), 'positive_slope_noise', dsp)
-    save_data(lambda x, dsp: generate_positive_sine_data(x, add_noise=True, display=dsp), 'positive_sine_noise', dsp)
-    # No noise - but different y-intercept
-    save_data(lambda x, dsp: generate_positive_slope_data(x, bmin=20.0, bmax=30.0, display=dsp), 'positive_slope_low', dsp)
-    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=20.0, bmax=30.0, display=dsp), 'positive_sine_low', dsp)
+    # # For reproducibility
+    # np.random.seed(0)
+    # # No noise
+    # save_data(lambda x, dsp: generate_positive_slope_data(x, display=dsp), 'positive_slope', dsp)
+    # save_data(lambda x, dsp: generate_positive_sine_data(x, display=dsp), 'positive_sine', dsp)
+    # # Noisy
+    # save_data(lambda x, dsp: generate_positive_slope_data(x, add_noise=True, display=dsp), 'positive_slope_noise', dsp)
+    # save_data(lambda x, dsp: generate_positive_sine_data(x, add_noise=True, display=dsp), 'positive_sine_noise', dsp)
+    # # No noise - but different y-intercept
+    # save_data(lambda x, dsp: generate_positive_slope_data(x, bmin=20.0, bmax=30.0, display=dsp), 'positive_slope_low', dsp)
+    # save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=20.0, bmax=30.0, display=dsp), 'positive_sine_low', dsp)
 
-    # Frequency
-    np.random.seed(0)
-    save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, display=dsp), 'freq_low', dsp)
-    save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, display=dsp), 'freq_high', dsp)
-    save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, amp_noise=True, display=dsp), 'freq_low_amp_noise', dsp)
-    save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, amp_noise=True, display=dsp), 'freq_high_amp_noise', dsp)
-    save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, freq_noise=True, display=dsp), 'freq_low_freq_noise', dsp)
-    save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, freq_noise=True, display=dsp), 'freq_high_freq_noise', dsp)
-    save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, amp_noise=True, freq_noise=True, display=dsp), 'freq_low_freqamp_noise', dsp)
-    save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, amp_noise=True, freq_noise=True, display=dsp), 'freq_high_freqamp_noise', dsp)
+    # # Frequency
+    # np.random.seed(0)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, display=dsp), 'freq_low', dsp)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, display=dsp), 'freq_high', dsp)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, amp_noise=True, display=dsp), 'freq_low_amp_noise', dsp)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, amp_noise=True, display=dsp), 'freq_high_amp_noise', dsp)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, freq_noise=True, display=dsp), 'freq_low_freq_noise', dsp)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, freq_noise=True, display=dsp), 'freq_high_freq_noise', dsp)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=0.1, fmax=0.5, amp_noise=True, freq_noise=True, display=dsp), 'freq_low_freqamp_noise', dsp)
+    # save_data(lambda x, dsp: generate_freq(x, fmin=1.0, fmax=5.0, amp_noise=True, freq_noise=True, display=dsp), 'freq_high_freqamp_noise', dsp)
 
-    # Multiple frequencies
+    # # Multiple frequencies
+    # # TODO maybe remove/decrease frequency/amplitude noise and reduce domain shifts
+    # np.random.seed(0)
+    # save_data(lambda x, dsp: generate_multi_freq(x, [2, 6, 8], [7, 9, 11], display=dsp), 'freqshift_low', dsp)
+    # save_data(lambda x, dsp: generate_multi_freq(x, [8, 12, 14], [13, 15, 17], display=dsp), 'freqshift_high', dsp)
+    # save_data(lambda x, dsp: generate_multi_freq(x, [2, 6, 8], [7, 9, 11], display=dsp), 'freqscale_low', dsp)
+    # save_data(lambda x, dsp: generate_multi_freq(x, [4, 12, 16], [14, 18, 22], display=dsp), 'freqscale_high', dsp)
+
+    #
+    # Invertible (for directly evaluating mapping)
+    #
     np.random.seed(0)
-    save_data(lambda x, dsp: generate_multi_freq(x, [2, 6, 8], [7, 9, 11], display=dsp), 'freqshift_low', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, [8, 12, 14], [13, 15, 17], display=dsp), 'freqshift_high', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, [2, 6, 8], [7, 9, 11], display=dsp), 'freqscale_low', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, [4, 12, 16], [14, 18, 22], display=dsp), 'freqscale_high', dsp)
+    # jumping mean - 1 with some overlap, 2 with no overlap
+    save_data(lambda x, dsp: generate_positive_slope_data(x, bmin=0.0, bmax=5.0, display=dsp), 'line1low', dsp)
+    save_data(lambda x, dsp: generate_positive_slope_data(x, bmin=2.5, bmax=7.5, display=dsp), 'line1high', dsp)
+    save_data(lambda x, dsp: generate_positive_slope_data(x, bmin=0.0, bmax=5.0, display=dsp), 'line2low', dsp)
+    save_data(lambda x, dsp: generate_positive_slope_data(x, bmin=5.0, bmax=10.0, display=dsp), 'line2high', dsp)
+
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=0.0, bmax=5.0, display=dsp), 'sine1low', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=2.5, bmax=7.5, display=dsp), 'sine1high', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=0.0, bmax=5.0, display=dsp), 'sine2low', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=5.0, bmax=10.0, display=dsp), 'sine2high', dsp)
+
+    # slope scaling - 1 with small scaling, 2 with more scaling
+    # ...
+
+    # Linear transform (random/fixed)
+    # ...

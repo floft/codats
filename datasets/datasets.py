@@ -39,7 +39,7 @@ class Dataset:
     Also, add to the datasets={"something": Something, ...} dictionary below.
     """
     def __init__(self, num_classes, class_labels, window_size, window_overlap,
-            feature_names=None, invertible=False, test_percent=0.2):
+            feature_names=None, test_percent=0.2):
         """
         Initialize dataset
 
@@ -58,7 +58,6 @@ class Dataset:
             "num_classes != len(class_labels)"
 
         # Set parameters
-        self.invertible = invertible
         self.num_classes = num_classes
         self.class_labels = class_labels
         self.window_size = window_size
@@ -337,8 +336,7 @@ class UnivariateCSVBase(Dataset):
         self.train_filename = train_filename
         self.test_filename = test_filename
         super().__init__(num_classes, class_labels, None, None,
-            UnivariateCSVBase.feature_names, UnivariateCSVBase.invertible,
-            *args, **kwargs)
+            UnivariateCSVBase.feature_names, *args, **kwargs)
 
     def load_file(self, filename):
         """
@@ -378,6 +376,7 @@ class UnivariateCSVBase(Dataset):
 def make_trivial_negpos(filename_prefix):
     """ make a -/+ dataset object, since we have a bunch of these """
     class Trivial(UnivariateCSVBase):
+        invertible = False
         num_classes = 2
         class_labels = ["negative", "positive"]
 
@@ -395,6 +394,44 @@ def make_trivial_negpos(filename_prefix):
 def make_trivial_lowhigh(filename_prefix):
     """ make a low/high dataset object, since we have a bunch of these """
     class Trivial(UnivariateCSVBase):
+        invertible = False
+        num_classes = 2
+        class_labels = ["low", "high"]
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                "trivial/"+filename_prefix+"_TRAIN",
+                "trivial/"+filename_prefix+"_TEST",
+                Trivial.num_classes,
+                Trivial.class_labels,
+                *args, **kwargs)
+
+    return Trivial
+
+
+def make_trivial_negpos_invertible(filename_prefix):
+    """ make a -/+ dataset object, since we have a bunch of these """
+    class Trivial(UnivariateCSVBase):
+        invertible = True
+        num_classes = 2
+        class_labels = ["negative", "positive"]
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                "trivial/"+filename_prefix+"_TRAIN",
+                "trivial/"+filename_prefix+"_TEST",
+                Trivial.num_classes,
+                Trivial.class_labels,
+                Trivial.invertible,
+                *args, **kwargs)
+
+    return Trivial
+
+
+def make_trivial_lowhigh_invertible(filename_prefix):
+    """ make a low/high dataset object, since we have a bunch of these """
+    class Trivial(UnivariateCSVBase):
+        invertible = True
         num_classes = 2
         class_labels = ["low", "high"]
 
@@ -411,26 +448,34 @@ def make_trivial_lowhigh(filename_prefix):
 
 # List of datasets
 datasets = {
-    "utdata_wrist": UTDataWrist,
-    "utdata_pocket": UTDataPocket,
-    "positive_slope": make_trivial_negpos("positive_slope"),
-    "positive_slope_low": make_trivial_negpos("positive_slope_low"),
-    "positive_slope_noise": make_trivial_negpos("positive_slope_noise"),
-    "positive_sine": make_trivial_negpos("positive_sine"),
-    "positive_sine_low": make_trivial_negpos("positive_sine_low"),
-    "positive_sine_noise": make_trivial_negpos("positive_sine_noise"),
-    "freq_low": make_trivial_lowhigh("freq_low"),
-    "freq_high": make_trivial_lowhigh("freq_high"),
-    "freq_low_amp_noise": make_trivial_lowhigh("freq_low_amp_noise"),
-    "freq_high_amp_noise": make_trivial_lowhigh("freq_high_amp_noise"),
-    "freq_low_freq_noise": make_trivial_lowhigh("freq_low_freq_noise"),
-    "freq_high_freq_noise": make_trivial_lowhigh("freq_high_freq_noise"),
-    "freq_low_freqamp_noise": make_trivial_lowhigh("freq_low_freqamp_noise"),
-    "freq_high_freqamp_noise": make_trivial_lowhigh("freq_high_freqamp_noise"),
-    "freqshift_low": make_trivial_lowhigh("freqshift_low"),
-    "freqshift_high": make_trivial_lowhigh("freqshift_high"),
-    "freqscale_low": make_trivial_lowhigh("freqscale_low"),
-    "freqscale_high": make_trivial_lowhigh("freqscale_high"),
+    # "utdata_wrist": UTDataWrist,
+    # "utdata_pocket": UTDataPocket,
+    # "positive_slope": make_trivial_negpos("positive_slope"),
+    # "positive_slope_low": make_trivial_negpos("positive_slope_low"),
+    # "positive_slope_noise": make_trivial_negpos("positive_slope_noise"),
+    # "positive_sine": make_trivial_negpos("positive_sine"),
+    # "positive_sine_low": make_trivial_negpos("positive_sine_low"),
+    # "positive_sine_noise": make_trivial_negpos("positive_sine_noise"),
+    # "freq_low": make_trivial_lowhigh("freq_low"),
+    # "freq_high": make_trivial_lowhigh("freq_high"),
+    # "freq_low_amp_noise": make_trivial_lowhigh("freq_low_amp_noise"),
+    # "freq_high_amp_noise": make_trivial_lowhigh("freq_high_amp_noise"),
+    # "freq_low_freq_noise": make_trivial_lowhigh("freq_low_freq_noise"),
+    # "freq_high_freq_noise": make_trivial_lowhigh("freq_high_freq_noise"),
+    # "freq_low_freqamp_noise": make_trivial_lowhigh("freq_low_freqamp_noise"),
+    # "freq_high_freqamp_noise": make_trivial_lowhigh("freq_high_freqamp_noise"),
+    # "freqshift_low": make_trivial_lowhigh("freqshift_low"),
+    # "freqshift_high": make_trivial_lowhigh("freqshift_high"),
+    # "freqscale_low": make_trivial_lowhigh("freqscale_low"),
+    # "freqscale_high": make_trivial_lowhigh("freqscale_high"),
+    "line1low": make_trivial_negpos_invertible("line1low"),
+    "line1high": make_trivial_negpos_invertible("line1high"),
+    "line2low": make_trivial_negpos_invertible("line2low"),
+    "line2high": make_trivial_negpos_invertible("line2high"),
+    "sine1low": make_trivial_negpos_invertible("sine1low"),
+    "sine1high": make_trivial_negpos_invertible("sine1high"),
+    "sine2low": make_trivial_negpos_invertible("sine2low"),
+    "sine2high": make_trivial_negpos_invertible("sine2high"),
 }
 
 

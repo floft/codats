@@ -111,25 +111,30 @@ def save_adaptation(source, target, seed=0):
 def main(argv):
     # Only list one direction since the other direction uses the same data
     adaptation_problems = [
-        ("utdata_wrist", "utdata_pocket"),
+        # ("utdata_wrist", "utdata_pocket"),
 
-        ("positive_slope", "positive_slope_low"),
-        ("positive_slope", "positive_slope_noise"),
-        ("positive_sine", "positive_sine_low"),
-        ("positive_sine", "positive_sine_noise"),
+        # ("positive_slope", "positive_slope_low"),
+        # ("positive_slope", "positive_slope_noise"),
+        # ("positive_sine", "positive_sine_low"),
+        # ("positive_sine", "positive_sine_noise"),
 
-        ("freq_low", "freq_high"),
-        ("freq_low", "freq_low_amp_noise"),
-        ("freq_low", "freq_low_freq_noise"),
-        ("freq_low", "freq_low_freqamp_noise"),
-        ("freq_high", "freq_high_amp_noise"),
-        ("freq_high", "freq_high_freq_noise"),
-        ("freq_high", "freq_high_freqamp_noise"),
-        ("freq_low", "freq_high_freqamp_noise"),
-        ("freq_high", "freq_low_freqamp_noise"),
+        # ("freq_low", "freq_high"),
+        # ("freq_low", "freq_low_amp_noise"),
+        # ("freq_low", "freq_low_freq_noise"),
+        # ("freq_low", "freq_low_freqamp_noise"),
+        # ("freq_high", "freq_high_amp_noise"),
+        # ("freq_high", "freq_high_freq_noise"),
+        # ("freq_high", "freq_high_freqamp_noise"),
+        # ("freq_low", "freq_high_freqamp_noise"),
+        # ("freq_high", "freq_low_freqamp_noise"),
 
-        ("freqshift_low", "freqshift_high"),
-        ("freqscale_low", "freqscale_high"),
+        # ("freqshift_low", "freqshift_high"),
+        # ("freqscale_low", "freqscale_high"),
+
+        ("line1low", "line1high"),
+        ("line2low", "line2high"),
+        ("sine1low", "sine1high"),
+        ("sine2low", "sine2high"),
     ]
 
     # Save tfrecord files for each of the adaptation problems
