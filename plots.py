@@ -15,6 +15,8 @@ import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 
+from datasets import inversions
+
 
 FLAGS = flags.FLAGS
 
@@ -25,7 +27,8 @@ flags.DEFINE_integer("nfft", 64, "NFFT for spectrogram, samples per FFT block")
 flags.DEFINE_integer("noverlap", 63, "noverlap for spectrogram, overlap between subsequent windows for FFT")
 
 
-def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
+def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
+        invert_name=None):
     """
     Run the first batch of evaluation data through the feature extractor, then
     generate and return the PCA and t-SNE plots. Optionally, save these to a file
@@ -91,6 +94,10 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
         gen_AtoBtoA = mapping_model.map_to_source(gen_AtoB)
         gen_BtoAtoB = mapping_model.map_to_target(gen_BtoA)
 
+        if first_time and invert_name is not None:
+            true_map_to_target = inversions.map_to_target[invert_name](map_x_a)
+            true_map_to_source = inversions.map_to_source[invert_name](map_x_b)
+
         # Run model on data -- alternative, but slightly slower than the above
         # gen_AtoB, gen_AtoBtoA, _, _ = mapping_model(map_x_a, "target", training=False)
         # gen_BtoA, gen_BtoAtoB, _, _ = mapping_model(map_x_b, "source", training=False)
@@ -122,6 +129,17 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
                     title='FFT Real (domain A, feature '+str(i)+')')
                 plots.append(('real_fft_feature_'+str(i)+'/source', real_fft_plot))
 
+                if invert_name is not None:
+                    true_map_plot = plot_real_time_series(
+                        true_map_to_source[:, :, i],
+                        title='True Map (domain A, feature '+str(i)+')')
+                    plots.append(('true_map_feature_'+str(i)+'/source', true_map_plot))
+
+                    true_map_fft_plot = plot_fft(
+                        true_map_to_source[:, :, i],
+                        title='True Map FFT (domain A, feature '+str(i)+')')
+                    plots.append(('true_map_fft_feature_'+str(i)+'/source', true_map_fft_plot))
+
         for i in range(num_features_b):
             recon_plot = plot_real_time_series(
                 gen_BtoAtoB[:, :, i],
@@ -148,6 +166,17 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time):
                     map_x_b[:, :, i],
                     title='FFT Real (domain B, feature '+str(i)+')')
                 plots.append(('real_fft_feature_'+str(i)+'/target', real_fft_plot))
+
+                if invert_name is not None:
+                    true_map_plot = plot_real_time_series(
+                        true_map_to_target[:, :, i],
+                        title='True Map (domain B, feature '+str(i)+')')
+                    plots.append(('true_map_feature_'+str(i)+'/target', true_map_plot))
+
+                    true_map_fft_plot = plot_fft(
+                        true_map_to_target[:, :, i],
+                        title='True Map FFT (domain B, feature '+str(i)+')')
+                    plots.append(('true_map_fft_feature_'+str(i)+'/target', true_map_fft_plot))
 
     return plots
 

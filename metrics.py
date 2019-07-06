@@ -529,7 +529,7 @@ class Metrics:
         # Generate plots
         t = time.time()
         plots = generate_plots(data_a, data_b, model, mapping_model, adapt,
-            first_time)
+            first_time, self.source_dataset.invert_name)
         t = time.time() - t
 
         # Write all the values to the file
