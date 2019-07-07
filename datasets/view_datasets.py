@@ -5,6 +5,7 @@ As a sanity check, load the data from the source/target domains and display it
 Note: sets CUDA_VISIBLE_DEVICES= so that it doesn't use the GPU.
 """
 import os
+import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -18,11 +19,13 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("source", None, datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+datasets.names(), "What dataset to use as the target")
 flags.DEFINE_boolean("test", False, "Show test images instead of training images")
+flags.DEFINE_integer("minexample", 0, "Start plotting with this example")
+flags.DEFINE_integer("maxexample", 5, "Stop plotting with this example")
 
 flags.mark_flag_as_required("source")
 
 
-def display(name, data, feature_names, example=0):
+def display(name, data, feature_names):
     # Shape: examples, time steps, features
     num_examples, num_samples, num_features = data.shape
 
@@ -36,8 +39,11 @@ def display(name, data, feature_names, example=0):
         else:
             ax = axes[i]
 
-        x_list = list(range(0, num_samples))  # the x axis... basically ignore
-        values = data[example, :, i]  # data we care about
+        # Set x to 0..num_samples. We care about the data values not the time
+        # scale.
+        x_list = np.tile(np.arange(0, num_samples),
+            (FLAGS.maxexample-FLAGS.minexample, 1)).T
+        values = data[FLAGS.minexample:FLAGS.maxexample, :, i].T
 
         if feature_names is not None:
             label = feature_names[i]
