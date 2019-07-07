@@ -7,35 +7,41 @@ import tensorflow as tf
 
 
 def jumpingmean1_low_to_high(x):
-    return x + tf.constant(5.0, dtype=tf.float32)
+    return x + tf.constant(2.5, dtype=tf.float32)
 
 
 def jumpingmean1_high_to_low(x):
-    return x - tf.constant(5.0, dtype=tf.float32)
+    return x - tf.constant(2.5, dtype=tf.float32)
 
 
 def jumpingmean2_low_to_high(x):
-    return x + tf.constant(7.5, dtype=tf.float32)
+    return x + tf.constant(5.0, dtype=tf.float32)
 
 
 def jumpingmean2_high_to_low(x):
-    return x - tf.constant(7.5, dtype=tf.float32)
+    return x - tf.constant(5.0, dtype=tf.float32)
 
 
 def scale1_low_to_high(x):
-    return x * tf.constant(1.5, dtype=tf.float32)
+    # Since not centered around 0, must get rid of bias before scaling
+    # And, since there's no noise, the bias is the first value.
+    bias = tf.slice(x, [0, 0, 0], [tf.shape(x)[0], 1, 1])
+    return (x - bias) * tf.constant(1.5, dtype=tf.float32) + bias
 
 
 def scale1_high_to_low(x):
-    return x * tf.constant(1.0/1.5, dtype=tf.float32)
+    bias = tf.slice(x, [0, 0, 0], [tf.shape(x)[0], 1, 1])
+    return (x - bias) * tf.constant(1.0/1.5, dtype=tf.float32) + bias
 
 
 def scale2_low_to_high(x):
-    return x * tf.constant(2.0, dtype=tf.float32)
+    bias = tf.slice(x, [0, 0, 0], [tf.shape(x)[0], 1, 1])
+    return (x - bias) * tf.constant(2.0, dtype=tf.float32) + bias
 
 
 def scale2_high_to_low(x):
-    return x * tf.constant(1.0/2.0, dtype=tf.float32)
+    bias = tf.slice(x, [0, 0, 0], [tf.shape(x)[0], 1, 1])
+    return (x - bias) * tf.constant(1.0/2.0, dtype=tf.float32) + bias
 
 
 map_to_source = {
