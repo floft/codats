@@ -41,7 +41,7 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
     #
     # TSNE and PCA
     #
-    if FLAGS.max_plot_embedding > 0:
+    if model is not None and FLAGS.max_plot_embedding > 0:
         emb_x_a = x_a[:FLAGS.max_plot_embedding]
         emb_x_b = x_b[:FLAGS.max_plot_embedding]
         emb_y_a = y_a[:FLAGS.max_plot_embedding]
