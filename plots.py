@@ -111,12 +111,12 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
             map_plot = plot_real_time_series(
                 gen_BtoA[:, :, i],
                 title='Mapped (B to A, feature '+str(i)+')')
-            plots.append(('mapped_feature_'+str(i)+'/source', map_plot))
+            plots.append(('mapped_feature_'+str(i)+'/to_source', map_plot))
 
             map_fft_plot = plot_fft(
                 gen_BtoA[:, :, i],
                 title='FFT Mapped (B to A, feature '+str(i)+')')
-            plots.append(('mapped_fft_feature_'+str(i)+'/source', map_fft_plot))
+            plots.append(('mapped_fft_feature_'+str(i)+'/to_source', map_fft_plot))
 
             if first_time:
                 real_plot = plot_real_time_series(
@@ -133,12 +133,12 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
                     true_map_plot = plot_real_time_series(
                         true_map_to_source[:, :, i],
                         title='True Map (domain A, feature '+str(i)+')')
-                    plots.append(('true_map_feature_'+str(i)+'/source', true_map_plot))
+                    plots.append(('true_map_feature_'+str(i)+'/to_source', true_map_plot))
 
                     true_map_fft_plot = plot_fft(
                         true_map_to_source[:, :, i],
                         title='True Map FFT (domain A, feature '+str(i)+')')
-                    plots.append(('true_map_fft_feature_'+str(i)+'/source', true_map_fft_plot))
+                    plots.append(('true_map_fft_feature_'+str(i)+'/to_source', true_map_fft_plot))
 
         for i in range(num_features_b):
             recon_plot = plot_real_time_series(
@@ -149,12 +149,12 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
             map_plot = plot_real_time_series(
                 gen_AtoB[:, :, i],
                 title='Mapped (A to B, feature '+str(i)+')')
-            plots.append(('mapped_feature_'+str(i)+'/target', map_plot))
+            plots.append(('mapped_feature_'+str(i)+'/to_target', map_plot))
 
             map_fft_plot = plot_fft(
                 gen_AtoB[:, :, i],
                 title='FFT Mapped (A to B, feature '+str(i)+')')
-            plots.append(('mapped_fft_feature_'+str(i)+'/target', map_fft_plot))
+            plots.append(('mapped_fft_feature_'+str(i)+'/to_target', map_fft_plot))
 
             if first_time:
                 real_plot = plot_real_time_series(
@@ -171,12 +171,12 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
                     true_map_plot = plot_real_time_series(
                         true_map_to_target[:, :, i],
                         title='True Map (domain B, feature '+str(i)+')')
-                    plots.append(('true_map_feature_'+str(i)+'/target', true_map_plot))
+                    plots.append(('true_map_feature_'+str(i)+'/to_target', true_map_plot))
 
                     true_map_fft_plot = plot_fft(
                         true_map_to_target[:, :, i],
                         title='True Map FFT (domain B, feature '+str(i)+')')
-                    plots.append(('true_map_fft_feature_'+str(i)+'/target', true_map_fft_plot))
+                    plots.append(('true_map_fft_feature_'+str(i)+'/to_target', true_map_fft_plot))
 
     return plots
 
