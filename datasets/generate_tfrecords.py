@@ -135,11 +135,15 @@ def main(argv):
         ("line2low", "line2high"),
         ("sine1low", "sine1high"),
         ("sine2low", "sine2high"),
+        ("sine3low", "sine3high"),
+        ("sine4low", "sine4high"),
 
         ("lineslope1low", "lineslope1high"),
         ("lineslope2low", "lineslope2high"),
         ("sineslope1low", "sineslope1high"),
         ("sineslope2low", "sineslope2high"),
+        ("sineslope3low", "sineslope3high"),
+        ("sineslope4low", "sineslope4high"),
     ]
 
     # Save tfrecord files for each of the adaptation problems

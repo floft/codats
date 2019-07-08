@@ -476,6 +476,10 @@ datasets = {
     "sine1high": make_trivial_negpos_invertible("sine1high"),
     "sine2low": make_trivial_negpos_invertible("sine2low"),
     "sine2high": make_trivial_negpos_invertible("sine2high"),
+    "sine3low": make_trivial_negpos_invertible("sine3low"),
+    "sine3high": make_trivial_negpos_invertible("sine3high"),
+    "sine4low": make_trivial_negpos_invertible("sine4low"),
+    "sine4high": make_trivial_negpos_invertible("sine4high"),
 
     "lineslope1low": make_trivial_negpos_invertible("lineslope1low"),
     "lineslope1high": make_trivial_negpos_invertible("lineslope1high"),
@@ -485,6 +489,10 @@ datasets = {
     "sineslope1high": make_trivial_negpos_invertible("sineslope1high"),
     "sineslope2low": make_trivial_negpos_invertible("sineslope2low"),
     "sineslope2high": make_trivial_negpos_invertible("sineslope2high"),
+    "sineslope3low": make_trivial_negpos_invertible("sineslope3low"),
+    "sineslope3high": make_trivial_negpos_invertible("sineslope3high"),
+    "sineslope4low": make_trivial_negpos_invertible("sineslope4low"),
+    "sineslope4high": make_trivial_negpos_invertible("sineslope4high"),
 }
 
 

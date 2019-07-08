@@ -49,10 +49,14 @@ map_to_source = {
     "line2low": jumpingmean2_high_to_low,
     "sine1low": jumpingmean1_high_to_low,
     "sine2low": jumpingmean2_high_to_low,
+    "sine3low": jumpingmean1_high_to_low,
+    "sine4low": jumpingmean2_high_to_low,
     "lineslope1low": scale1_high_to_low,
     "lineslope2low": scale1_high_to_low,
     "sineslope1low": scale2_high_to_low,
     "sineslope2low": scale2_high_to_low,
+    "sineslope3low": scale2_high_to_low,
+    "sineslope4low": scale2_high_to_low,
 }
 
 map_to_target = {
@@ -60,8 +64,12 @@ map_to_target = {
     "line2low": jumpingmean2_low_to_high,
     "sine1low": jumpingmean1_low_to_high,
     "sine2low": jumpingmean2_low_to_high,
+    "sine3low": jumpingmean1_low_to_high,
+    "sine4low": jumpingmean2_low_to_high,
     "lineslope1low": scale1_low_to_high,
     "lineslope2low": scale1_low_to_high,
     "sineslope1low": scale2_low_to_high,
     "sineslope2low": scale2_low_to_high,
+    "sineslope3low": scale2_low_to_high,
+    "sineslope4low": scale2_low_to_high,
 }

@@ -151,11 +151,11 @@ def sine(m=1.0, b=0.0, f=None, freq_noise=1.0, phase_shift=5.0,
 
 
 def generate_positive_sine_data(n, display=False, add_noise=False,
-        bmin=0.0, bmax=5.0, mmin=-1.0, mmax=1.0):
+        bmin=0.0, bmax=5.0, mmin=-1.0, mmax=1.0, f=None):
     """ Sine wave multiplied by positive or negative number and offset some """
     m = np.random.uniform(mmin, mmax, (1, n))
     b = np.random.uniform(bmin, bmax, (1, n))
-    x, y = sine(m=m, b=b, freq_noise=None, phase_shift=None)
+    x, y = sine(m=m, b=b, f=f, freq_noise=None, phase_shift=None)
     labels = m > 0
 
     if add_noise:
@@ -284,6 +284,12 @@ if __name__ == '__main__':
     save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=0.0, bmax=5.0, display=dsp), 'sine2low', dsp)
     save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=5.0, bmax=10.0, display=dsp), 'sine2high', dsp)
 
+    # see if network works better with higher-frequency data
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=0.0, bmax=5.0, f=10.0, display=dsp), 'sine3low', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=2.5, bmax=7.5, f=10.0, display=dsp), 'sine3high', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=0.0, bmax=5.0, f=10.0, display=dsp), 'sine4low', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, bmin=5.0, bmax=10.0, f=10.0, display=dsp), 'sine4high', dsp)
+
     # slope scaling - 1 with small scaling, 2 with more scaling
     np.random.seed(0)
     save_data(lambda x, dsp: generate_positive_slope_data(x, mmin=-1.0, mmax=1.0, display=dsp), 'lineslope1low', dsp)
@@ -295,6 +301,11 @@ if __name__ == '__main__':
     save_data(lambda x, dsp: generate_positive_sine_data(x, mmin=-1.5, mmax=1.5, display=dsp), 'sineslope1high', dsp)
     save_data(lambda x, dsp: generate_positive_sine_data(x, mmin=-1.0, mmax=1.0, display=dsp), 'sineslope2low', dsp)
     save_data(lambda x, dsp: generate_positive_sine_data(x, mmin=-2.0, mmax=2.0, display=dsp), 'sineslope2high', dsp)
+
+    save_data(lambda x, dsp: generate_positive_sine_data(x, mmin=-1.0, mmax=1.0, f=10.0, display=dsp), 'sineslope3low', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, mmin=-1.5, mmax=1.5, f=10.0, display=dsp), 'sineslope3high', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, mmin=-1.0, mmax=1.0, f=10.0, display=dsp), 'sineslope4low', dsp)
+    save_data(lambda x, dsp: generate_positive_sine_data(x, mmin=-2.0, mmax=2.0, f=10.0, display=dsp), 'sineslope4high', dsp)
 
     # Linear transform (random/fixed)
     # ...
