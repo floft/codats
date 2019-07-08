@@ -19,6 +19,7 @@ from tcn import TemporalConvNet
 FLAGS = flags.FLAGS
 
 flags.DEFINE_float("dropout", 0.05, "Dropout probability")
+flags.DEFINE_boolean("map_prenorm", True, "when mapping, first run through batchnorm before feeding to model")
 
 flags.register_validator("dropout", lambda v: v != 1, message="dropout cannot be 1")
 
@@ -130,39 +131,34 @@ class WangResnetBlock(tf.keras.layers.Layer):
     ResNet block for the "ResNet" model by Wang et al. (2017)
     See make_resnet_model()
     """
-    def __init__(self, n_feature_maps, shortcut_resize=True, **kwargs):
+    def __init__(self, n_feature_maps, shortcut_resize=True,
+            kernel_sizes=[8, 5, 3],
+            normalization=tf.keras.layers.BatchNormalization,
+            activation="relu", **kwargs):
         super().__init__(**kwargs)
-        self.blocks = [
-            tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=8,
+        self.blocks = []
+
+        for kernel_size in kernel_sizes:
+            self.blocks.append(tf.keras.Sequential([
+                tf.keras.layers.Conv1D(filters=n_feature_maps,
+                    kernel_size=kernel_size,
                     padding="same", use_bias=False),
-                tf.keras.layers.BatchNormalization(),
-                tf.keras.layers.Activation("relu"),
-            ]),
-            tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=5,
-                    padding="same", use_bias=False),
-                tf.keras.layers.BatchNormalization(),
-                tf.keras.layers.Activation("relu"),
-            ]),
-            tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=3,
-                    padding="same", use_bias=False),
-                tf.keras.layers.BatchNormalization(),
-            ]),
-        ]
+                normalization(),
+                tf.keras.layers.Activation(activation),
+            ]))
+
         if shortcut_resize:
             self.shortcut = tf.keras.Sequential([
                 tf.keras.layers.Conv1D(filters=n_feature_maps, kernel_size=1,
                     padding="same", use_bias=False),
-                tf.keras.layers.BatchNormalization(),
+                normalization(),
             ])
         else:
             self.shortcut = tf.keras.Sequential([
-                tf.keras.layers.BatchNormalization(),
+                normalization(),
             ])
         self.add = tf.keras.layers.Add()
-        self.act = tf.keras.layers.Activation("relu")
+        self.act = tf.keras.layers.Activation(activation)
 
     def call(self, inputs, **kwargs):
         net = inputs
@@ -695,12 +691,16 @@ class DomainAdaptationModel(tf.keras.Model):
 
 
 class CycleGAN(tf.keras.Model):
-    """ Domain mapping model -- based on CycleGAN, but for time-series data
-    instead of image data, also partially based on VRADA model """
+    """
+    Domain mapping model -- based on CycleGAN, but for time-series data
+    instead of image data, also partially based on VRADA model
+    """
     def __init__(self, source_x_shape, target_x_shape, **kwargs):
         super().__init__(**kwargs)
         assert target_x_shape == source_x_shape, \
             "Right now only support homogenous adaptation"
+        self.target_x_shape = target_x_shape
+        self.source_x_shape = source_x_shape
 
         self.source_to_target = self.make_generator(target_x_shape)
         self.target_to_source = self.make_generator(source_x_shape)
@@ -710,65 +710,130 @@ class CycleGAN(tf.keras.Model):
         # Pass source/target data through these layers first, but only set
         # training=True when feeding through real data. Note: axis=2 to be the
         # feature axis. Defaults to 1 I think, which would be the time axis.
-        #
-        # source_pre -- run on source-like data, before source_to_target model
-        self.source_pre = tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
-        ])
-        # target_pre -- run on target-like data, before target_to_source model
-        self.target_pre = tf.keras.Sequential([
-            tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
-        ])
+        if FLAGS.map_prenorm:
+            # source_pre -- run on source-like data, before source_to_target model
+            self.source_pre = tf.keras.Sequential([
+                tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
+            ])
+            # target_pre -- run on target-like data, before target_to_source model
+            self.target_pre = tf.keras.Sequential([
+                tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
+            ])
+        else:
+            self.source_pre = tf.keras.Sequential([])
+            self.target_pre = tf.keras.Sequential([])
 
     def make_generator(self, output_dims):
         assert len(output_dims) == 2, \
             "output_dims should be length 2, (time_steps, num_features)"
         num_features = output_dims[1]
 
+        # return tf.keras.Sequential([
+        #     tf.keras.layers.Conv1D(filters=8, kernel_size=8, padding="same",
+        #         use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     tf.keras.layers.Conv1D(filters=16, kernel_size=5, padding="same",
+        #         strides=2, use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     tf.keras.layers.Conv1D(filters=32, kernel_size=3, padding="same",
+        #         strides=2, use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     WangResnetBlock(32, shortcut_resize=False),
+        #     WangResnetBlock(32, shortcut_resize=False),
+
+        #     Conv1DTranspose(filters=16, kernel_size=3, padding="same",
+        #         strides=2, use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     Conv1DTranspose(filters=8, kernel_size=5, padding="same",
+        #         strides=2, use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     tf.keras.layers.Conv1D(filters=num_features, kernel_size=8,
+        #         padding="same", use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     # For bias mainly, so output can have any range of values
+        #     # TODO replace Flatten() with a per-feature flattening when dealing
+        #     # with multivariate data?
+        #     tf.keras.layers.Flatten(),
+        #     tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
+        #     tf.keras.layers.Reshape(output_dims),
+        # ])
+
+        normalization = tf.keras.layers.BatchNormalization
+        activation = "relu"
+
         return tf.keras.Sequential([
-            tf.keras.layers.Conv1D(filters=8, kernel_size=8, padding="same",
+            tf.keras.layers.Conv1D(filters=64, kernel_size=7, padding="same",
                 use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+            normalization(),
+            tf.keras.layers.Activation(activation),
 
-            tf.keras.layers.Conv1D(filters=16, kernel_size=5, padding="same",
+            tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
                 strides=2, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+            normalization(),
+            tf.keras.layers.Activation(activation),
 
-            tf.keras.layers.Conv1D(filters=32, kernel_size=3, padding="same",
+            tf.keras.layers.Conv1D(filters=256, kernel_size=3, padding="same",
                 strides=2, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+            normalization(),
+            tf.keras.layers.Activation(activation),
 
-            WangResnetBlock(32, shortcut_resize=False),
-            WangResnetBlock(32, shortcut_resize=False),
+            WangResnetBlock(256, shortcut_resize=False,
+              normalization=normalization, activation=activation,
+              kernel_sizes=[3, 3]),
+            WangResnetBlock(256, shortcut_resize=False,
+              normalization=normalization, activation=activation,
+              kernel_sizes=[3, 3]),
+            WangResnetBlock(256, shortcut_resize=False,
+              normalization=normalization, activation=activation,
+              kernel_sizes=[3, 3]),
 
-            Conv1DTranspose(filters=16, kernel_size=3, padding="same",
+            Conv1DTranspose(filters=128, kernel_size=3, padding="same",
                 strides=2, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+            normalization(),
+            tf.keras.layers.Activation(activation),
 
-            Conv1DTranspose(filters=8, kernel_size=5, padding="same",
+            Conv1DTranspose(filters=64, kernel_size=3, padding="same",
                 strides=2, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+            normalization(),
+            tf.keras.layers.Activation(activation),
 
-            tf.keras.layers.Conv1D(filters=num_features, kernel_size=8,
-                padding="same", use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+            # Note: CycleGAN tutorial I followed (see my code on Github) also
+            # didn't do BN or activation function after this
+            tf.keras.layers.Conv1D(filters=num_features, kernel_size=7,
+                padding="same", use_bias=True),
+            #normalization(),
+            #tf.keras.layers.Activation(activation),
 
             # For bias mainly, so output can have any range of values
             # TODO replace Flatten() with a per-feature flattening when dealing
             # with multivariate data?
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
-            tf.keras.layers.Reshape(output_dims),
+            #tf.keras.layers.Flatten(),
+            #tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
+            #tf.keras.layers.Reshape(output_dims),
         ])
+
+        # return tf.keras.Sequential([
+        #     tf.keras.layers.Conv1D(filters=num_features, kernel_size=1,
+        #         padding="same", use_bias=True)
+        #     #kernel_constraint=tf.keras.constraints.NonNeg()
+        #     #tf.keras.layers.Reshape(output_dims),
+        # ])
 
     def make_discriminator(self):
         # FCN classifier, but slightly smaller
+        # TODO CycleGAN actually used instance norm
         # TODO use layernorm not batchnorm when FLAGS.cyclegan_loss == "wgan-gp"
         # TODO maybe try random crop for discriminator
         return tf.keras.Sequential([
@@ -820,6 +885,8 @@ class CycleGAN(tf.keras.Model):
             gen_AtoB, gen_AtoBtoA, _, _ = model(map_x_a, "target", training=False)
             gen_BtoA, gen_BtoAtoB, _, _ = model(map_x_b, "source", training=False)
         """
+        assert dest == "target" or dest == "source", \
+            "dest can only be either source or target"
         self.set_learning_phase(training)
 
         if dest == "target":  # A to B
@@ -864,8 +931,12 @@ class CycleGAN(tf.keras.Model):
 
             return gen_BtoA, gen_BtoAtoB, disc_Breal, disc_Afake
 
-        else:
-            raise NotImplementedError("dest can only be either source or target")
+        # Verify output shapes are right
+        # output_shape[1:] ignores the batch dimension
+        assert self.source_to_target.output_shape[1:] == self.target_x_shape, \
+            "source_to_target generator model has wrong output dimensions"
+        assert self.target_to_source.output_shape[1:] == self.source_x_shape, \
+            "target_to_source generator model has wrong output dimensions"
 
     def map_to_target(self, x):
         """ Map source data to target, but make sure we don't update BN stats """
