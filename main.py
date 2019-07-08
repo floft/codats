@@ -33,6 +33,8 @@ flags.DEFINE_float("lr", 0.001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 flags.DEFINE_float("lr_target_mult", 0.5, "Learning rate multiplier for training target classifier")
 flags.DEFINE_float("lr_mapping_mult", 1.0, "Learning rate multiplier for training domain mapping GAN")
+flags.DEFINE_float("lr_map_d_loss_mult", 1.0, "Learning rate multiplier for training domain mapping discriminator")
+flags.DEFINE_float("map_cyc_mult", 10.0, "Multiplier for cycle consistency loss for training domain mapping generator")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
@@ -355,7 +357,12 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
         cyc_loss = tf.reduce_mean(tf.abs(x_a - gen_AtoBtoA)) \
             + tf.reduce_mean(tf.abs(x_b - gen_BtoAtoB))
 
-        g_loss = cyc_loss*10
+        g_loss = cyc_loss*FLAGS.map_cyc_mult
+
+        # penalize negative weights https://stackoverflow.com/q/50158467
+        # for weight in model.trainable_variables_generators:
+        #     if "kernel" in weight.name:
+        #         g_loss += tf.nn.l2_loss(tf.nn.relu(tf.negative(weight)))
 
         # TODO ForecastGAN pass gen_AtoB (fake domain B) through target forecast
         # model and use reduce_mean(abs(x_b[forecasted amount] - forecast))
@@ -390,10 +397,12 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
             d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
                + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
 
-        # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent?
-        #d_loss *= 5
+        # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent if
+        # set to 5.0?
+        d_loss *= FLAGS.lr_map_d_loss_mult
 
-        #tf.print(cyc_loss, loss(ones_b, disc_Bfake), loss(ones_a, disc_Afake), d_loss)
+    # the 2 parts of the g_loss, then the d_loss
+    #tf.print(cyc_loss, -tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Afake), d_loss)
 
     g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
     d_grad = tape.gradient(d_loss, model.trainable_variables_discriminators)
