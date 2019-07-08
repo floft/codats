@@ -250,7 +250,7 @@ class Metrics:
                 self.per_class_metrics[dataset][name](acc_y_true, acc_y_pred)
 
     def _write_data(self, step, dataset, eval_time, train_time=None,
-            log_mapping=False, log_task=False):
+            additional_losses=None, log_mapping=False, log_task=False):
         """ Write either the training or validation data """
         assert dataset in self.datasets, "unknown dataset "+str(dataset)
 
@@ -275,6 +275,18 @@ class Metrics:
                     tf.summary.scalar("loss/total", self.loss_total.result(), step=step)
                     tf.summary.scalar("loss/task", self.loss_task.result(), step=step)
                     tf.summary.scalar("loss/domain", self.loss_domain.result(), step=step)
+
+            # Any other losses
+            if additional_losses is not None:
+                names, values = additional_losses
+
+                for i, name in enumerate(names):
+                    # If TensorFlow string (when using tf.function), get the
+                    # value from it
+                    if not isinstance(name, str):
+                        name = name.numpy().decode("utf-8")
+
+                    tf.summary.scalar("loss/%s"%(name), values[i], step=step)
 
             # Regardless of mapping/task, log times
             tf.summary.scalar("step_time/metrics/%s"%(dataset), eval_time, step=step)
@@ -399,7 +411,7 @@ class Metrics:
         return self._run_single_batch(*args, target=True, **kwargs)
 
     def train(self, model, mapping_model, non_mapped_data_a, data_a, data_b,
-            step=None, train_time=None, evaluation=False):
+            step=None, train_time=None, additional_losses=None, evaluation=False):
         """
         Call this once after evaluating on the training data for domain A and
         domain B
@@ -444,6 +456,7 @@ class Metrics:
                 "Must pass step and train_time to train() if evaluation=False"
             step = int(step)
             self._write_data(step, dataset, t, train_time,
+                additional_losses=additional_losses,
                 log_mapping=mapping_model is not None,
                 log_task=model is not None)
 

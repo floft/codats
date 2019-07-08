@@ -62,6 +62,9 @@ def get_directory_names():
     methods_suffix = {
         "none": "",
         "cyclegan": "-cyclegan",
+        "forecast": "-forecast",
+        # TODO "cycada" is actually CycleGAN+DANN since we don't have semantic
+        # consistency loss
         "cycada": "-cycada",
         "dann": "-dann",
         "pseudo": "-pseudo",
@@ -398,12 +401,25 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
                + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
 
         g_loss += g_adv
+
+        # For plotting -- before we multiply d_loss, tf.function doesn't support
+        # a dictionary
+        additional_loss_names = {
+            "generator",
+            "cycle_consistency",
+            "discriminator",
+            "generator_adversarial",
+        }
+        additional_loss_values = [
+            g_loss,
+            cyc_loss,
+            d_loss,
+            g_adv,
+        ]
+
         # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent if
         # set to 5.0?
         d_loss *= FLAGS.lr_map_d_loss_mult
-
-    # the 2 parts of the g_loss, then the d_loss
-    #tf.print(cyc_loss, -tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Afake), d_loss)
 
     g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
     d_grad = tape.gradient(d_loss, model.trainable_variables_discriminators)
@@ -419,6 +435,8 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
             weight.assign(tf.clip_by_value(weight, -0.01, 0.01))
 
     # Return source data mapped to target domain, so we have the labels
+    return (gen_AtoB, y_a), (additional_loss_names, additional_loss_values)
+
 
 @tf.function
 def train_step_forecast(data_a, data_b, model, opt, loss):
@@ -473,7 +491,7 @@ def train_step_forecast(data_a, data_b, model, opt, loss):
     gen_AtoB = model.map_to_target(x_a)
 
     # Return source data mapped to target domain, so we have the labels
-    return gen_AtoB, y_a
+    return (gen_AtoB, y_a), (additional_loss_names, additional_loss_values)
 
 
 def main(argv):
@@ -547,11 +565,11 @@ def main(argv):
         model = None
 
     # For mapping, we need to know the source and target sizes
-        # Note: first dimension is batch size, so drop that
-        source_first_x, _ = next(iter(source_dataset.train))
-        source_x_shape = source_first_x.shape[1:]
-        target_first_x, _ = next(iter(target_dataset.train))
-        target_x_shape = target_first_x.shape[1:]
+    # Note: first dimension is batch size, so drop that
+    source_first_x, _ = next(iter(source_dataset.train))
+    source_x_shape = source_first_x.shape[1:]
+    target_first_x, _ = next(iter(target_dataset.train))
+    target_x_shape = target_first_x.shape[1:]
 
     if FLAGS.method in ["cyclegan", "cycada"]:
         mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
@@ -612,6 +630,8 @@ def main(argv):
         t = time.time()
 
         # The GAN performing domain mapping, if desired
+        additional_losses = None
+
         if mapping_model is not None:
             # Trains GAN to map source data_a to look like target data and
             # returns the mapped data so we can train a classifier (below
@@ -620,12 +640,11 @@ def main(argv):
             # the classifier to have a fake target vs. real target invariant
             # representation.
             if FLAGS.method == "forecast":
-                data_a = train_step_forecast(data_a, data_b,
+                data_a, additional_losses = train_step_forecast(data_a, data_b,
                     mapping_model, mapping_opt, mapping_loss)
             else:
-                data_a = train_step_cyclegan(data_a, data_b,
+                data_a, additional_losses = train_step_cyclegan(data_a, data_b,
                     mapping_model, mapping_opt, mapping_loss)
-                mapping_model, mapping_opt, mapping_loss)
 
         # Train the task model (possibly with adaptation)
         if model is not None:
@@ -675,7 +694,7 @@ def main(argv):
             # mapping when we have an invertible synthetic mapping, we need
             # the original data. Otherwise, we can just use the mapped data.
             metrics.train(model, mapping_model, orig_data_a, data_a, data_b,
-                global_step, t)
+                global_step, t, additional_losses)
 
         validation_accuracy = None
         target_validation_accuracy = None
