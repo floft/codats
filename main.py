@@ -23,7 +23,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "cyclegan", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
@@ -373,7 +373,7 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
         # the original real data and the generated fake data
         # Note: we're saying 0 is fake and 1 is real, i.e. D(x) = P(x == real)
         if FLAGS.cyclegan_loss == "wgan" or FLAGS.cyclegan_loss == "wgan-gp":
-            g_loss += -tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Afake)
+            g_adv = -tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Afake)
             d_loss = ((tf.reduce_mean(disc_Afake) - tf.reduce_mean(disc_Areal))
                 + (tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Breal)))/2
 
@@ -383,7 +383,7 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
                 gp2 = wgan_gradient_penalty(x_b, gen_AtoB, model.target_discriminator)
                 d_loss += 10*(gp1 + gp2)
         elif FLAGS.cyclegan_loss == "lsgan":
-            g_loss += tf.reduce_mean(tf.math.squared_difference(disc_Bfake, 1)) \
+            g_adv = tf.reduce_mean(tf.math.squared_difference(disc_Bfake, 1)) \
                 + tf.reduce_mean(tf.math.squared_difference(disc_Afake, 1))
             d_loss = (
                 tf.reduce_mean(tf.math.squared_difference(disc_Afake, 0))
@@ -392,11 +392,12 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
                 + tf.reduce_mean(tf.math.squared_difference(disc_Breal, 1))
             )/2
         elif FLAGS.cyclegan_loss == "gan":
-            g_loss += loss(ones_b, disc_Bfake) + loss(ones_a, disc_Afake)
+            g_adv = loss(ones_b, disc_Bfake) + loss(ones_a, disc_Afake)
             # Note: divided by two, see CycleGAN paper 7.1
             d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
                + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
 
+        g_loss += g_adv
         # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent if
         # set to 5.0?
         d_loss *= FLAGS.lr_map_d_loss_mult
@@ -418,6 +419,60 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
             weight.assign(tf.clip_by_value(weight, -0.01, 0.01))
 
     # Return source data mapped to target domain, so we have the labels
+
+@tf.function
+def train_step_forecast(data_a, data_b, model, opt, loss):
+    """ Train mapping with forecasting loss """
+    x_a, y_a = data_a
+    x_b, _ = data_b
+
+    with tf.GradientTape(persistent=True) as tape:
+        # Split data so we have a bit of data at the end of each time window
+        # to forecast -- use this one for computing differences, otherwise the
+        # mapped values and original are of slightly different sizes, which
+        # won't work
+        x_a_short, forecast_Areal = model.split(x_a)
+        x_b_short, forecast_Breal = model.split(x_b)
+
+        gen_AtoB, gen_AtoBtoA, forecast_Afake, _ = model(x_a_short, "target", training=True)
+        gen_BtoA, gen_BtoAtoB, forecast_Bfake, _ = model(x_b_short, "source", training=True)
+
+        # Generators should by cycle consistent
+        cyc_loss = tf.reduce_mean(tf.abs(x_a_short - gen_AtoBtoA)) \
+            + tf.reduce_mean(tf.abs(x_b_short - gen_BtoAtoB))
+
+        # Mapping might be useful for forecasting
+        forecast_loss = tf.reduce_mean(tf.abs(forecast_Areal - forecast_Afake)) \
+            + tf.reduce_mean(tf.abs(forecast_Breal - forecast_Bfake)) \
+
+        # Total loss
+        g_loss = cyc_loss*FLAGS.map_cyc_mult + forecast_loss
+
+    # For plotting -- tf.function doesn't support a dictionary
+    additional_loss_names = [
+        "generator",
+        "cycle_consistency",
+        "forecast",
+    ]
+    additional_loss_values = [
+        g_loss,
+        cyc_loss,
+        forecast_loss,
+    ]
+
+    g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
+    forecast_grad = tape.gradient(forecast_loss, model.trainable_variables_forecasters)
+    del tape
+
+    # No overlapping variables between these, so just use one optimizer
+    opt.apply_gradients(zip(g_grad, model.trainable_variables_generators))
+    opt.apply_gradients(zip(forecast_grad, model.trainable_variables_forecasters))
+
+    # Since gen_AtoB is actually of a different size, we need to make the
+    # correct-sized one for the later classifiers
+    gen_AtoB = model.map_to_target(x_a)
+
+    # Return source data mapped to target domain, so we have the labels
     return gen_AtoB, y_a
 
 
@@ -433,7 +488,7 @@ def main(argv):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    # We adapt for any method other than "none" or "cyclegan"
+    # We adapt for any method other than "none", "cyclegan", or "forecast"
     adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance"]
 
     assert not (adapt and not FLAGS.task), \
@@ -491,15 +546,17 @@ def main(argv):
     else:
         model = None
 
-    if FLAGS.method in ["cyclegan", "cycada"]:
-        # For the GAN, we need to know the source and target sizes
+    # For mapping, we need to know the source and target sizes
         # Note: first dimension is batch size, so drop that
         source_first_x, _ = next(iter(source_dataset.train))
         source_x_shape = source_first_x.shape[1:]
         target_first_x, _ = next(iter(target_dataset.train))
         target_x_shape = target_first_x.shape[1:]
 
+    if FLAGS.method in ["cyclegan", "cycada"]:
         mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
+    elif FLAGS.method == "forecast":
+        mapping_model = models.ForecastGAN(source_x_shape, target_x_shape)
     else:
         mapping_model = None
 
@@ -562,7 +619,12 @@ def main(argv):
             # the same and may be used (if method != none) to further adapt
             # the classifier to have a fake target vs. real target invariant
             # representation.
-            data_a = train_step_cyclegan(data_a, data_b,
+            if FLAGS.method == "forecast":
+                data_a = train_step_forecast(data_a, data_b,
+                    mapping_model, mapping_opt, mapping_loss)
+            else:
+                data_a = train_step_cyclegan(data_a, data_b,
+                    mapping_model, mapping_opt, mapping_loss)
                 mapping_model, mapping_opt, mapping_loss)
 
         # Train the task model (possibly with adaptation)
