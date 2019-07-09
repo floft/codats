@@ -36,7 +36,7 @@ flags.DEFINE_float("lr_target_mult", 0.5, "Learning rate multiplier for training
 flags.DEFINE_float("lr_mapping_mult", 1.0, "Learning rate multiplier for training domain mapping GAN")
 flags.DEFINE_float("lr_map_d_loss_mult", 1.0, "Learning rate multiplier for training domain mapping discriminator")
 flags.DEFINE_float("map_cyc_mult", 10.0, "Multiplier for cycle consistency loss for training domain mapping generator")
-flags.DEFINE_boolean("minimize_true_error", False, "If the actual transform is known, minimize it to verify network is capable of learning the correct mapping (for method=forecast)")
+flags.DEFINE_boolean("minimize_true_error", False, "If the actual transform is known, minimize it to verify mapping network is capable of learning the correct mapping")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
@@ -342,7 +342,7 @@ def wgan_gradient_penalty(real, fake, discriminator):
 
 
 @tf.function
-def train_step_cyclegan(data_a, data_b, model, opt, loss):
+def train_step_cyclegan(data_a, data_b, model, opt, loss, invert_name=None):
     """ Training domain mapping with CycleGAN-like setup, return data_a mapped
     to the target domain (domain B) for training a classifier on it later """
     x_a, y_a = data_a
@@ -402,22 +402,21 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
             d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
                + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
 
-        g_loss += g_adv
+        # If the true mapping is known, calculate the true loss
+        if invert_name is not None:
+            true_target = inversions.map_to_target[invert_name](x_a)
+            true_source = inversions.map_to_source[invert_name](x_b)
+            true_loss = tf.reduce_mean(tf.abs(true_target - gen_AtoB)) \
+                + tf.reduce_mean(tf.abs(true_source - gen_BtoA))
 
-        # For plotting -- before we multiply d_loss, tf.function doesn't support
-        # a dictionary
-        additional_loss_names = [
-            "mapping/generator",
-            "mapping/cycle_consistency",
-            "mapping/discriminator",
-            "mapping/generator_adversarial",
-        ]
-        additional_loss_values = [
-            g_loss,
-            cyc_loss,
-            d_loss,
-            g_adv,
-        ]
+        # Total loss
+        #
+        # Optionally minimize that true error to make sure the network is
+        # capable of learning the correct mapping.
+        if FLAGS.minimize_true_error and invert_name is not None:
+            g_loss = true_loss
+        else:
+            g_loss += g_adv
 
         # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent if
         # set to 5.0?
@@ -435,6 +434,24 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
     if FLAGS.cyclegan_loss == "wgan":
         for weight in model.trainable_variables_discriminators:
             weight.assign(tf.clip_by_value(weight, -0.01, 0.01))
+
+    # For plotting -- tf.function doesn't support a dictionary
+    additional_loss_names = [
+        "mapping/generator",
+        "mapping/cycle_consistency",
+        "mapping/discriminator",
+        "mapping/generator_adversarial",
+    ]
+    additional_loss_values = [
+        g_loss,
+        cyc_loss,
+        d_loss / FLAGS.lr_map_d_loss_mult,
+        g_adv,
+    ]
+
+    if invert_name is not None:
+        additional_loss_names.append("mapping/true")
+        additional_loss_values.append(true_loss)
 
     # Return source data mapped to target domain, so we have the labels
     return (gen_AtoB, y_a), (additional_loss_names, additional_loss_values)
@@ -473,7 +490,6 @@ def train_step_forecast(data_a, data_b, model, opt, loss, invert_name=None):
             true_source = model.trim(
                 inversions.map_to_source[invert_name](x_b_short),
                 gen_BtoA.shape[1])
-
             true_loss = tf.reduce_mean(tf.abs(true_target - gen_AtoB)) \
                 + tf.reduce_mean(tf.abs(true_source - gen_BtoA))
 
@@ -485,6 +501,18 @@ def train_step_forecast(data_a, data_b, model, opt, loss, invert_name=None):
             g_loss = true_loss
         else:
             g_loss = cyc_loss*FLAGS.map_cyc_mult + forecast_loss
+
+    g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
+    forecast_grad = tape.gradient(forecast_loss, model.trainable_variables_forecasters)
+    del tape
+
+    # No overlapping variables between these, so just use one optimizer
+    opt.apply_gradients(zip(g_grad, model.trainable_variables_generators))
+    opt.apply_gradients(zip(forecast_grad, model.trainable_variables_forecasters))
+
+    # Since gen_AtoB is actually of a different size, we need to make the
+    # correct-sized one for the later classifiers
+    gen_AtoB = model.map_to_target(x_a)
 
     # For plotting -- tf.function doesn't support a dictionary
     additional_loss_names = [
@@ -501,18 +529,6 @@ def train_step_forecast(data_a, data_b, model, opt, loss, invert_name=None):
     if invert_name is not None:
         additional_loss_names.append("mapping/true")
         additional_loss_values.append(true_loss)
-
-    g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
-    forecast_grad = tape.gradient(forecast_loss, model.trainable_variables_forecasters)
-    del tape
-
-    # No overlapping variables between these, so just use one optimizer
-    opt.apply_gradients(zip(g_grad, model.trainable_variables_generators))
-    opt.apply_gradients(zip(forecast_grad, model.trainable_variables_forecasters))
-
-    # Since gen_AtoB is actually of a different size, we need to make the
-    # correct-sized one for the later classifiers
-    gen_AtoB = model.map_to_target(x_a)
 
     # Return source data mapped to target domain, so we have the labels
     return (gen_AtoB, y_a), (additional_loss_names, additional_loss_values)
@@ -669,7 +685,8 @@ def main(argv):
                     source_dataset.invert_name)
             else:
                 data_a, additional_losses = train_step_cyclegan(data_a, data_b,
-                    mapping_model, mapping_opt, mapping_loss)
+                    mapping_model, mapping_opt, mapping_loss,
+                    source_dataset.invert_name)
 
         # Train the task model (possibly with adaptation)
         if model is not None:
