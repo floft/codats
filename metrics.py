@@ -154,6 +154,9 @@ class Metrics:
         for _, metric in self.per_class_metrics[dataset].items():
             metric.reset_states()
 
+        for _, metric in self.map_batch_metrics[dataset].items():
+            metric.reset_states()
+
         if dataset == "training":
             self.loss_total.reset_states()
             self.loss_task.reset_states()
