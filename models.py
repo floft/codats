@@ -1046,25 +1046,34 @@ class ForecastGAN(tf.keras.Model):
         return make_CycleGAN_generator(num_features)
 
     def make_forecast(self, output_dims):
+        # return tf.keras.Sequential([
+        #     tf.keras.layers.Conv1D(filters=64, kernel_size=8, padding="same",
+        #         use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     tf.keras.layers.Conv1D(filters=128, kernel_size=5, padding="same",
+        #         use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     tf.keras.layers.Conv1D(filters=64, kernel_size=3, padding="same",
+        #         use_bias=False),
+        #     tf.keras.layers.BatchNormalization(),
+        #     tf.keras.layers.Activation("relu"),
+
+        #     tf.keras.layers.GlobalAveragePooling1D(),
+
+        #     # TODO probably not that great
+        #     tf.keras.layers.Flatten(),
+        #     tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
+        #     tf.keras.layers.Reshape(output_dims),
+        # ])
+
+        # Need n=6 layers 1+2*(kernel_size-1)*(2^n-1) > 100
+        # See: https://medium.com/the-artificial-impostor/notes-understanding-tensorflow-part-3-7f6633fcc7c7
         return tf.keras.Sequential([
-            tf.keras.layers.Conv1D(filters=64, kernel_size=8, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.Conv1D(filters=128, kernel_size=5, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.Conv1D(filters=64, kernel_size=3, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.GlobalAveragePooling1D(),
-
-            # TODO probably not that great
+            TemporalConvNet([8, 16, 32], 3, dropout=0.2, return_sequences=False),
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(np.prod(output_dims), use_bias=True),
             tf.keras.layers.Reshape(output_dims),
