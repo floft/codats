@@ -17,6 +17,7 @@ from metrics import Metrics
 from checkpoints import CheckpointManager
 from file_utils import last_modified_number, write_finished
 from gpu_memory import set_gpu_memory
+from datasets import inversions
 
 FLAGS = flags.FLAGS
 
@@ -35,6 +36,7 @@ flags.DEFINE_float("lr_target_mult", 0.5, "Learning rate multiplier for training
 flags.DEFINE_float("lr_mapping_mult", 1.0, "Learning rate multiplier for training domain mapping GAN")
 flags.DEFINE_float("lr_map_d_loss_mult", 1.0, "Learning rate multiplier for training domain mapping discriminator")
 flags.DEFINE_float("map_cyc_mult", 10.0, "Multiplier for cycle consistency loss for training domain mapping generator")
+flags.DEFINE_boolean("minimize_true_error", False, "If the actual transform is known, minimize it to verify network is capable of learning the correct mapping (for method=forecast)")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
@@ -405,10 +407,10 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
         # For plotting -- before we multiply d_loss, tf.function doesn't support
         # a dictionary
         additional_loss_names = {
-            "generator",
-            "cycle_consistency",
-            "discriminator",
-            "generator_adversarial",
+            "mapping/generator",
+            "mapping/cycle_consistency",
+            "mapping/discriminator",
+            "mapping/generator_adversarial",
         }
         additional_loss_values = [
             g_loss,
@@ -439,7 +441,7 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
 
 
 @tf.function
-def train_step_forecast(data_a, data_b, model, opt, loss):
+def train_step_forecast(data_a, data_b, model, opt, loss, invert_name=None):
     """ Train mapping with forecasting loss """
     x_a, y_a = data_a
     x_b, _ = data_b
@@ -461,22 +463,44 @@ def train_step_forecast(data_a, data_b, model, opt, loss):
 
         # Mapping might be useful for forecasting
         forecast_loss = tf.reduce_mean(tf.abs(forecast_Areal - forecast_Afake)) \
-            + tf.reduce_mean(tf.abs(forecast_Breal - forecast_Bfake)) \
+            + tf.reduce_mean(tf.abs(forecast_Breal - forecast_Bfake))
+
+        # If the true mapping is known, calculate the true loss
+        if invert_name is not None:
+            true_target = model.trim(
+                inversions.map_to_target[invert_name](x_a_short),
+                gen_AtoB.shape[1])
+            true_source = model.trim(
+                inversions.map_to_source[invert_name](x_b_short),
+                gen_BtoA.shape[1])
+
+            true_loss = tf.reduce_mean(tf.abs(true_target - gen_AtoB)) \
+                + tf.reduce_mean(tf.abs(true_source - gen_BtoA))
 
         # Total loss
-        g_loss = cyc_loss*FLAGS.map_cyc_mult + forecast_loss
+        #
+        # Optionally minimize that true error to make sure the network is
+        # capable of learning the correct mapping.
+        if FLAGS.minimize_true_error and invert_name is not None:
+            g_loss = true_loss
+        else:
+            g_loss = cyc_loss*FLAGS.map_cyc_mult + forecast_loss
 
     # For plotting -- tf.function doesn't support a dictionary
     additional_loss_names = [
-        "generator",
-        "cycle_consistency",
-        "forecast",
+        "mapping/generator",
+        "mapping/cycle_consistency",
+        "mapping/forecast",
     ]
     additional_loss_values = [
         g_loss,
         cyc_loss,
         forecast_loss,
     ]
+
+    if invert_name is not None:
+        additional_loss_names.append("mapping/true")
+        additional_loss_values.append(true_loss)
 
     g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
     forecast_grad = tape.gradient(forecast_loss, model.trainable_variables_forecasters)
@@ -641,7 +665,8 @@ def main(argv):
             # representation.
             if FLAGS.method == "forecast":
                 data_a, additional_losses = train_step_forecast(data_a, data_b,
-                    mapping_model, mapping_opt, mapping_loss)
+                    mapping_model, mapping_opt, mapping_loss,
+                    source_dataset.invert_name)
             else:
                 data_a, additional_losses = train_step_cyclegan(data_a, data_b,
                     mapping_model, mapping_opt, mapping_loss)
