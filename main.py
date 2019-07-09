@@ -406,12 +406,12 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss):
 
         # For plotting -- before we multiply d_loss, tf.function doesn't support
         # a dictionary
-        additional_loss_names = {
+        additional_loss_names = [
             "mapping/generator",
             "mapping/cycle_consistency",
             "mapping/discriminator",
             "mapping/generator_adversarial",
-        }
+        ]
         additional_loss_values = [
             g_loss,
             cyc_loss,
