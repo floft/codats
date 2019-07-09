@@ -195,6 +195,47 @@ class Conv1DTranspose(tf.keras.layers.Layer):
         return net
 
 
+class ReflectSamePadding(tf.keras.layers.Layer):
+    """
+    Output the same way that "same" padding would, but instead of zero padding
+    do reflection padding.
+    """
+    def __init__(self, kernel_size, strides=1, **kwargs):
+        super().__init__(**kwargs)
+        self.kernel_size = kernel_size
+        self.strides = strides
+
+    def call(self, inputs, **kwargs):
+        time_steps = inputs.shape[1]
+        _, pad_before, pad_after = self.calc_padding(time_steps,
+            self.kernel_size, self.strides, "same")
+        return tf.pad(inputs, [[0, 0], [pad_before, pad_after], [0, 0]], "reflect")
+
+    def calc_padding(self, input_size, filter_size, stride, pad_type):
+        """
+        See code (used to be in the API guide but since has vanished):
+        https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/framework/common_shape_fns.cc#L45
+
+        Note: copied from my tflite code
+        https://github.com/floft/vision-landing/blob/master/tflite_opencl.py
+        """
+        assert pad_type == "valid" or pad_type == "same", \
+            "Only SAME and VALID padding types are implemented"
+
+        if pad_type == "valid":
+            output_size = int((input_size - filter_size + stride) / stride)
+            pad_before = 0
+            pad_after = 0
+        elif pad_type == "same":
+            output_size = int((input_size + stride - 1) / stride)
+            pad_needed = max(0, (output_size - 1)*stride + filter_size - input_size)
+            pad_before = pad_needed // 2
+            pad_after = pad_needed - pad_before
+
+        assert output_size >= 0, "output_size must be non-negative after padding"
+        return output_size, pad_before, pad_after
+
+
 def make_vrada_model(num_classes, global_step, grl_schedule):
     """
     Create model inspired by the VRADA paper model for time-series data
@@ -742,12 +783,18 @@ def make_CycleGAN_generator(num_features):
     activation = "relu"
 
     return tf.keras.Sequential([
-        tf.keras.layers.Conv1D(filters=64, kernel_size=7, padding="same",
+        # padding should be 1/2 of start/end depth - 1
+        #
+        # if no padding here, then change first conv1d to same padding, but then
+        # the start/end of the mapping looks worse
+        ReflectSamePadding(kernel_size=7, strides=1),
+        tf.keras.layers.Conv1D(filters=64, kernel_size=7, padding="valid",
             use_bias=False),
         normalization(),
         tf.keras.layers.Activation(activation),
 
-        tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
+        ReflectSamePadding(kernel_size=3, strides=2),
+        tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="valid",
             strides=2, use_bias=False),
         normalization(),
         tf.keras.layers.Activation(activation),
@@ -779,8 +826,9 @@ def make_CycleGAN_generator(num_features):
 
         # Note: CycleGAN tutorial I followed (see my code on Github) also
         # didn't do BN or activation function after this
+        ReflectSamePadding(kernel_size=7, strides=1),
         tf.keras.layers.Conv1D(filters=num_features, kernel_size=7,
-            padding="same", use_bias=True),
+            padding="valid", use_bias=True),
         #normalization(),
         #tf.keras.layers.Activation(activation),
 
