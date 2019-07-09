@@ -209,7 +209,10 @@ class ReflectSamePadding(tf.keras.layers.Layer):
         time_steps = inputs.shape[1]
         _, pad_before, pad_after = self.calc_padding(time_steps,
             self.kernel_size, self.strides, "same")
-        return tf.pad(inputs, [[0, 0], [pad_before, pad_after], [0, 0]], "reflect")
+        # Note: for some reason works better when swapping before/after so that
+        # for odd paddings, we have the extra padding at the left rather than
+        # the right
+        return tf.pad(inputs, [[0, 0], [pad_after, pad_before], [0, 0]], "reflect")
 
     def calc_padding(self, input_size, filter_size, stride, pad_type):
         """
