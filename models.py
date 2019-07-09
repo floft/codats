@@ -133,20 +133,30 @@ class WangResnetBlock(tf.keras.layers.Layer):
     See make_resnet_model()
     """
     def __init__(self, n_feature_maps, shortcut_resize=True,
-            kernel_sizes=[8, 5, 3],
+            kernel_sizes=[8, 5, 3], reflect_padding=False,
             normalization=tf.keras.layers.BatchNormalization,
             activation="relu", **kwargs):
         super().__init__(**kwargs)
         self.blocks = []
 
         for kernel_size in kernel_sizes:
-            self.blocks.append(tf.keras.Sequential([
-                tf.keras.layers.Conv1D(filters=n_feature_maps,
-                    kernel_size=kernel_size,
-                    padding="same", use_bias=False),
-                normalization(),
-                tf.keras.layers.Activation(activation),
-            ]))
+            if reflect_padding:
+                self.blocks.append(tf.keras.Sequential([
+                    ReflectSamePadding(kernel_size),
+                    tf.keras.layers.Conv1D(filters=n_feature_maps,
+                        kernel_size=kernel_size,
+                        padding="valid", use_bias=False),
+                    normalization(),
+                    tf.keras.layers.Activation(activation),
+                ]))
+            else:
+                self.blocks.append(tf.keras.Sequential([
+                    tf.keras.layers.Conv1D(filters=n_feature_maps,
+                        kernel_size=kernel_size,
+                        padding="same", use_bias=False),
+                    normalization(),
+                    tf.keras.layers.Activation(activation),
+                ]))
 
         if shortcut_resize:
             self.shortcut = tf.keras.Sequential([
@@ -790,7 +800,7 @@ def make_CycleGAN_generator(num_features):
         #
         # if no padding here, then change first conv1d to same padding, but then
         # the start/end of the mapping looks worse
-        ReflectSamePadding(kernel_size=7, strides=1),
+        ReflectSamePadding(kernel_size=7),
         tf.keras.layers.Conv1D(filters=64, kernel_size=7, padding="valid",
             use_bias=False),
         normalization(),
@@ -802,25 +812,26 @@ def make_CycleGAN_generator(num_features):
         normalization(),
         tf.keras.layers.Activation(activation),
 
-        # tf.keras.layers.Conv1D(filters=256, kernel_size=3, padding="same",
-        #     strides=2, use_bias=False),
-        # normalization(),
-        # tf.keras.layers.Activation(activation),
+        ReflectSamePadding(kernel_size=3, strides=2),
+        tf.keras.layers.Conv1D(filters=256, kernel_size=3, padding="valid",
+            strides=2, use_bias=False),
+        normalization(),
+        tf.keras.layers.Activation(activation),
 
-        # WangResnetBlock(256, shortcut_resize=False,
-        #     normalization=normalization, activation=activation,
-        #     kernel_sizes=[3, 3]),
-        # WangResnetBlock(256, shortcut_resize=False,
-        #     normalization=normalization, activation=activation,
-        #     kernel_sizes=[3, 3]),
-        # WangResnetBlock(256, shortcut_resize=False,
-        #     normalization=normalization, activation=activation,
-        #     kernel_sizes=[3, 3]),
+        WangResnetBlock(256, shortcut_resize=False,
+            normalization=normalization, activation=activation,
+            kernel_sizes=[3, 3], reflect_padding=True),
+        WangResnetBlock(256, shortcut_resize=False,
+            normalization=normalization, activation=activation,
+            kernel_sizes=[3, 3], reflect_padding=True),
+        WangResnetBlock(256, shortcut_resize=False,
+            normalization=normalization, activation=activation,
+            kernel_sizes=[3, 3], reflect_padding=True),
 
-        # Conv1DTranspose(filters=128, kernel_size=3, padding="same",
-        #     strides=2, use_bias=False),
-        # normalization(),
-        # tf.keras.layers.Activation(activation),
+        Conv1DTranspose(filters=128, kernel_size=3, padding="same",
+            strides=2, use_bias=False),
+        normalization(),
+        tf.keras.layers.Activation(activation),
 
         Conv1DTranspose(filters=64, kernel_size=3, padding="same",
             strides=2, use_bias=False),
@@ -829,7 +840,7 @@ def make_CycleGAN_generator(num_features):
 
         # Note: CycleGAN tutorial I followed (see my code on Github) also
         # didn't do BN or activation function after this
-        ReflectSamePadding(kernel_size=7, strides=1),
+        ReflectSamePadding(kernel_size=7),
         tf.keras.layers.Conv1D(filters=num_features, kernel_size=7,
             padding="valid", use_bias=True),
         #normalization(),
