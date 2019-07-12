@@ -572,9 +572,10 @@ def main(argv):
         assert source_dataset.num_classes == target_dataset.num_classes, \
             "Adapting from source to target with different classes not supported"
     else:
-        raise NotImplementedError("currently don't support only source")
-        source_dataset = load_datasets.load(FLAGS.source, test=FLAGS.test,
-            train_batch=train_batch)
+        assert FLAGS.method not in ["cyclegan", "cycada", "forecast"], \
+            "mapping methods require both source and target data"
+        source_dataset, _ = load_datasets.load_da(FLAGS.source,
+            None, test=FLAGS.test, train_batch=train_batch)
         target_dataset = None
 
     # Iterator and evaluation datasets if we have the dataset
@@ -608,8 +609,9 @@ def main(argv):
     # Note: first dimension is batch size, so drop that
     source_first_x, _ = next(iter(source_dataset.train))
     source_x_shape = source_first_x.shape[1:]
-    target_first_x, _ = next(iter(target_dataset.train))
-    target_x_shape = target_first_x.shape[1:]
+    if target_dataset is not None:
+        target_first_x, _ = next(iter(target_dataset.train))
+        target_x_shape = target_first_x.shape[1:]
 
     if FLAGS.method in ["cyclegan", "cycada"]:
         mapping_model = models.CycleGAN(source_x_shape, target_x_shape)

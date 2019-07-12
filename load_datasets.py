@@ -202,14 +202,15 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
     # Sanity checks
     assert source_name in datasets.datasets, \
         source_name + " not a supported dataset, only "+str(datasets.datasets)
-    assert target_name in datasets.datasets, \
+    assert target_name is None or target_name in datasets.datasets, \
         target_name + " not a supported dataset, only "+str(datasets.datasets)
 
     # Get dataset information
     source_num_classes = datasets.datasets[source_name].num_classes
     source_class_labels = datasets.datasets[source_name].class_labels
-    target_num_classes = datasets.datasets[target_name].num_classes
-    target_class_labels = datasets.datasets[target_name].class_labels
+    if target_name is not None:
+        target_num_classes = datasets.datasets[target_name].num_classes
+        target_class_labels = datasets.datasets[target_name].class_labels
     invert_name = source_name if datasets.datasets[source_name].invertible else None
 
     # Get dataset tfrecord filenames
@@ -225,14 +226,16 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
     source_train_filenames = _path(tfrecord_filename(*names, source_name, "train"))
     source_valid_filenames = _path(tfrecord_filename(*names, source_name, "valid"))
     source_test_filenames = _path(tfrecord_filename(*names, source_name, "test"))
-    target_train_filenames = _path(tfrecord_filename(*names, target_name, "train"))
-    target_valid_filenames = _path(tfrecord_filename(*names, target_name, "valid"))
-    target_test_filenames = _path(tfrecord_filename(*names, target_name, "test"))
+    if target_name is not None:
+        target_train_filenames = _path(tfrecord_filename(*names, target_name, "train"))
+        target_valid_filenames = _path(tfrecord_filename(*names, target_name, "valid"))
+        target_test_filenames = _path(tfrecord_filename(*names, target_name, "test"))
 
     # By default use validation data as the "test" data, unless test=True
     if not test:
         source_test_filenames = source_valid_filenames
-        target_test_filenames = target_valid_filenames
+        if target_name is not None:
+            target_test_filenames = target_valid_filenames
 
         # However, also train on the source "valid" data since we don't actually
         # care about those numbers much and some datasets like Office are really
@@ -245,7 +248,7 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
         # few thousand target examples, then we might ought to use everything
         # for training (unlabeled still though; only validation uses labels for
         # testing, but not during training).
-        if FLAGS.train_on_target_valid:
+        if FLAGS.train_on_target_valid and target_name is not None:
             target_train_filenames += target_valid_filenames
             print("Warning: training on unlabeled target \"valid\" data")
 
@@ -253,16 +256,20 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
     # data to match the original dataset.
     else:
         source_train_filenames += source_valid_filenames
-        target_train_filenames += target_valid_filenames
+        if target_name is not None:
+            target_train_filenames += target_valid_filenames
 
     # Create all the train, test, evaluation, ... tf.data.Dataset objects within
     # a Dataset() class that stores them
     source_dataset = Dataset(source_num_classes, source_class_labels,
         source_train_filenames, source_test_filenames, invert_name,
         *args, **kwargs)
-    target_dataset = Dataset(target_num_classes, target_class_labels,
-        target_train_filenames, target_test_filenames, invert_name,
-        *args, **kwargs)
+    if target_name is not None:
+        target_dataset = Dataset(target_num_classes, target_class_labels,
+            target_train_filenames, target_test_filenames, invert_name,
+            *args, **kwargs)
+    else:
+        target_dataset = None
 
     return source_dataset, target_dataset
 

@@ -533,7 +533,11 @@ class Metrics:
         """ Log plots """
         # Get first batch of data
         data_a = next(iter(eval_data_a))
-        data_b = next(iter(eval_data_b))
+
+        if not self.target_domain:
+            data_b = None
+        else:
+            data_b = next(iter(eval_data_b))
 
         # We'll only plot the real plots once since they don't change
         step = int(global_step)

@@ -36,12 +36,14 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
     """
     plots = []
     x_a, y_a = data_a
-    x_b, y_b = data_b
+
+    if data_b is not None:
+        x_b, y_b = data_b
 
     #
     # TSNE and PCA
     #
-    if model is not None and FLAGS.max_plot_embedding > 0:
+    if model is not None and FLAGS.max_plot_embedding > 0 and data_b is not None:
         emb_x_a = x_a[:FLAGS.max_plot_embedding]
         emb_x_b = x_b[:FLAGS.max_plot_embedding]
         emb_y_a = y_a[:FLAGS.max_plot_embedding]
@@ -79,7 +81,7 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
     #
     # Domain mapping
     #
-    if mapping_model is not None and FLAGS.max_plot_mapping > 0:
+    if mapping_model is not None and FLAGS.max_plot_mapping > 0 and data_b is not None:
         map_x_a = x_a[:FLAGS.max_plot_mapping]
         map_x_b = x_b[:FLAGS.max_plot_mapping]
 
