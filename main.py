@@ -24,7 +24,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
@@ -64,6 +64,7 @@ def get_directory_names():
     methods_suffix = {
         "none": "",
         "cyclegan": "-cyclegan",
+        "cyclegan_dann": "-cyclegan_dann",
         "forecast": "-forecast",
         # TODO "cycada" is actually CycleGAN+DANN since we don't have semantic
         # consistency loss
@@ -547,7 +548,7 @@ def main(argv):
         os.makedirs(log_dir)
 
     # We adapt for any method other than "none", "cyclegan", or "forecast"
-    adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance"]
+    adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance", "cyclegan_dann"]
 
     assert not (adapt and not FLAGS.task), \
         "If adapting (e.g. method=dann), must not pass --notask"
@@ -613,7 +614,7 @@ def main(argv):
         target_first_x, _ = next(iter(target_dataset.train))
         target_x_shape = target_first_x.shape[1:]
 
-    if FLAGS.method in ["cyclegan", "cycada"]:
+    if FLAGS.method in ["cyclegan", "cycada", "cyclegan_dann"]:
         mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
     elif FLAGS.method == "forecast":
         mapping_model = models.ForecastGAN(source_x_shape, target_x_shape)
