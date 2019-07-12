@@ -66,8 +66,6 @@ def get_directory_names():
         "cyclegan": "-cyclegan",
         "cyclegan_dann": "-cyclegan_dann",
         "forecast": "-forecast",
-        # TODO "cycada" is actually CycleGAN+DANN since we don't have semantic
-        # consistency loss
         "cycada": "-cycada",
         "dann": "-dann",
         "pseudo": "-pseudo",
@@ -343,15 +341,19 @@ def wgan_gradient_penalty(real, fake, discriminator):
 
 
 @tf.function
-def train_step_cyclegan(data_a, data_b, model, opt, loss, invert_name=None):
+def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=None,
+        task_loss=None, classify_model=None, semantic_consistency=False):
     """ Training domain mapping with CycleGAN-like setup, return data_a mapped
-    to the target domain (domain B) for training a classifier on it later """
+    to the target domain (domain B) for training a classifier on it later
+
+    For CyCADA, set semantic_consistency=True and pass in classification model
+    (includes both source and target models?)."""
     x_a, y_a = data_a
     x_b, _ = data_b
 
     with tf.GradientTape(persistent=True) as tape:
-        gen_AtoB, gen_AtoBtoA, disc_Areal, disc_Bfake = model(x_a, "target", training=True)
-        gen_BtoA, gen_BtoAtoB, disc_Breal, disc_Afake = model(x_b, "source", training=True)
+        gen_AtoB, gen_AtoBtoA, disc_Areal, disc_Bfake = mapping_model(x_a, "target", training=True)
+        gen_BtoA, gen_BtoAtoB, disc_Breal, disc_Afake = mapping_model(x_b, "source", training=True)
 
         # Need a/b for both since they could be of different sizes
         zeros_a = tf.zeros_like(disc_Areal)
@@ -366,12 +368,9 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss, invert_name=None):
         g_loss = cyc_loss*FLAGS.map_cyc_mult
 
         # penalize negative weights https://stackoverflow.com/q/50158467
-        # for weight in model.trainable_variables_generators:
+        # for weight in mapping_model.trainable_variables_generators:
         #     if "kernel" in weight.name:
         #         g_loss += tf.nn.l2_loss(tf.nn.relu(tf.negative(weight)))
-
-        # TODO ForecastGAN pass gen_AtoB (fake domain B) through target forecast
-        # model and use reduce_mean(abs(x_b[forecasted amount] - forecast))
 
         # For generator step, we want the discriminator to output a 1, i.e.
         # incorrect label
@@ -384,9 +383,9 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss, invert_name=None):
                 + (tf.reduce_mean(disc_Bfake) - tf.reduce_mean(disc_Breal)))/2
 
             if FLAGS.cyclegan_loss == "wgan-gp":
-                model.set_learning_phase(False)  # Don't update BN stats
-                gp1 = wgan_gradient_penalty(x_a, gen_BtoA, model.source_discriminator)
-                gp2 = wgan_gradient_penalty(x_b, gen_AtoB, model.target_discriminator)
+                mapping_model.set_learning_phase(False)  # Don't update BN stats
+                gp1 = wgan_gradient_penalty(x_a, gen_BtoA, mapping_model.source_discriminator)
+                gp2 = wgan_gradient_penalty(x_b, gen_AtoB, mapping_model.target_discriminator)
                 d_loss += 10*(gp1 + gp2)
         elif FLAGS.cyclegan_loss == "lsgan":
             g_adv = tf.reduce_mean(tf.math.squared_difference(disc_Bfake, 1)) \
@@ -402,6 +401,27 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss, invert_name=None):
             # Note: divided by two, see CycleGAN paper 7.1
             d_loss = (loss(zeros_a, disc_Afake) + loss(ones_a, disc_Areal)
                + loss(zeros_b, disc_Bfake) + loss(ones_b, disc_Breal))/2
+
+        # Semantic consistency loss
+        if semantic_consistency:
+            # Check consistency between true source labels and classifier on
+            # mapped source to target data
+            # Note: this is using the domain-invariant model. Maybe CyCADA used
+            # a separate one trained just on the source data? Not sure.
+            task_y_true_a = y_a
+            task_y_pred_mapped_a, _ = classify_model(gen_AtoB, training=False)
+
+            # Check consistency between classifier on target data vs. classifier
+            # on target data mapped back to source
+            task_y_pred_b, _ = classify_model(x_b, training=False)
+            task_y_pred_mapped_b, _ = classify_model(gen_BtoA, training=False)
+
+            # TODO only if classifier has "reasonably low loss", i.e. in CyCADA
+            # code if it's (run classify_model on x_a) less than 1.0
+            g_semantic = task_loss(task_y_true_a, task_y_pred_mapped_a) \
+                + task_loss(task_y_pred_b, task_y_pred_mapped_b)
+        else:
+            g_semantic = 0.0
 
         # If the true mapping is known, calculate the true loss
         if invert_name is not None:
@@ -419,21 +439,24 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss, invert_name=None):
         else:
             g_loss += g_adv
 
+            if semantic_consistency:
+                g_loss += g_semantic
+
         # WGAN and WGAN-GP used 5 iterations, so maybe this is ~equivalent if
         # set to 5.0?
         d_loss *= FLAGS.lr_map_d_loss_mult
 
-    g_grad = tape.gradient(g_loss, model.trainable_variables_generators)
-    d_grad = tape.gradient(d_loss, model.trainable_variables_discriminators)
+    g_grad = tape.gradient(g_loss, mapping_model.trainable_variables_generators)
+    d_grad = tape.gradient(d_loss, mapping_model.trainable_variables_discriminators)
     del tape
 
     # No overlapping variables between these, so just use one optimizer
-    opt.apply_gradients(zip(g_grad, model.trainable_variables_generators))
-    opt.apply_gradients(zip(d_grad, model.trainable_variables_discriminators))
+    opt.apply_gradients(zip(g_grad, mapping_model.trainable_variables_generators))
+    opt.apply_gradients(zip(d_grad, mapping_model.trainable_variables_discriminators))
 
     # WGAN weight clipping
     if FLAGS.cyclegan_loss == "wgan":
-        for weight in model.trainable_variables_discriminators:
+        for weight in mapping_model.trainable_variables_discriminators:
             weight.assign(tf.clip_by_value(weight, -0.01, 0.01))
 
     # For plotting -- tf.function doesn't support a dictionary
@@ -453,6 +476,10 @@ def train_step_cyclegan(data_a, data_b, model, opt, loss, invert_name=None):
     if invert_name is not None:
         additional_loss_names.append("mapping/true")
         additional_loss_values.append(true_loss)
+
+    if semantic_consistency:
+        additional_loss_names.append("mapping/semantic_consistency")
+        additional_loss_values.append(g_semantic)
 
     # Return source data mapped to target domain, so we have the labels
     return (gen_AtoB, y_a), (additional_loss_names, additional_loss_values)
@@ -689,7 +716,8 @@ def main(argv):
             else:
                 data_a, additional_losses = train_step_cyclegan(data_a, data_b,
                     mapping_model, mapping_opt, mapping_loss,
-                    source_dataset.invert_name)
+                    source_dataset.invert_name, task_loss, model,
+                    semantic_consistency=FLAGS.method == "cycada")
 
         # Train the task model (possibly with adaptation)
         if model is not None:
