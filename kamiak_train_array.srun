@@ -39,8 +39,8 @@ if [[ -z $dataset || -z $options ]]; then
     exit 1
 else
     echo "Args: $@"
-    shift  # ignore "dataset" since we pass that to main.py differently
 fi
+shift  # ignore "dataset" since we pass that to main.py differently
 
 # Allow overriding args. Other args are passed directly to the Python program.
 program_args=()

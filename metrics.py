@@ -433,7 +433,10 @@ class Metrics:
         # If we're going to calculate mapping error, then we need to pass the
         # non-mapped data so we can map it (now that the model is updated)
         # then calculate the error.
-        if self.invertible:
+        #
+        # Or, if no mapped data is passed (e.g. in evaluation), then use the
+        # non-mapped data.
+        if self.invertible or data_a is None:
             data_a = non_mapped_data_a
         # Otherwise, use the already-mapped data as is and don't map it again.
         # This ends up being a bit faster since we do one less mapping.

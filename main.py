@@ -62,7 +62,7 @@ def get_directory_names():
     prefix = FLAGS.source+"-"+FLAGS.target+"-"+FLAGS.model
 
     methods_suffix = {
-        "none": "",
+        "none": "-none",
         "cyclegan": "-cyclegan",
         "cyclegan_dann": "-cyclegan_dann",
         "forecast": "-forecast",

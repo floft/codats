@@ -1,0 +1,72 @@
+#!/bin/bash
+#SBATCH --job-name=eval
+#SBATCH --output=slurm_logs/eval_%A_%a.out
+#SBATCH --error=slurm_logs/eval_%A_%a.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=3
+#SBATCH --nodes=1-1
+#SBATCH --gres=gpu:3
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=60G
+#SBATCH --array=0-5
+
+#
+# Evaluate models with main_eval.py but using SLURM's array feature to do
+# adaptation problems b0, b1, ..., b5.
+#
+
+. kamiak_config.sh
+
+# For actual use on Kamiak...
+gpus=3
+gpumem=0
+
+# Errors
+handle_terminate() {
+    echo "Sigterm or sigint -- exiting"
+    exit 1
+}
+handle_error() {
+    echo "Error occured -- exiting"
+    exit 1
+}
+trap 'handle_terminate' SIGTERM SIGINT
+
+# Suffix
+suffix="$1"
+outputname="$2"
+dataset="$3"
+network="$4"
+method="$5"
+if [[ -z $suffix || -z $outputname || -z $dataset || -z $network || -z $method ]]; then
+    echo "Usage: sbatch kamiak_eval_array.srun suffix outputname dataset network method <other arguments>"
+    echo "Note: there must exist datasets dataset_{a,b0,b1,b2,b3,b4,b5}"
+    exit 1
+else
+    echo "Args: $@"
+fi
+shift
+shift
+shift
+shift
+shift
+
+# Depends
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
+pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile
+
+# Evaluate
+from="kamiak"
+models="$remotedir/$from-models-$suffix"
+logs="$remotedir/$from-logs-$suffix"
+out="$remotedir/results_${suffix}_${outputname}-b${SLURM_ARRAY_TASK_ID}.txt"
+
+echo "Args: $@" > "$out"
+cd "$remotedir"
+{ python3 main_eval.py --gpus=$gpus --gpumem=$gpumem \
+    --modeldir="$models" --logdir="$logs" \
+    --match="${dataset}_a-${dataset}_b${SLURM_ARRAY_TASK_ID}-${network}-${method}-[0-9]*"
+    "$@" || handle_error; } | \
+    tee -a "$out"

@@ -31,7 +31,7 @@ from gpu_memory import set_gpu_memory
 
 FLAGS = flags.FLAGS
 
-methods = ["none", "dann", "pseudo", "instance"]
+methods = ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "pseudo", "instance"]
 
 # Same as in main.py
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
@@ -40,7 +40,7 @@ flags.DEFINE_boolean("target_classifier", True, "Use separate target classifier 
 flags.DEFINE_boolean("best_target", True, "If target_classifier, then pick best model based on target classifier accuracy (not task classifier accuracy)")
 # Specific for evaluation
 flags.DEFINE_float("gpumem", 8140, "GPU memory to let TensorFlow use, in MiB (divided among jobs)")
-flags.DEFINE_string("match", "*-*-*", "String matching to determine which logs/models to process")
+flags.DEFINE_string("match", "*-*-*-*", "String matching to determine which logs/models to process")
 flags.DEFINE_integer("jobs", 4, "Number of TensorFlow jobs to run at once")
 flags.DEFINE_integer("gpus", 1, "Split jobs between GPUs -- overrides jobs (1 == run multiple jobs on first GPU)")
 flags.DEFINE_boolean("last", False, "Use last model rather than one with best validation set performance")
@@ -77,20 +77,12 @@ def get_models_to_evaluate():
 
     for log_dir in files:
         items = str(log_dir.stem).split("-")
-        assert len(items) >= 3 or len(items) <= 5, \
-            "name should be one of source-target-model-{-method{-num,},-num,}"
+        assert len(items) >= 4, \
+            "name should be one of source-target-model-method{,-num}"
 
-        method_name = "none"
-
-        if len(items) == 3:
-            source, target, model_name = items
-        elif len(items) == 4 or len(items) == 5:
-            source, target, model_name, keyword = items[:4]
-
-            if keyword in methods:
-                method_name = keyword
-            else:
-                pass  # probably a debug number, which we don't care about
+        source, target, model_name, method_name = items[:4]
+        assert method_name in methods, \
+            "unknown method "+method_name
 
         model_dir = os.path.join(FLAGS.modeldir, log_dir.stem)
         assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)
@@ -231,13 +223,15 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
 
     # Load datasets
     if target != "":
-        source_dataset, target_dataset = load_datasets.load_da(source, target,
-            test=True)
+        source_dataset, target_dataset = load_datasets.load_da(source,
+            target, test=True)
         assert source_dataset.num_classes == target_dataset.num_classes, \
             "Adapting from source to target with different classes not supported"
     else:
-        raise NotImplementedError("currently don't support only source")
-        source_dataset = load_datasets.load(source, test=True)
+        assert method_name not in ["cyclegan", "cycada", "forecast"], \
+            "mapping methods require both source and target data"
+        source_dataset, _ = load_datasets.load_da(source,
+            None, test=True)
         target_dataset = None
 
     # Evaluation datasets if we have the dataset
@@ -259,15 +253,18 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
     model = DomainAdaptationModel(num_classes, model_name,
         global_step, num_steps)
 
-    if method_name in ["cyclegan", "cycada"]:
-        # For the GAN, we need to know the source and target sizes
-        # Note: first dimension is batch size, so drop that
-        source_first_x, _ = next(iter(source_dataset.train))
-        source_x_shape = source_first_x.shape[1:]
+    # For mapping, we need to know the source and target sizes
+    # Note: first dimension is batch size, so drop that
+    source_first_x, _ = next(iter(source_dataset.train))
+    source_x_shape = source_first_x.shape[1:]
+    if target_dataset is not None:
         target_first_x, _ = next(iter(target_dataset.train))
         target_x_shape = target_first_x.shape[1:]
 
+    if method_name in ["cyclegan", "cycada", "cyclegan_dann"]:
         mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
+    elif method_name == "forecast":
+        mapping_model = models.ForecastGAN(source_x_shape, target_x_shape)
     else:
         mapping_model = None
 
@@ -276,7 +273,14 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
         and FLAGS.target_classifier
 
     # Load model from checkpoint
-    checkpoint = tf.train.Checkpoint(model=model)
+    checkpoint = {}
+
+    if model is not None:
+        checkpoint["model"] = model
+    if mapping_model is not None:
+        checkpoint["mapping_model"] = mapping_model
+
+    checkpoint = tf.train.Checkpoint(**checkpoint)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir,
         target=has_target_classifier)
 
@@ -312,7 +316,7 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
             enable_compile=False)
 
     # Evaluate on both datasets
-    metrics.train(model, mapping_model, source_dataset_train, target_dataset_train, evaluation=True)
+    metrics.train(model, mapping_model, source_dataset_train, None, target_dataset_train, evaluation=True)
     metrics.test(model, mapping_model, source_dataset_test, target_dataset_test, evaluation=True)
 
     # Get results
