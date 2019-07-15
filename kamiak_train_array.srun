@@ -1,0 +1,78 @@
+#!/bin/bash
+#SBATCH --job-name=train
+#SBATCH --output=slurm_logs/train_%j.out
+#SBATCH --error=slurm_logs/train_%j.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=3
+#SBATCH --nodes=1-1
+#SBATCH --gres=gpu:1
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=20G
+#SBATCH --array=0-5
+
+#
+# This script trains one network but does so on the b0, b1, ..., b5 adaptation
+# problems using SLURM's array feature.
+#
+
+. kamiak_config.sh
+
+# Errors
+handle_terminate() {
+    echo "Exiting"
+    exit 1
+}
+handle_error() {
+    echo "Error occured -- exiting"
+    exit 1
+}
+trap 'handle_terminate' SIGTERM SIGINT
+
+# Suffix
+dataset=$1
+options=$2
+
+if [[ -z $dataset || -z $options ]]; then
+    echo "Usage: sbatch kamiak_train_array.srun dataset --model=flat ..."
+    echo "Note: there must exist datasets dataset_{a,b0,b1,b2,b3,b4,b5}"
+    exit 1
+else
+    echo "Args: $@"
+    shift  # ignore "dataset" since we pass that to main.py differently
+fi
+
+# Allow overriding args. Other args are passed directly to the Python program.
+program_args=()
+for i; do
+    name="$(cut -d'=' -f1 <<< "$i")"
+    value="$(cut -d'=' -f2 <<< "$i")"
+
+    if [[ "$name" == "--logdir" ]]; then
+        logFolder="$value"
+        echo "Overriding logdir to be: $logFolder"
+    elif [[ "$name" == "--modeldir" ]]; then
+        modelFolder="$value"
+        echo "Overriding modeldir to be: $modelFolder"
+    else
+        program_args+=("$i")
+    fi
+
+    shift
+done
+
+# Depends
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
+# I upgraded tensorflow with:
+#   module load python3/3.6.5
+#   pip install --user --upgrade --no-cache-dir tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly==1.14.0a20190301
+#   pip install --user --upgrade --force-reinstall tf-nightly-gpu-2.0-preview tb-nightly
+pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile
+
+# Train
+cd "$remotedir"
+mkdir -p "$logFolder/"
+python3 main.py --logdir "$remotedir/$logFolder" --modeldir "$remotedir/$modelFolder" \
+    --source="${dataset}_a" --target="${dataset}_b${SLURM_ARRAY_TASK_ID}" \
+    --gpumem=0 "${program_args[@]}" || handle_error
