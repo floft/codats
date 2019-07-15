@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=train
-#SBATCH --output=slurm_logs/train_%j.out
-#SBATCH --error=slurm_logs/train_%j.err
+#SBATCH --output=slurm_logs/train_%A_%a.out
+#SBATCH --error=slurm_logs/train_%A_%a.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=3
 #SBATCH --nodes=1-1
