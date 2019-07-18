@@ -97,6 +97,13 @@ def parse_file(filename):
 
 def compute_mean_std(df, name):
     # ddof=0 is the numpy default, ddof=1 is Pandas' default
+
+    # I expect there to only be 3 or 5 of each... if not, warn
+    length = len(df[name])
+
+    if length != 3 and length != 5:
+        print("Warning: number of runs ", length, "(not 3 or 5)")
+
     return df[name].mean(), df[name].std(ddof=0)
 
 
