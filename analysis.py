@@ -196,7 +196,7 @@ def gen_jitter(length, amount=0.04):
     return np.array(x, dtype=np.float32)
 
 
-def plot_results(results, save_plot=False):
+def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix=""):
     """ Generate a plot for each dataset comparing how well the various
     adaptation methods handle varying amounts of domain shift """
     datasets = {}
@@ -254,7 +254,7 @@ def plot_results(results, save_plot=False):
             std = method_data[:, 2]*100
             plt.errorbar(x, y, yerr=std, label=methods[i], fmt="o--", alpha=0.8)
 
-        plt.title("Various Adaptation Methods on Dataset "+dataset_name)
+        plt.title("Various Adaptation Methods on Dataset "+dataset_name+title_suffix)
         ax.set_xlabel("Domain Shift (0 = no shift, 5 = the most shift)")
         ax.set_ylabel("Target Domain Accuracy (%)")
 
@@ -265,13 +265,16 @@ def plot_results(results, save_plot=False):
         plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
         if save_plot:
-            plt.savefig("plot_"+dataset_name+".png", bbox_inches='tight')
+            plt.savefig(save_prefix+dataset_name+".png", bbox_inches='tight')
 
     plt.show()
 
 
 if __name__ == "__main__":
-    files = get_tuning_files(".")
+    files = get_tuning_files(".", prefix="results_runwalk01_best-")
     results = all_stats(files, sort_by_name=True)
-    #output_csv(results)
-    plot_results(results, save_plot=True)
+    plot_results(results, save_plot=True, save_prefix="plot_best_", title_suffix=" (best)")
+
+    files = get_tuning_files(".", prefix="results_runwalk01_last-")
+    results = all_stats(files, sort_by_name=True)
+    plot_results(results, save_plot=True, save_prefix="plot_last_", title_suffix=" (last)")
