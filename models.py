@@ -82,6 +82,15 @@ def DannGrlSchedule(num_steps):
     return schedule
 
 
+def DeepJdotSchedule(num_steps):
+    """ from DeepJDOT code """
+    def schedule(step):
+        step = tf.cast(step, tf.float32)
+        return tf.pow(0.1, step/10000)
+
+    return schedule
+
+
 class StopGradient(tf.keras.layers.Layer):
     """ Stop gradient layer """
     def call(self, inputs, **kwargs):

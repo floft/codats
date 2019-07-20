@@ -266,7 +266,7 @@ def deepjdot_compute_gamma(x_a_embedding, x_b_embedding, task_y_true_a,
 
 @tf.function
 def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
-        task_loss, domain_loss, gamma, global_step,):
+        task_loss, domain_loss, lr_schedule, global_step, gamma):
     """
     DeepJDOT
 
@@ -297,6 +297,9 @@ def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
 
         # Total is sum?
         total_loss = ce_loss + align_loss
+
+        # Learning rate decay
+        total_loss *= lr_schedule(global_step)
 
     t_grad = tape.gradient(total_loss, model.trainable_variables_task)
     opt.apply_gradients(zip(t_grad, model.trainable_variables_task))
@@ -701,9 +704,10 @@ def main(argv):
     else:
         model = None
 
-    # For DeepJDOT, we need to initialize gamma
+    # For DeepJDOT, we need to initialize gamma and get learning rate schedule
     if FLAGS.method == "deepjdot":
         gamma = tf.keras.backend.zeros((train_batch, train_batch), tf.float32)
+        deepjdot_schedule = models.DeepJdotSchedule(FLAGS.steps)
 
     # For mapping, we need to know the source and target sizes
     # Note: first dimension is batch size, so drop that
@@ -812,9 +816,9 @@ def main(argv):
             step_args = (data_a, data_b, model, opt, d_opt, task_loss, domain_loss)
 
             if FLAGS.method == "deepjdot":
-                # Train network -- Note: passing gamma instead of grl_schedule
+                # Train network
                 x_a_embedding, x_b_embedding, task_y_true_a, task_y_pred_b = \
-                    train_step_deepjdot(*step_args, gamma, global_step)
+                    train_step_deepjdot(*step_args, deepjdot_schedule, global_step, gamma)
                 # Compute new coupling
                 gamma = deepjdot_compute_gamma(x_a_embedding, x_b_embedding,
                     task_y_true_a, task_y_pred_b)
