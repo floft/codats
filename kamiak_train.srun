@@ -72,7 +72,8 @@ module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 #   module load python3/3.6.5
 #   pip install --user --upgrade --no-cache-dir tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly==1.14.0a20190301
 #   pip install --user --upgrade --force-reinstall tf-nightly-gpu-2.0-preview tb-nightly
-pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile
+pip install --user numpy cython
+pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile POT
 
 
 # Train

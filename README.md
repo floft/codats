@@ -11,6 +11,13 @@ Steps:
 - Evaluate models (*main_eval.py* or *kamiak_eval.srun*)
 - Analyze results (*analysis.py*)
 
+## Installation
+
+This requires the following packages:
+
+    pip install --user numpy cython
+    pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile POT
+
 ## Training
 For example, to train on a synthetic frequency shift dataset with CyCADA
 adaptation:

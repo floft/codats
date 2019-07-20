@@ -10,6 +10,9 @@ from absl import app
 from absl import flags
 from absl import logging
 
+import ot
+from scipy.spatial.distance import cdist
+
 import models
 import load_datasets
 
@@ -24,7 +27,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
@@ -68,6 +71,7 @@ def get_directory_names():
         "forecast": "-forecast",
         "cycada": "-cycada",
         "dann": "-dann",
+        "deepjdot": "-deepjdot",
         "pseudo": "-pseudo",
         "instance": "-instance",
     }
@@ -122,7 +126,7 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
     domain_y_true = tf.concat((source_domain, target_domain), axis=0)
 
     with tf.GradientTape() as tape, tf.GradientTape() as d_tape:
-        task_y_pred, domain_y_pred = model(x, training=True)
+        task_y_pred, domain_y_pred, _ = model(x, training=True)
         d_loss = domain_loss(domain_y_true, domain_y_pred)
         loss = task_loss(task_y_true, task_y_pred, training=True) + d_loss
 
@@ -148,12 +152,9 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
 
     # The VADA "replacing gradient reversal" (note D(f(x)) = probability of
     # being target) with non-saturating GAN-style training
-    #with tf.GradientTape() as t_tape, \
-    #        tf.GradientTape() as f_tape, \
-    #        tf.GradientTape() as d_tape:
     with tf.GradientTape(persistent=True) as tape:
-        task_y_pred_a, domain_y_pred_a = model(x_a, training=True)
-        _, domain_y_pred_b = model(x_b, training=True)
+        task_y_pred_a, domain_y_pred_a, _ = model(x_a, training=True)
+        _, domain_y_pred_b, _ = model(x_b, training=True)
 
         # Correct task labels (only for source domain)
         task_y_true_a = y_a
@@ -181,14 +182,7 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
         d_loss_true = domain_loss(domain_y_true_a, domain_y_pred_a) \
             + domain_loss(domain_y_true_b, domain_y_pred_b)
 
-    fe_and_task_variables = model.feature_extractor.trainable_variables \
-        + model.task_classifier.trainable_variables
-
-    #t_grad = t_tape.gradient(t_loss, fe_and_task_variables)
-    #f_grad = f_tape.gradient(d_loss_fool, model.feature_extractor.trainable_variables)
-    #d_grad = d_tape.gradient(d_loss_true, model.domain_classifier.trainable_variables)
-
-    t_grad = tape.gradient(t_loss, fe_and_task_variables)
+    t_grad = tape.gradient(t_loss, model.trainable_variables_task)
     if FLAGS.domain_invariant:
         f_grad = tape.gradient(d_loss_fool, model.feature_extractor.trainable_variables)
     d_grad = tape.gradient(d_loss_true, model.domain_classifier.trainable_variables)
@@ -196,7 +190,7 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
 
     # Use opt (not d_opt) for updating FE in both cases, so Adam keeps track of
     # the updates to the FE weights
-    opt.apply_gradients(zip(t_grad, fe_and_task_variables))
+    opt.apply_gradients(zip(t_grad, model.trainable_variables_task))
     if FLAGS.domain_invariant:
         opt.apply_gradients(zip(f_grad, model.feature_extractor.trainable_variables))
     d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
@@ -236,6 +230,77 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
         return tf.ones_like(domain_y_pred_a)
 
 
+def l2dist(x, y):
+    """
+    Compute the squared L2 distance between two matrices
+    From: DeepJDOT L2_dist()
+    """
+    dist = tf.keras.backend.reshape(tf.keras.backend.sum(tf.keras.backend.square(x), 1), (-1, 1))
+    dist += tf.keras.backend.reshape(tf.keras.backend.sum(tf.keras.backend.square(y), 1), (1, -1))
+    dist -= 2.0*tf.keras.backend.dot(x, tf.keras.backend.transpose(y))
+    return dist
+
+
+def deepjdot_compute_gamma(x_a_embedding, x_b_embedding, task_y_true_a,
+        task_y_pred_b, jdot_alpha=0.01, tloss=1.0):
+    """ Based on DeepJDOT fit() """
+    # TODO test out GPU versions, if so, install cupy-cuda100
+    # Distance computation between source and target in deep layer
+    C0 = cdist(x_a_embedding, x_b_embedding, metric="sqeuclidean")
+    #C0 = ot.gpu.dist(x_a_embedding, x_b_embedding, metric="sqeuclidean")
+    # Ground metric for the target classification loss
+    C1 = cdist(task_y_true_a, task_y_pred_b, metric="sqeuclidean")
+    #C1 = ot.gpu.cdist(task_y_true_a, task_y_pred_b, metric="sqeuclidean")
+    # JDOT optimal coupling (gamma)
+    C = jdot_alpha*C0 + tloss*C1
+
+    # TODO maybe their learning rate decay
+    # TODO maybe class balancing like they do
+    gamma = ot.emd(ot.unif(x_a_embedding.shape[0]), ot.unif(x_b_embedding.shape[0]), C)
+
+    return tf.cast(gamma, tf.float32)
+
+
+@tf.function
+def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
+        task_loss, domain_loss, gamma, global_step,
+        jdot_alpha=0.01, tloss=1.0, sloss=0.0):
+    """
+    DeepJDOT
+
+    Based on: https://github.com/bbdamodaran/deepJDOT/blob/master/Deepjdot.py
+    """
+    x_a, y_a = data_a
+    x_b, _ = data_b
+
+    with tf.GradientTape() as tape:
+        task_y_pred_a, _, x_a_embedding = model(x_a, training=True)
+        task_y_pred_b, _, x_b_embedding = model(x_b, training=True)
+
+        # Correct task labels (only for source domain)
+        task_y_true_a = y_a
+
+        # See: DeepJDOT classifier_cat_loss()
+        source_loss = tf.keras.backend.mean(task_loss(task_y_true_a, task_y_pred_a))
+        ypred_t = tf.keras.backend.log(task_y_pred_b)
+        loss = -tf.keras.backend.dot(task_y_true_a, tf.keras.backend.transpose(ypred_t))
+
+        # source loss + target loss (flipped?), but note sloss defaults to 0.0
+        ce_loss = tloss*tf.keras.backend.sum(gamma * loss) + sloss*source_loss
+
+        # See: DeepJDOT align_loss() - alignment loss after feature extractor
+        gdist = l2dist(x_a_embedding, x_b_embedding)
+        align_loss = jdot_alpha * tf.keras.backend.sum(gamma * gdist)
+
+        # Total is sum?
+        total_loss = ce_loss + align_loss
+
+    t_grad = tape.gradient(total_loss, model.trainable_variables_task)
+    opt.apply_gradients(zip(t_grad, model.trainable_variables_task))
+
+    return x_a_embedding, x_b_embedding, task_y_true_a, task_y_pred_b
+
+
 @tf.function
 def train_step_none(data_a, data_b, model, opt, d_opt,
         task_loss, domain_loss):
@@ -243,7 +308,7 @@ def train_step_none(data_a, data_b, model, opt, d_opt,
     x_a, y_a = data_a
 
     with tf.GradientTape() as tape:
-        task_y_pred, _ = model(x_a, training=True)
+        task_y_pred, _, _ = model(x_a, training=True)
         task_y_true = y_a
         loss = task_loss(task_y_true, task_y_pred, training=True)
 
@@ -633,6 +698,10 @@ def main(argv):
     else:
         model = None
 
+    # For DeepJDOT, we need to initialize gamma
+    if FLAGS.method == "deepjdot":
+        gamma = tf.keras.backend.zeros((train_batch, train_batch), tf.float32)
+
     # For mapping, we need to know the source and target sizes
     # Note: first dimension is batch size, so drop that
     source_first_x, _ = next(iter(source_dataset.train))
@@ -724,7 +793,14 @@ def main(argv):
             # The feature extractor, classifiers, etc.
             step_args = (data_a, data_b, model, opt, d_opt, task_loss, domain_loss)
 
-            if adapt and FLAGS.use_grl:
+            if FLAGS.method == "deepjdot":
+                # Train network -- Note: passing gamma instead of grl_schedule
+                x_a_embedding, x_b_embedding, task_y_true_a, task_y_pred_b = \
+                    train_step_deepjdot(*step_args, gamma, global_step)
+                # Compute new coupling
+                gamma = deepjdot_compute_gamma(x_a_embedding, x_b_embedding,
+                    task_y_true_a, task_y_pred_b)
+            elif adapt and FLAGS.use_grl:
                 train_step_grl(*step_args)
             elif adapt:
                 instance_weights = train_step_gan(*step_args, grl_schedule, global_step)

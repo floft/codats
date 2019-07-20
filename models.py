@@ -661,7 +661,7 @@ class DomainAdaptationModel(tf.keras.Model):
             global_step, num_steps)
 
         with tf.GradientTape() as tape:
-            task_y_pred, domain_y_pred = model(x, training=True)
+            task_y_pred, domain_y_pred, embedding = model(x, training=True)
             ...
     """
     def __init__(self, num_classes, model_name, global_step,
@@ -742,7 +742,7 @@ class DomainAdaptationModel(tf.keras.Model):
         else:
             task = self.task_classifier(fe, **kwargs)
 
-        return task, domain
+        return task, domain, fe
 
 
 def make_CycleGAN_generator(num_features):
