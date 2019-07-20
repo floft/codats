@@ -40,6 +40,9 @@ flags.DEFINE_float("lr_mapping_mult", 1.0, "Learning rate multiplier for trainin
 flags.DEFINE_float("lr_map_d_loss_mult", 1.0, "Learning rate multiplier for training domain mapping discriminator")
 flags.DEFINE_float("map_cyc_mult", 10.0, "Multiplier for cycle consistency loss for training domain mapping generator")
 flags.DEFINE_boolean("minimize_true_error", False, "If the actual transform is known, minimize it to verify mapping network is capable of learning the correct mapping")
+flags.DEFINE_float("jdot_alpha", 0.001, "For DeepJDOT")
+flags.DEFINE_float("jdot_tloss", 0.0001, "For DeepJDOT")
+flags.DEFINE_float("jdot_sloss", 1.0, "For DeepJDOT")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
@@ -242,7 +245,7 @@ def l2dist(x, y):
 
 
 def deepjdot_compute_gamma(x_a_embedding, x_b_embedding, task_y_true_a,
-        task_y_pred_b, jdot_alpha=0.01, tloss=1.0):
+        task_y_pred_b):
     """ Based on DeepJDOT fit() """
     # TODO test out GPU versions, if so, install cupy-cuda100
     # Distance computation between source and target in deep layer
@@ -252,7 +255,7 @@ def deepjdot_compute_gamma(x_a_embedding, x_b_embedding, task_y_true_a,
     C1 = cdist(task_y_true_a, task_y_pred_b, metric="sqeuclidean")
     #C1 = ot.gpu.cdist(task_y_true_a, task_y_pred_b, metric="sqeuclidean")
     # JDOT optimal coupling (gamma)
-    C = jdot_alpha*C0 + tloss*C1
+    C = FLAGS.jdot_alpha*C0 + FLAGS.jdot_tloss*C1
 
     # TODO maybe their learning rate decay
     # TODO maybe class balancing like they do
@@ -260,11 +263,9 @@ def deepjdot_compute_gamma(x_a_embedding, x_b_embedding, task_y_true_a,
 
     return tf.cast(gamma, tf.float32)
 
-
 @tf.function
 def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
-        task_loss, domain_loss, gamma, global_step,
-        jdot_alpha=0.01, tloss=1.0, sloss=0.0):
+        task_loss, domain_loss, gamma, global_step,):
     """
     DeepJDOT
 
@@ -285,12 +286,13 @@ def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
         ypred_t = tf.keras.backend.log(task_y_pred_b)
         loss = -tf.keras.backend.dot(task_y_true_a, tf.keras.backend.transpose(ypred_t))
 
-        # source loss + target loss (flipped?), but note sloss defaults to 0.0
-        ce_loss = tloss*tf.keras.backend.sum(gamma * loss) + sloss*source_loss
+        # source loss + target loss (flipped?)
+        ce_loss = FLAGS.jdot_tloss*tf.keras.backend.sum(gamma * loss) + \
+            FLAGS.jdot_sloss*source_loss
 
         # See: DeepJDOT align_loss() - alignment loss after feature extractor
         gdist = l2dist(x_a_embedding, x_b_embedding)
-        align_loss = jdot_alpha * tf.keras.backend.sum(gamma * gdist)
+        align_loss = FLAGS.jdot_alpha * tf.keras.backend.sum(gamma * gdist)
 
         # Total is sum?
         total_loss = ce_loss + align_loss
