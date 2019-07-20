@@ -33,6 +33,7 @@ flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], 
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
 flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
+flags.DEFINE_integer("pretrain_steps", 0, "Number of training steps to pretrain feature extractor and task classifier on source data")
 flags.DEFINE_float("lr", 0.001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 flags.DEFINE_float("lr_target_mult", 0.5, "Learning rate multiplier for training target classifier")
@@ -760,6 +761,21 @@ def main(argv):
     metrics = Metrics(log_dir, source_dataset,
         task_loss, domain_loss, has_target_domain, has_target_classifier,
         enable_compile=FLAGS.compile_metrics)
+
+    # Pretrain FE+TaskC on source data (optional, by default skip this)
+    #
+    # Note: we don't save the model till after pretraining, so if it's killed
+    # during this, it'll restart pretraining. I'm assuming pretraining will
+    # be quick.
+    if int(global_step) == 0 and model is not None:
+        for i in range(FLAGS.pretrain_steps):
+            t = time.time()
+            data_a = next(source_iter)
+            train_step_none(data_a, None, model, opt, d_opt, task_loss, domain_loss)
+            t = time.time() - t
+
+            if i%100 == 0:
+                logging.info("pretrain step %d took %f seconds", i, t)
 
     # Start training
     for i in range(int(global_step), FLAGS.steps+1):
