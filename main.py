@@ -27,7 +27,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
@@ -76,6 +76,8 @@ def get_directory_names():
         "cycada": "-cycada",
         "dann": "-dann",
         "deepjdot": "-deepjdot",
+        "rdann": "-rdann",  # same as DANN but use with --model=rdann
+        "vrada": "-vrada",  # use with "vrada" model
         "pseudo": "-pseudo",
         "instance": "-instance",
     }
@@ -142,6 +144,35 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
     d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
 
 
+def compute_vrnn_loss(vrnn_state, x, epsilon=1e-9):
+    """
+    Compute VRNN loss
+
+    KL loss/divergence:
+    - https://stats.stackexchange.com/q/7440
+    - https://github.com/kimkilho/tensorflow-vrnn/blob/master/main.py
+
+    Negative log likelihood loss:
+    - https://papers.nips.cc/paper/7219-simple-and-scalable-predictive-uncertainty-estimation-using-deep-ensembles.pdf
+    - https://fairyonice.github.io/Create-a-neural-net-with-a-negative-log-likelihood-as-a-loss.html
+    """
+    encoder_mu, encoder_sigma, decoder_mu, decoder_sigma, \
+        prior_mu, prior_sigma = vrnn_state
+
+    kl_loss = tf.reduce_mean(tf.reduce_mean(
+        tf.math.log(tf.maximum(epsilon, prior_sigma)) - tf.math.log(tf.maximum(epsilon, encoder_sigma))
+        + 0.5*(tf.square(encoder_sigma) + tf.square(encoder_mu - prior_mu))
+        / tf.maximum(epsilon, tf.square(prior_sigma))
+        - 0.5, axis=1), axis=1)
+
+    likelihood_loss = 0.5*tf.reduce_mean(tf.reduce_mean(
+        tf.square(decoder_mu - x) / tf.maximum(epsilon, tf.square(decoder_sigma))
+        + tf.math.log(tf.maximum(epsilon, tf.square(decoder_sigma))),
+        axis=1), axis=1)
+
+    return tf.reduce_mean(kl_loss) + tf.reduce_mean(likelihood_loss)
+
+
 @tf.function
 def train_step_gan(data_a, data_b, model, opt, d_opt,
         task_loss, domain_loss, grl_schedule, global_step,
@@ -157,8 +188,8 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     # The VADA "replacing gradient reversal" (note D(f(x)) = probability of
     # being target) with non-saturating GAN-style training
     with tf.GradientTape(persistent=True) as tape:
-        task_y_pred_a, domain_y_pred_a, _ = model(x_a, training=True)
-        _, domain_y_pred_b, _ = model(x_b, training=True)
+        task_y_pred_a, domain_y_pred_a, fe_a = model(x_a, training=True)
+        _, domain_y_pred_b, fe_b = model(x_b, training=True)
 
         # Correct task labels (only for source domain)
         task_y_true_a = y_a
@@ -186,9 +217,17 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
         d_loss_true = domain_loss(domain_y_true_a, domain_y_pred_a) \
             + domain_loss(domain_y_true_b, domain_y_pred_b)
 
+        if FLAGS.method == "vrada":
+            vrnn_state_a = fe_a[1]
+            vrnn_state_b = fe_b[1]
+            vrnn_loss = compute_vrnn_loss(vrnn_state_a, x_a) + \
+                compute_vrnn_loss(vrnn_state_b, x_b)
+
     t_grad = tape.gradient(t_loss, model.trainable_variables_task)
     if FLAGS.domain_invariant:
         f_grad = tape.gradient(d_loss_fool, model.feature_extractor.trainable_variables)
+    if FLAGS.method == "vrada":
+        v_grad = tape.gradient(vrnn_loss, model.feature_extractor.trainable_variables)
     d_grad = tape.gradient(d_loss_true, model.domain_classifier.trainable_variables)
     del tape
 
@@ -197,6 +236,8 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     opt.apply_gradients(zip(t_grad, model.trainable_variables_task))
     if FLAGS.domain_invariant:
         opt.apply_gradients(zip(f_grad, model.feature_extractor.trainable_variables))
+    if FLAGS.method == "vrada":  # use d_opt since different updates than above?
+        d_opt.apply_gradients(zip(v_grad, model.feature_extractor.trainable_variables))
     d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
 
     # TODO for inference, use the exponential moving average of the batch norm
@@ -262,6 +303,7 @@ def deepjdot_compute_gamma(x_a_embedding, x_b_embedding, task_y_true_a,
     gamma = ot.emd(ot.unif(x_a_embedding.shape[0]), ot.unif(x_b_embedding.shape[0]), C)
 
     return tf.cast(gamma, tf.float32)
+
 
 @tf.function
 def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
@@ -645,7 +687,8 @@ def main(argv):
         os.makedirs(log_dir)
 
     # We adapt for any method other than "none", "cyclegan", or "forecast"
-    adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance", "cyclegan_dann"]
+    adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance",
+        "cyclegan_dann", "rdann", "vrada"]
 
     assert not (adapt and not FLAGS.task), \
         "If adapting (e.g. method=dann), must not pass --notask"

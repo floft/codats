@@ -14,6 +14,7 @@ import tensorflow as tf
 from absl import flags
 from tensorflow.python.keras import backend as K
 
+from vrnn import VRNN
 from tcn import TemporalConvNet
 
 FLAGS = flags.FLAGS
@@ -258,7 +259,7 @@ class ReflectSamePadding(tf.keras.layers.Layer):
         return output_size, pad_before, pad_after
 
 
-def make_vrada_model(num_classes, global_step, grl_schedule):
+def make_flat_model(num_classes, global_step, grl_schedule):
     """
     Create model inspired by the VRADA paper model for time-series data
 
@@ -301,6 +302,72 @@ def make_vrada_model(num_classes, global_step, grl_schedule):
         FlipGradient(global_step, grl_schedule),
         make_binary_classifier(domain_layers),
     ])
+    return feature_extractor, task_classifier, domain_classifier
+
+
+class VradaFeatureExtractor(tf.keras.layers.Layer):
+    """
+    Need to get VRNN state, so we can't directly use Sequential since it can't
+    return intermediate layer's extra outputs. And, can't use the functional
+    API directly since we don't now the input shape.
+
+    Note: only returns state if vrada=True
+    """
+    def __init__(self, vrada=True, **kwargs):
+        super().__init__(**kwargs)
+        self.vrada = vrada
+        self.pre = tf.keras.Sequential([
+            tf.keras.layers.BatchNormalization(momentum=0.999, axis=2),
+        ])
+
+        if self.vrada:
+            self.rnn = VRNN(100, 100, return_z=True, return_sequences=False)
+        else:
+            self.rnn = tf.keras.layers.LSTM(100, return_sequences=False)
+
+        self.fe = tf.keras.Sequential([
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(100),
+            tf.keras.layers.Dense(100),
+            tf.keras.layers.Dense(100),
+        ])
+
+    def call(self, inputs, **kwargs):
+        norm = self.pre(inputs, **kwargs)
+
+        if self.vrada:
+            rnn_output, rnn_state = self.rnn(norm, **kwargs)
+        else:
+            rnn_output = self.rnn(norm, **kwargs)
+            rnn_state = None
+
+        fe_output = self.fe(rnn_output, **kwargs)
+
+        return fe_output, rnn_state
+
+
+def make_vrada_model(num_classes, global_step, grl_schedule, vrada=True):
+    """
+    VRADA R-DANN and VRADA models
+
+    Only difference is VRADA uses VRNN rather than LSTM. Also, the loss
+    is computed differently (in main.py)
+    """
+    feature_extractor = VradaFeatureExtractor(vrada)
+    task_classifier = tf.keras.Sequential([
+        tf.keras.layers.Dense(50),
+        tf.keras.layers.Dense(50),
+        tf.keras.layers.Dense(50),
+        tf.keras.layers.Dense(num_classes, activation="softmax"),
+    ])
+    domain_classifier = tf.keras.Sequential([
+        FlipGradient(global_step, grl_schedule),
+        tf.keras.layers.Dense(50),
+        tf.keras.layers.Dense(50),
+        tf.keras.layers.Dense(50),
+        tf.keras.layers.Dense(1),
+    ])
+
     return feature_extractor, task_classifier, domain_classifier
 
 
@@ -685,7 +752,11 @@ class DomainAdaptationModel(tf.keras.Model):
         args = (num_classes, global_step, grl_schedule)
 
         if model_name == "flat":
-            fe, task, domain = make_vrada_model(*args)
+            fe, task, domain = make_flat_model(*args)
+        elif model_name == "rdann":
+            fe, task, domain = make_vrada_model(*args, vrada=False)
+        elif model_name == "vrada":
+            fe, task, domain = make_vrada_model(*args, vrada=True)
         elif model_name == "timenet":
             fe, task, domain = make_timenet_model(*args)
         elif model_name == "mlp":
@@ -745,11 +816,18 @@ class DomainAdaptationModel(tf.keras.Model):
         fe = self.feature_extractor(inputs, **kwargs)
         domain = self.domain_classifier(fe, **kwargs)
 
+        # If an RNN, then we'll return (rnn_output, rnn_state), so pass the
+        # output to the classifiers but return both from call()
+        if isinstance(fe, tuple):
+            fe_output = fe[0]
+        else:
+            fe_output = fe
+
         # If desired, use the target classifier rather than the task classifier
         if target:
-            task = self.target_classifier(fe, **kwargs)
+            task = self.target_classifier(fe_output, **kwargs)
         else:
-            task = self.task_classifier(fe, **kwargs)
+            task = self.task_classifier(fe_output, **kwargs)
 
         return task, domain, fe
 
@@ -1321,6 +1399,8 @@ def compute_accuracy(y_true, y_pred):
 # List of names
 models = [
     "flat",
+    "rdann",
+    "vrada",
     "timenet",
     "mlp",
     "fcn",
