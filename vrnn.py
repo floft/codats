@@ -13,10 +13,21 @@ class VRNN(tf.keras.layers.Layer):
             go_backwards=False, stateful=False, unroll=False, **kwargs):
         super().__init__(**kwargs)
         self.return_z = return_z
-        self.rnn = tf.keras.layers.RNN(VRNNCell(h_dim, z_dim),
-            return_sequences=return_sequences,
-            return_state=False, go_backwards=go_backwards,
-            stateful=stateful, unroll=unroll)
+        self.h_dim = h_dim
+        self.z_dim = z_dim
+        self.return_sequences = return_sequences
+        self.go_backwards = go_backwards
+        self.stateful = stateful
+        self.unroll = unroll
+
+    def build(self, input_shape):
+        num_features = input_shape[-1]
+        cell = VRNNCell(num_features, self.h_dim, self.z_dim)
+        # We return sequences here so we can compute VRNN reconstruction loss
+        self.rnn = tf.keras.layers.RNN(cell,
+            return_sequences=True,
+            return_state=False, go_backwards=self.go_backwards,
+            stateful=self.stateful, unroll=self.unroll)
 
     def call(self, inputs, **kwargs):
         outputs = self.rnn(inputs, **kwargs)
@@ -33,7 +44,11 @@ class VRNN(tf.keras.layers.Layer):
         else:
             rnn_output = h
 
-        # For use in loss
+        # Get the output at the end of the sequence
+        if not self.return_sequences:
+            rnn_output = rnn_output[:, -1]
+
+        # For use in loss, note these are return_sequences=True
         other_outputs = [encoder_mu, encoder_sigma, decoder_mu, decoder_sigma,
             prior_mu, prior_sigma]
 
@@ -50,18 +65,10 @@ class VRNNCell(tf.keras.layers.Layer):
     - https://github.com/kimkilho/tensorflow-vrnn/blob/master/main.py
     - https://github.com/tensorflow/tensorflow/blob/r1.10/tensorflow/python/ops/rnn_cell_impl.py
     """
-    def __init__(self, h_dim, z_dim, **kwargs):
-        super().__init__(**kwargs)
-
+    def __init__(self, x_dim, h_dim, z_dim, **kwargs):
+        self.x_dim = x_dim
         self.h_dim = h_dim
         self.z_dim = z_dim
-
-        # What cell we're going to use internally for the RNN
-        self.cell = tf.keras.layers.LSTMCell(h_dim)
-
-    def build(self, input_shape):
-        # Get number of features
-        self.x_dim = input_shape[-1]
 
         # Dimensions of x input, hidden layers, latent variable (z)
         self.n_x = self.x_dim
@@ -77,6 +84,20 @@ class VRNNCell(tf.keras.layers.Layer):
         self.n_dec_hidden = self.x_dim
         self.n_prior_hidden = self.z_dim
 
+        # Note: first two are the state of the LSTM
+        self.state_size = (
+            self.n_h, self.n_h,
+            self.n_z, self.n_z,
+            self.n_x, self.n_x,
+            self.n_z, self.n_z,
+            self.n_x_1, self.n_z_1)
+
+        # What cell we're going to use internally for the RNN
+        self.cell = tf.keras.layers.LSTMCell(h_dim)
+
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
         # Input: previous hidden state
         self.prior_h = self.add_weight("prior/hidden/weights",
             shape=(self.n_h, self.n_prior_hidden), initializer="glorot_uniform")

@@ -59,6 +59,10 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
         # Run through model's feature extractor
         embedding = model.feature_extractor(combined_x, training=False)
 
+        # If an RNN, get only the embedding, not the RNN state
+        if isinstance(embedding, tuple):
+            embedding = embedding[0]
+
         # Compute TSNE and PCA
         tsne = TSNE(n_components=2, init='pca', n_iter=3000).fit_transform(embedding)
         pca = PCA(n_components=2).fit_transform(embedding)

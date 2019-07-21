@@ -814,7 +814,6 @@ class DomainAdaptationModel(tf.keras.Model):
             tf.keras.backend.set_learning_phase(0)
 
         fe = self.feature_extractor(inputs, **kwargs)
-        domain = self.domain_classifier(fe, **kwargs)
 
         # If an RNN, then we'll return (rnn_output, rnn_state), so pass the
         # output to the classifiers but return both from call()
@@ -822,6 +821,8 @@ class DomainAdaptationModel(tf.keras.Model):
             fe_output = fe[0]
         else:
             fe_output = fe
+
+        domain = self.domain_classifier(fe_output, **kwargs)
 
         # If desired, use the target classifier rather than the task classifier
         if target:
