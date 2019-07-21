@@ -258,7 +258,6 @@ def deepjdot_compute_gamma(x_a_embedding, x_b_embedding, task_y_true_a,
     # JDOT optimal coupling (gamma)
     C = FLAGS.jdot_alpha*C0 + FLAGS.jdot_tloss*C1
 
-    # TODO maybe their learning rate decay
     # TODO maybe class balancing like they do
     gamma = ot.emd(ot.unif(x_a_embedding.shape[0]), ot.unif(x_b_embedding.shape[0]), C)
 
@@ -328,7 +327,7 @@ def pseudo_label_domain(x, model, epsilon=1e-8):
     confidence that the data is source-like """
     # Run target data through model, return the predictions and probability
     # of being source data
-    task_y_pred, domain_y_pred = model(x, training=True)
+    task_y_pred, domain_y_pred, _ = model(x, training=True)
 
     # The domain classifier output is logits, so we need to pass through sigmoid
     # to get a probability before using as a weight.
@@ -350,7 +349,7 @@ def pseudo_label_domain(x, model, epsilon=1e-8):
 def pseudo_label_task(x, model, epsilon=1e-8):
     """ Compiled step for pseudo-labeling target data based on task classifier
     confidence """
-    task_y_pred, _ = model(x, training=True)
+    task_y_pred, _, _ = model(x, training=True)
 
     # For each prediction in the batch, the get the max (the actual prediction,
     # since the other softmax outputs are lower) and use this as the confidence.
@@ -372,7 +371,7 @@ def train_step_target(data_b, weights, model, opt, weighted_task_loss):
 
     # Run data through model and compute loss
     with tf.GradientTape() as tape:
-        task_y_pred, domain_y_pred = model(x, target=True, training=True)
+        task_y_pred, domain_y_pred, _ = model(x, target=True, training=True)
         loss = weighted_task_loss(task_y_pseudo, task_y_pred, weights, training=True)
 
     # Only update feature extractor and target classifier
@@ -480,12 +479,12 @@ def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=No
             # Note: this is using the domain-invariant model. Maybe CyCADA used
             # a separate one trained just on the source data? Not sure.
             task_y_true_a = y_a
-            task_y_pred_mapped_a, _ = classify_model(gen_AtoB, training=False)
+            task_y_pred_mapped_a, _, _ = classify_model(gen_AtoB, training=False)
 
             # Check consistency between classifier on target data vs. classifier
             # on target data mapped back to source
-            task_y_pred_b, _ = classify_model(x_b, training=False)
-            task_y_pred_mapped_b, _ = classify_model(gen_BtoA, training=False)
+            task_y_pred_b, _, _ = classify_model(x_b, training=False)
+            task_y_pred_mapped_b, _, _ = classify_model(gen_BtoA, training=False)
 
             # TODO only if classifier has "reasonably low loss", i.e. in CyCADA
             # code if it's (run classify_model on x_a) less than 1.0
