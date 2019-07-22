@@ -57,7 +57,7 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
         combined_domain = tf.concat((source_domain, target_domain), axis=0)
 
         # Run through model's feature extractor
-        embedding = model.feature_extractor(combined_x, training=False)
+        embedding = model.feature_extractor(combined_x, training=False, domain="both")
 
         # If an RNN, get only the embedding, not the RNN state
         if isinstance(embedding, tuple):

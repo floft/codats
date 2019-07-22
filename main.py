@@ -132,7 +132,7 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
     domain_y_true = tf.concat((source_domain, target_domain), axis=0)
 
     with tf.GradientTape() as tape, tf.GradientTape() as d_tape:
-        task_y_pred, domain_y_pred, _ = model(x, training=True)
+        task_y_pred, domain_y_pred, _ = model(x, training=True, domain="both")
         d_loss = domain_loss(domain_y_true, domain_y_pred)
         loss = task_loss(task_y_true, task_y_pred, training=True) + d_loss
 
@@ -188,8 +188,8 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     # The VADA "replacing gradient reversal" (note D(f(x)) = probability of
     # being target) with non-saturating GAN-style training
     with tf.GradientTape(persistent=True) as tape:
-        task_y_pred_a, domain_y_pred_a, fe_a = model(x_a, training=True)
-        _, domain_y_pred_b, fe_b = model(x_b, training=True)
+        task_y_pred_a, domain_y_pred_a, fe_a = model(x_a, training=True, domain="source")
+        _, domain_y_pred_b, fe_b = model(x_b, training=True, domain="target")
 
         # Correct task labels (only for source domain)
         task_y_true_a = y_a
@@ -317,8 +317,8 @@ def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
     x_b, _ = data_b
 
     with tf.GradientTape() as tape:
-        task_y_pred_a, _, x_a_embedding = model(x_a, training=True)
-        task_y_pred_b, _, x_b_embedding = model(x_b, training=True)
+        task_y_pred_a, _, x_a_embedding = model(x_a, training=True, domain="source")
+        task_y_pred_b, _, x_b_embedding = model(x_b, training=True, domain="target")
 
         # Correct task labels (only for source domain)
         task_y_true_a = y_a
@@ -355,7 +355,7 @@ def train_step_none(data_a, data_b, model, opt, d_opt,
     x_a, y_a = data_a
 
     with tf.GradientTape() as tape:
-        task_y_pred, _, _ = model(x_a, training=True)
+        task_y_pred, _, _ = model(x_a, training=True, domain="source")
         task_y_true = y_a
         loss = task_loss(task_y_true, task_y_pred, training=True)
 
@@ -369,7 +369,7 @@ def pseudo_label_domain(x, model, epsilon=1e-8):
     confidence that the data is source-like """
     # Run target data through model, return the predictions and probability
     # of being source data
-    task_y_pred, domain_y_pred, _ = model(x, training=True)
+    task_y_pred, domain_y_pred, _ = model(x, training=True, domain="target")
 
     # The domain classifier output is logits, so we need to pass through sigmoid
     # to get a probability before using as a weight.
@@ -391,7 +391,7 @@ def pseudo_label_domain(x, model, epsilon=1e-8):
 def pseudo_label_task(x, model, epsilon=1e-8):
     """ Compiled step for pseudo-labeling target data based on task classifier
     confidence """
-    task_y_pred, _, _ = model(x, training=True)
+    task_y_pred, _, _ = model(x, training=True, domain="target")
 
     # For each prediction in the batch, the get the max (the actual prediction,
     # since the other softmax outputs are lower) and use this as the confidence.
@@ -413,7 +413,7 @@ def train_step_target(data_b, weights, model, opt, weighted_task_loss):
 
     # Run data through model and compute loss
     with tf.GradientTape() as tape:
-        task_y_pred, domain_y_pred, _ = model(x, target=True, training=True)
+        task_y_pred, domain_y_pred, _ = model(x, target=True, training=True, domain="target")
         loss = weighted_task_loss(task_y_pseudo, task_y_pred, weights, training=True)
 
     # Only update feature extractor and target classifier
@@ -521,12 +521,12 @@ def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=No
             # Note: this is using the domain-invariant model. Maybe CyCADA used
             # a separate one trained just on the source data? Not sure.
             task_y_true_a = y_a
-            task_y_pred_mapped_a, _, _ = classify_model(gen_AtoB, training=False)
+            task_y_pred_mapped_a, _, _ = classify_model(gen_AtoB, training=False, domain="target")
 
             # Check consistency between classifier on target data vs. classifier
             # on target data mapped back to source
-            task_y_pred_b, _, _ = classify_model(x_b, training=False)
-            task_y_pred_mapped_b, _, _ = classify_model(gen_BtoA, training=False)
+            task_y_pred_b, _, _ = classify_model(x_b, training=False, domain="target")
+            task_y_pred_mapped_b, _, _ = classify_model(gen_BtoA, training=False, domain="source")
 
             # TODO only if classifier has "reasonably low loss", i.e. in CyCADA
             # code if it's (run classify_model on x_a) less than 1.0

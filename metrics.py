@@ -368,7 +368,7 @@ class Metrics:
         # If performing a task
         if model is not None:
             # Evaluate model on data
-            task_y_pred, domain_y_pred, _ = model(x, target=target, training=False)
+            task_y_pred, domain_y_pred, _ = model(x, target=target, training=False, domain=domain_name)
 
             # Match the number of examples; source = 0, target = 1
             if domain_name == "source":
