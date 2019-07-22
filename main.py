@@ -909,9 +909,10 @@ def main(argv):
             metrics.train(model, mapping_model, orig_data_a, data_a, data_b,
                 global_step, t, additional_losses)
 
+        # Evaluate every log_val_steps but also at the last step
         validation_accuracy = None
         target_validation_accuracy = None
-        if i%FLAGS.log_val_steps == 0:
+        if i%FLAGS.log_val_steps == 0 or i == FLAGS.steps:
             validation_accuracy, target_validation_accuracy = metrics.test(
                 model, mapping_model, source_dataset_eval, target_dataset_eval,
                 global_step)
