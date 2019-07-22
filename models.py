@@ -169,7 +169,7 @@ class CustomSequential(tf.keras.Sequential):
 def make_dense_bn_dropout(units, dropout):
     return CustomSequential([
         tf.keras.layers.Dense(units, use_bias=False),  # BN has a bias term
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(dropout),
     ])
@@ -212,7 +212,7 @@ class WangResnetBlock(tf.keras.layers.Layer):
     """
     def __init__(self, n_feature_maps, shortcut_resize=True,
             kernel_sizes=[8, 5, 3], reflect_padding=False,
-            normalization=DomainSpecificBatchNorm,
+            normalization=tf.keras.layers.BatchNormalization,
             activation="relu", **kwargs):
         super().__init__(**kwargs)
         self.blocks = []
@@ -356,8 +356,8 @@ def make_flat_model(num_classes, global_step, grl_schedule):
         return CustomSequential(layers + last)
 
     feature_extractor = CustomSequential([
-        tf.keras.layers.Flatten(),
         DomainSpecificBatchNorm(momentum=0.999, axis=2),
+        tf.keras.layers.Flatten(),
     ] + [  # First can't be residual since x isn't of size units
         make_dense_bn_dropout(units, dropout) for _ in range(resnet_layers)
     ] + [
@@ -518,12 +518,12 @@ def make_mlp_model(num_classes, global_step, grl_schedule):
         FlipGradient(global_step, grl_schedule),
 
         tf.keras.layers.Dense(500, use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
 
         tf.keras.layers.Dense(500, use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
 
@@ -546,17 +546,17 @@ def make_fcn_model(num_classes, global_step, grl_schedule):
 
         tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
             use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
 
         tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
             use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
 
         tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
             use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
 
         tf.keras.layers.GlobalAveragePooling1D(),
@@ -571,12 +571,12 @@ def make_fcn_model(num_classes, global_step, grl_schedule):
         FlipGradient(global_step, grl_schedule),
 
         tf.keras.layers.Dense(500, use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
 
         tf.keras.layers.Dense(500, use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
 
@@ -608,12 +608,12 @@ def make_resnet_model(num_classes, global_step, grl_schedule):
         FlipGradient(global_step, grl_schedule),
 
         tf.keras.layers.Dense(500, use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
 
         tf.keras.layers.Dense(500, use_bias=False),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
         tf.keras.layers.Dropout(0.3),
 
@@ -650,33 +650,33 @@ def make_dann_svhn_model(num_classes, global_step, grl_schedule):
 
     feature_extractor = CustomSequential([
         tf.keras.layers.Conv2D(64, (5, 5), (1, 1), "same"),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
 
         tf.keras.layers.MaxPool2D((3, 3), (2, 2), "same"),
         tf.keras.layers.Dropout(dropout),
 
         tf.keras.layers.Conv2D(64, (5, 5), (1, 1), "same"),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
 
         tf.keras.layers.MaxPool2D((3, 3), (2, 2), "same"),
         tf.keras.layers.Dropout(dropout),
 
         tf.keras.layers.Conv2D(128, (5, 5), (1, 1), "same"),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
 
         tf.keras.layers.Flatten(),
     ])
     task_classifier = CustomSequential([
         tf.keras.layers.Dense(3072),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
         tf.keras.layers.Dropout(dropout),
 
         tf.keras.layers.Dense(2048),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
         tf.keras.layers.Dropout(dropout),
 
@@ -685,12 +685,12 @@ def make_dann_svhn_model(num_classes, global_step, grl_schedule):
     domain_classifier = CustomSequential([
         FlipGradient(global_step, grl_schedule),
         tf.keras.layers.Dense(1024),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
         tf.keras.layers.Dropout(dropout),
 
         tf.keras.layers.Dense(1024),
-        DomainSpecificBatchNorm(),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
         tf.keras.layers.Dropout(dropout),
 
@@ -734,15 +734,15 @@ def make_vada_model(num_classes, global_step, grl_schedule,
     def conv_blocks(depth):
         return [
             tf.keras.layers.Conv2D(depth, (3, 3), (1, 1), "same"),
-            DomainSpecificBatchNorm(),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(leak_alpha),
 
             tf.keras.layers.Conv2D(depth, (3, 3), (1, 1), "same"),
-            DomainSpecificBatchNorm(),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(leak_alpha),
 
             tf.keras.layers.Conv2D(depth, (3, 3), (1, 1), "same"),
-            DomainSpecificBatchNorm(),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.LeakyReLU(leak_alpha),
         ]
 
@@ -909,17 +909,17 @@ def make_CycleGAN_generator(num_features):
     # return CustomSequential([
     #     tf.keras.layers.Conv1D(filters=8, kernel_size=8, padding="same",
     #         use_bias=False),
-    #     DomainSpecificBatchNorm(),
+    #     tf.keras.layers.BatchNormalization(),
     #     tf.keras.layers.Activation("relu"),
 
     #     tf.keras.layers.Conv1D(filters=16, kernel_size=5, padding="same",
     #         strides=2, use_bias=False),
-    #     DomainSpecificBatchNorm(),
+    #     tf.keras.layers.BatchNormalization(),
     #     tf.keras.layers.Activation("relu"),
 
     #     tf.keras.layers.Conv1D(filters=32, kernel_size=3, padding="same",
     #         strides=2, use_bias=False),
-    #     DomainSpecificBatchNorm(),
+    #     tf.keras.layers.BatchNormalization(),
     #     tf.keras.layers.Activation("relu"),
 
     #     WangResnetBlock(32, shortcut_resize=False),
@@ -927,17 +927,17 @@ def make_CycleGAN_generator(num_features):
 
     #     Conv1DTranspose(filters=16, kernel_size=3, padding="same",
     #         strides=2, use_bias=False),
-    #     DomainSpecificBatchNorm(),
+    #     tf.keras.layers.BatchNormalization(),
     #     tf.keras.layers.Activation("relu"),
 
     #     Conv1DTranspose(filters=8, kernel_size=5, padding="same",
     #         strides=2, use_bias=False),
-    #     DomainSpecificBatchNorm(),
+    #     tf.keras.layers.BatchNormalization(),
     #     tf.keras.layers.Activation("relu"),
 
     #     tf.keras.layers.Conv1D(filters=num_features, kernel_size=8,
     #         padding="same", use_bias=False),
-    #     DomainSpecificBatchNorm(),
+    #     tf.keras.layers.BatchNormalization(),
     #     tf.keras.layers.Activation("relu"),
 
     #     # For bias mainly, so output can have any range of values
@@ -948,7 +948,7 @@ def make_CycleGAN_generator(num_features):
     #     tf.keras.layers.Reshape(output_dims),
     # ])
 
-    normalization = DomainSpecificBatchNorm
+    normalization = tf.keras.layers.BatchNormalization
     activation = "relu"
 
     return CustomSequential([
@@ -1066,17 +1066,17 @@ class CycleGAN(tf.keras.Model):
         return CustomSequential([
             tf.keras.layers.Conv1D(filters=64, kernel_size=8, padding="same",
                 use_bias=False),
-            DomainSpecificBatchNorm(),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Activation("relu"),
 
             tf.keras.layers.Conv1D(filters=128, kernel_size=5, padding="same",
                 use_bias=False),
-            DomainSpecificBatchNorm(),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Activation("relu"),
 
             tf.keras.layers.Conv1D(filters=64, kernel_size=3, padding="same",
                 use_bias=False),
-            DomainSpecificBatchNorm(),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Activation("relu"),
 
             tf.keras.layers.GlobalAveragePooling1D(),
@@ -1221,17 +1221,17 @@ class ForecastGAN(tf.keras.Model):
         # return CustomSequential([
         #     tf.keras.layers.Conv1D(filters=64, kernel_size=8, padding="same",
         #         use_bias=False),
-        #     DomainSpecificBatchNorm(),
+        #     tf.keras.layers.BatchNormalization(),
         #     tf.keras.layers.Activation("relu"),
 
         #     tf.keras.layers.Conv1D(filters=128, kernel_size=5, padding="same",
         #         use_bias=False),
-        #     DomainSpecificBatchNorm(),
+        #     tf.keras.layers.BatchNormalization(),
         #     tf.keras.layers.Activation("relu"),
 
         #     tf.keras.layers.Conv1D(filters=64, kernel_size=3, padding="same",
         #         use_bias=False),
-        #     DomainSpecificBatchNorm(),
+        #     tf.keras.layers.BatchNormalization(),
         #     tf.keras.layers.Activation("relu"),
 
         #     tf.keras.layers.GlobalAveragePooling1D(),
