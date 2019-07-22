@@ -232,6 +232,9 @@ def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix="")
             "cyclegan": "CycleGAN",
             "cyclegan_dann": "CycleGAN+DANN",
             "cycada": "CyCADA",
+            "deepjdot": "DeepJDOT",
+            "rdann": "R-DANN",
+            "vrada": "VRADA",
         }
 
         method = nice_method_names[method]
@@ -278,10 +281,10 @@ def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix="")
 
 
 if __name__ == "__main__":
-    files = get_tuning_files(".", prefix="results_runwalk01_best-")
-    results = all_stats(files, sort_by_name=True)
-    plot_results(results, save_plot=True, save_prefix="plot_best_", title_suffix=" (best)")
+    # files = get_tuning_files(".", prefix="results_runwalk01_best-")
+    # results = all_stats(files, sort_by_name=True)
+    # plot_results(results, save_plot=True, save_prefix="plot_best_", title_suffix=" (best)")
 
-    files = get_tuning_files(".", prefix="results_runwalk01_last-")
+    files = get_tuning_files(".", prefix="results_runwalk2_last-")
     results = all_stats(files, sort_by_name=True)
     plot_results(results, save_plot=True, save_prefix="plot_last_", title_suffix=" (last)")
