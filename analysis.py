@@ -95,27 +95,33 @@ def parse_file(filename):
     return validation, traintest, averages
 
 
-def compute_mean_std(df, name):
-    # ddof=0 is the numpy default, ddof=1 is Pandas' default
+def compute_mean_std(df, name, ignore_label_flipping):
+    data = df[name]
+
+    if ignore_label_flipping:
+        # To ignore label flipping (assuming this is binary classification), we
+        # flip anything less than 50% to over 50%
+        data[data < 0.5] = 1 - data[data < 0.5]
 
     # I expect there to only be 3 or 5 of each... if not, warn
-    length = len(df[name])
+    length = len(data)
 
     if length != 3 and length != 5:
         print("Warning: number of runs ", length, "(not 3 or 5)")
 
-    return df[name].mean(), df[name].std(ddof=0)
+    # ddof=0 is the numpy default, ddof=1 is Pandas' default
+    return data.mean(), data.std(ddof=0)
 
 
-def compute_val_stats(df):
-    return compute_mean_std(df, "Accuracy at Step")
+def compute_val_stats(df, ignore_label_flipping):
+    return compute_mean_std(df, "Accuracy at Step", ignore_label_flipping)
 
 
-def compute_eval_stats(df, has_target_clasifier=False):
+def compute_eval_stats(df, has_target_clasifier=False, ignore_label_flipping=False):
     names = ["Train A", "Test A", "Train B", "Test B"]
     if has_target_clasifier:
         names += ["Target Train A", "Target Test A", "Target Train B", "Target Test B"]
-    data = [[name]+list(compute_mean_std(df, name)) for name in names]
+    data = [[name]+list(compute_mean_std(df, name, ignore_label_flipping)) for name in names]
     return pd.DataFrame(data=data, columns=["Dataset", "Avg", "Std"])
 
 
@@ -135,7 +141,8 @@ def parse_name(name):
 
 
 def all_stats(files, recompute_averages=True, sort_on_test=False,
-        sort_on_b=False, sort_by_name=False, has_target_clasifier=False):
+        sort_on_b=False, sort_by_name=False, has_target_clasifier=False,
+        ignore_label_flipping=False):
     stats = []
 
     for name, file in files:
@@ -149,9 +156,9 @@ def all_stats(files, recompute_averages=True, sort_on_test=False,
 
         if recompute_averages:
             averages = compute_eval_stats(traintest,
-                has_target_clasifier=has_target_clasifier)
+                has_target_clasifier, ignore_label_flipping)
 
-        validavg = compute_val_stats(validation)
+        validavg = compute_val_stats(validation, ignore_label_flipping)
 
         stats.append({
             "name": name,
@@ -277,14 +284,27 @@ def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix="")
         if save_plot:
             plt.savefig(save_prefix+dataset_name+".png", bbox_inches='tight')
 
-    plt.show()
+    if not save_plot:
+        plt.show()
 
 
 if __name__ == "__main__":
-    # files = get_tuning_files(".", prefix="results_runwalk01_best-")
-    # results = all_stats(files, sort_by_name=True)
-    # plot_results(results, save_plot=True, save_prefix="plot_best_", title_suffix=" (best)")
+    # Ignoring label flipping won't work on best model since if it flips the
+    # labels, it'll pick (and actually save during training) the wrong "best"
+    # model
+    #files = get_tuning_files(".", prefix="results_runwalk01_best-")
+    #results = all_stats(files, sort_by_name=True, ignore_label_flipping=False)
+    #plot_results(results, save_plot=True, save_prefix="plot_runwalk01_best_", title_suffix=" (best)")
 
-    files = get_tuning_files(".", prefix="results_runwalk2_last-")
-    results = all_stats(files, sort_by_name=True)
-    plot_results(results, save_plot=True, save_prefix="plot_last_", title_suffix=" (last)")
+    for dataset in ["runwalk01", "runwalk2"]:
+        files = get_tuning_files(".", prefix="results_"+dataset+"_last-")
+
+        results = all_stats(files, sort_by_name=True, ignore_label_flipping=False)
+        plot_results(results, save_plot=True,
+            save_prefix="plot_"+dataset+"_last_normal_",
+            title_suffix=" (last, as is)")
+
+        results = all_stats(files, sort_by_name=True, ignore_label_flipping=True)
+        plot_results(results, save_plot=True,
+            save_prefix="plot_"+dataset+"_last_ignore_",
+            title_suffix=" (last, ignore flipping)")
