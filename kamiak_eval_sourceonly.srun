@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=3
 #SBATCH --nodes=1-1
-#SBATCH --gres=gpu:3
+#SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=60G
@@ -20,7 +20,7 @@
 . kamiak_config.sh
 
 # For actual use on Kamiak...
-gpus=3
+gpus=1
 gpumem=0
 
 # Errors
@@ -67,7 +67,7 @@ out="$remotedir/results_${suffix}_${outputname}-b${SLURM_ARRAY_TASK_ID}.txt"
 echo "Args: $@" > "$out"
 cd "$remotedir"
 { python3 main_eval.py --gpus=$gpus --gpumem=$gpumem \
-    --modeldir="$models" --logdir="$logs" \
+    --modeldir="$models" --logdir="$logs" --jobs=1  \
     --match="${dataset}_b${SLURM_ARRAY_TASK_ID}--${network}-${method}-[0-9]*" \
     --best_source "$@" || handle_error; } | \
     tee -a "$out"
