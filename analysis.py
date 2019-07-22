@@ -298,13 +298,7 @@ if __name__ == "__main__":
 
     for dataset in ["runwalk01", "runwalk2"]:
         files = get_tuning_files(".", prefix="results_"+dataset+"_last-")
-
         results = all_stats(files, sort_by_name=True, ignore_label_flipping=False)
         plot_results(results, save_plot=True,
-            save_prefix="plot_"+dataset+"_last_normal_",
+            save_prefix="plot_"+dataset+"_last_",
             title_suffix=" (last, as is)")
-
-        results = all_stats(files, sort_by_name=True, ignore_label_flipping=True)
-        plot_results(results, save_plot=True,
-            save_prefix="plot_"+dataset+"_last_ignore_",
-            title_suffix=" (last, ignore flipping)")
