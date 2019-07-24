@@ -407,8 +407,10 @@ class VradaFeatureExtractor(tf.keras.layers.Layer):
             tf.keras.layers.Dense(100),
         ])
 
-    def call(self, inputs, **kwargs):
-        norm = self.pre(inputs, **kwargs)
+    def call(self, inputs, domain="source", **kwargs):
+        # Note: grab domain variable separately since RNN doesn't support it
+        # so it'll error
+        norm = self.pre(inputs, domain=domain, **kwargs)
 
         if self.vrada:
             rnn_output, rnn_state = self.rnn(norm, **kwargs)
@@ -416,7 +418,7 @@ class VradaFeatureExtractor(tf.keras.layers.Layer):
             rnn_output = self.rnn(norm, **kwargs)
             rnn_state = None
 
-        fe_output = self.fe(rnn_output, **kwargs)
+        fe_output = self.fe(rnn_output, domain=domain, **kwargs)
 
         return fe_output, rnn_state
 
