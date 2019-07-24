@@ -95,7 +95,7 @@ def parse_file(filename):
     return validation, traintest, averages
 
 
-def compute_mean_std(df, name, ignore_label_flipping):
+def compute_mean_std(df, name, ignore_label_flipping, filename):
     data = df[name]
 
     if ignore_label_flipping:
@@ -107,21 +107,21 @@ def compute_mean_std(df, name, ignore_label_flipping):
     length = len(data)
 
     if length != 3 and length != 5:
-        print("Warning: number of runs ", length, "(not 3 or 5)")
+        print("Warning: number of runs ", length, "(not 3 or 5) for", filename)
 
     # ddof=0 is the numpy default, ddof=1 is Pandas' default
     return data.mean(), data.std(ddof=0)
 
 
-def compute_val_stats(df, ignore_label_flipping):
-    return compute_mean_std(df, "Accuracy at Step", ignore_label_flipping)
+def compute_val_stats(df, ignore_label_flipping, filename):
+    return compute_mean_std(df, "Accuracy at Step", ignore_label_flipping, filename)
 
 
-def compute_eval_stats(df, has_target_clasifier=False, ignore_label_flipping=False):
+def compute_eval_stats(df, filename, has_target_clasifier=False, ignore_label_flipping=False):
     names = ["Train A", "Test A", "Train B", "Test B"]
     if has_target_clasifier:
         names += ["Target Train A", "Target Test A", "Target Train B", "Target Test B"]
-    data = [[name]+list(compute_mean_std(df, name, ignore_label_flipping)) for name in names]
+    data = [[name]+list(compute_mean_std(df, name, ignore_label_flipping, filename)) for name in names]
     return pd.DataFrame(data=data, columns=["Dataset", "Avg", "Std"])
 
 
@@ -155,10 +155,10 @@ def all_stats(files, recompute_averages=True, sort_on_test=False,
         validation, traintest, averages = parse_result
 
         if recompute_averages:
-            averages = compute_eval_stats(traintest,
+            averages = compute_eval_stats(traintest, name,
                 has_target_clasifier, ignore_label_flipping)
 
-        validavg = compute_val_stats(validation, ignore_label_flipping)
+        validavg = compute_val_stats(validation, ignore_label_flipping, name)
 
         stats.append({
             "name": name,
@@ -296,9 +296,14 @@ if __name__ == "__main__":
     #results = all_stats(files, sort_by_name=True, ignore_label_flipping=False)
     #plot_results(results, save_plot=True, save_prefix="plot_runwalk01_best_", title_suffix=" (best)")
 
-    for dataset in ["runwalk01", "runwalk2"]:
+    datasets = [
+        #"runwalk01",
+        #"runwalk2",
+        "runwalk3",
+    ]
+
+    for dataset in datasets:
         files = get_tuning_files(".", prefix="results_"+dataset+"_last-")
         results = all_stats(files, sort_by_name=True, ignore_label_flipping=False)
         plot_results(results, save_plot=True,
-            save_prefix="plot_"+dataset+"_last_",
-            title_suffix=" (last, as is)")
+            save_prefix="plot_"+dataset+"_last_", title_suffix=" (last)")
