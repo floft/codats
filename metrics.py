@@ -143,8 +143,10 @@ class Metrics:
         # Compile frequent-running functions if the metrics will be updated
         # multiple times
         if enable_compile:
-            self._run_single_batch_task = tf.function(self._run_single_batch_task)
-            self._run_single_batch_target = tf.function(self._run_single_batch_target)
+            self._run_single_batch_task_a = tf.function(self._run_single_batch_task_a)
+            self._run_single_batch_target_a = tf.function(self._run_single_batch_target_a)
+            self._run_single_batch_task_b = tf.function(self._run_single_batch_task_b)
+            self._run_single_batch_target_b = tf.function(self._run_single_batch_target_b)
 
     def _reset_states(self, dataset):
         """ Reset states of all the Keras metrics """
@@ -300,40 +302,34 @@ class Metrics:
         # Make sure we sync to disk
         self.writer.flush()
 
-    def _run_partial(self, model, mapping_model, data_a, data_b, dataset, target):
+    def _run_dataset(self, model, mapping_model, data_a, data_b, dataset, target):
         """ Run all the data A/B through the model -- data_a and data_b
         should both be of type tf.data.Dataset """
         if data_a is not None:
-            self._run_multi_batch(data_a, model, mapping_model, "source", dataset, target=target)
+            func = self._run_single_batch_target_a if target else self._run_single_batch_task_a
+
+            for x, task_y_true in data_a:
+                func(x, task_y_true, model, mapping_model, dataset)
 
         if self.target_domain and data_b is not None:
-            self._run_multi_batch(data_b, model, mapping_model, "target", dataset, target=target)
+            func = self._run_single_batch_target_b if target else self._run_single_batch_task_b
+
+            for x, task_y_true in data_b:
+                func(x, task_y_true, model, mapping_model, dataset)
 
     def _run_batch(self, model, mapping_model, data_a, data_b, dataset, target):
         """ Run a single batch of A/B data through the model -- data_a and data_b
         should both be a tuple of (x, task_y_true) """
         if data_a is not None:
-            if target:
-                self._run_single_batch_target(*data_a, model, mapping_model, "source", dataset)
-            else:
-                self._run_single_batch_task(*data_a, model, mapping_model, "source", dataset)
+            func = self._run_single_batch_target_a if target else self._run_single_batch_task_a
+            func(*data_a, model, mapping_model, dataset)
 
         if self.target_domain and data_b is not None:
-            if target:
-                self._run_single_batch_target(*data_b, model, mapping_model, "target", dataset)
-            else:
-                self._run_single_batch_task(*data_b, model, mapping_model, "target", dataset)
-
-    def _run_multi_batch(self, data, *args, target=False, **kwargs):
-        """ Evaluate model on all batches in the data (data is a tf.data.Dataset) """
-        for x, task_y_true in data:
-            if target:
-                self._run_single_batch_target(x, task_y_true, *args, **kwargs)
-            else:
-                self._run_single_batch_task(x, task_y_true, *args, **kwargs)
+            func = self._run_single_batch_target_b if target else self._run_single_batch_task_b
+            func(*data_b, model, mapping_model, dataset)
 
     def _run_single_batch(self, x, task_y_true, model, mapping_model,
-            domain_name, dataset_name, target):
+            dataset_name, domain_name, target):
         """
         Run a batch of data through the model. Call after_batch() afterwards:
             after_batch([labels_batch_a, task_y_pred, domains_batch_a, domain_y_pred,
@@ -402,16 +398,21 @@ class Metrics:
                 self._process_losses(results)
 
     # Compile separate _run_single_batch functions since if we pass in varying
-    # values of target=True/False it ends up dying with the error:
+    # values of target=True/False or dataset_name it ends up dying sometimes
+    # with the error:
     #   "ValueError: tf.function-decorated function tried to create variables on
     #   non-first call."
-    #@tf.function  # optional -- see __init__()
-    def _run_single_batch_task(self, *args, **kwargs):
-        return self._run_single_batch(*args, target=False, **kwargs)
+    def _run_single_batch_task_a(self, *args, **kwargs):
+        return self._run_single_batch(*args, domain_name="source", target=False, **kwargs)
 
-    #@tf.function  # optional -- see __init__()
-    def _run_single_batch_target(self, *args, **kwargs):
-        return self._run_single_batch(*args, target=True, **kwargs)
+    def _run_single_batch_task_b(self, *args, **kwargs):
+        return self._run_single_batch(*args, domain_name="target", target=False, **kwargs)
+
+    def _run_single_batch_target_a(self, *args, **kwargs):
+        return self._run_single_batch(*args, domain_name="source", target=True, **kwargs)
+
+    def _run_single_batch_target_b(self, *args, **kwargs):
+        return self._run_single_batch(*args, domain_name="target", target=True, **kwargs)
 
     def train(self, model, mapping_model, non_mapped_data_a, data_a, data_b,
             step=None, train_time=None, additional_losses=None, evaluation=False):
@@ -445,10 +446,10 @@ class Metrics:
 
         # evaluation=True is a tf.data.Dataset, otherwise a single batch
         if evaluation:
-            self._run_partial(model, mapping_model, data_a, data_b, dataset, False)
+            self._run_dataset(model, mapping_model, data_a, data_b, dataset, False)
 
             if self.has_target_classifier:
-                self._run_partial(model, mapping_model, data_a, data_b, dataset, True)
+                self._run_dataset(model, mapping_model, data_a, data_b, dataset, True)
         else:
             self._run_batch(model, mapping_model, data_a, data_b, dataset, False)
 
@@ -483,10 +484,10 @@ class Metrics:
         if not self.target_domain:
             eval_data_b = None
 
-        self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
+        self._run_dataset(model, mapping_model, eval_data_a, eval_data_b, dataset, False)
 
         if self.has_target_classifier:
-            self._run_partial(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
+            self._run_dataset(model, mapping_model, eval_data_a, eval_data_b, dataset, True)
 
         # These are metrics only filled out when there's a task model
         if model is not None:
