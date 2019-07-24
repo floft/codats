@@ -20,7 +20,7 @@ from tcn import TemporalConvNet
 FLAGS = flags.FLAGS
 
 flags.DEFINE_float("dropout", 0.05, "Dropout probability")
-flags.DEFINE_boolean("map_prenorm", True, "when mapping, first run through batchnorm before feeding to model")
+flags.DEFINE_boolean("prenorm", False, "If true, use initial batchnorm before feeding to model")
 flags.DEFINE_integer("forecast_steps", 5, "How many time steps to forecast (must be less than length of data)")
 flags.DEFINE_boolean("domain_specific_bn", True, "Keep separate batchnorm exponential moving average for each domain")
 
@@ -115,32 +115,40 @@ class DomainSpecificBatchNorm(tf.keras.layers.Layer):
         If FLAGS.domain_specific_bn, then do domain specific batch norm.
         Otherwise, always feed through the same batch norm layer.
 
+        If not FLAGS.prenorm, then skip this layer altogether.
+
         Set domain to "both" if using GRL where first half of the batch is source
         and second half is target. Otherwise, set to "source" or "target".
         """
-        if FLAGS.domain_specific_bn:
-            if domain == "both":
-                batch_size = inputs.shape[0]
-                time_steps = inputs.shape[1]
+        # Skip entirely if not doing pre-normalization
+        if not FLAGS.prenorm:
+            return inputs
 
-                first_half_len = batch_size // 2
-                first_half_start = 0
-                second_half_len = batch_size - first_half_len
-                second_half_start = first_half_len
-
-                source_data = tf.slice(inputs, [first_half_start, 0, 0], [first_half_len, time_steps, -1])
-                target_data = tf.slice(inputs, [second_half_start, 0, 0], [second_half_len, time_steps, -1])
-
-                sbn = self.source_bn(source_data, **kwargs)
-                tbn = self.target_bn(target_data, **kwargs)
-
-                return self.concat([sbn, tbn])
-            elif domain == "source":
-                return self.source_bn(inputs, **kwargs)
-            else:
-                return self.target_bn(inputs, **kwargs)
-        else:
+        # If not doing domain-specific, always feed through one BN layer
+        if not FLAGS.domain_specific_bn:
             return self.source_bn(inputs, **kwargs)
+
+        # Otherwise, when doing domain-specific BN, pass to appropriate BN layer
+        if domain == "both":
+            batch_size = inputs.shape[0]
+            time_steps = inputs.shape[1]
+
+            first_half_len = batch_size // 2
+            first_half_start = 0
+            second_half_len = batch_size - first_half_len
+            second_half_start = first_half_len
+
+            source_data = tf.slice(inputs, [first_half_start, 0, 0], [first_half_len, time_steps, -1])
+            target_data = tf.slice(inputs, [second_half_start, 0, 0], [second_half_len, time_steps, -1])
+
+            sbn = self.source_bn(source_data, **kwargs)
+            tbn = self.target_bn(target_data, **kwargs)
+
+            return self.concat([sbn, tbn])
+        elif domain == "source":
+            return self.source_bn(inputs, **kwargs)
+        else:
+            return self.target_bn(inputs, **kwargs)
 
 
 class CustomSequential(tf.keras.Sequential):
@@ -1044,21 +1052,14 @@ class CycleGAN(tf.keras.Model):
         self.source_discriminator = self.make_discriminator()
         self.target_discriminator = self.make_discriminator()
 
-        # Pass source/target data through these layers first, but only set
-        # training=True when feeding through real data. Note: axis=2 to be the
-        # feature axis. Defaults to 1 I think, which would be the time axis.
-        if FLAGS.map_prenorm:
-            # source_pre -- run on source-like data, before source_to_target model
-            self.source_pre = CustomSequential([
-                DomainSpecificBatchNorm(momentum=0.999, axis=2),
-            ])
-            # target_pre -- run on target-like data, before target_to_source model
-            self.target_pre = CustomSequential([
-                DomainSpecificBatchNorm(momentum=0.999, axis=2),
-            ])
-        else:
-            self.source_pre = CustomSequential([])
-            self.target_pre = CustomSequential([])
+        # source_pre -- run on source-like data, before source_to_target model
+        self.source_pre = CustomSequential([
+            DomainSpecificBatchNorm(momentum=0.999, axis=2),
+        ])
+        # target_pre -- run on target-like data, before target_to_source model
+        self.target_pre = CustomSequential([
+            DomainSpecificBatchNorm(momentum=0.999, axis=2),
+        ])
 
     def make_generator(self, output_dims):
         assert len(output_dims) == 2, \
@@ -1206,21 +1207,14 @@ class ForecastGAN(tf.keras.Model):
         self.source_forecast = self.make_forecast(self.source_forecast_x_shape)
         self.target_forecast = self.make_forecast(self.target_forecast_x_shape)
 
-        # Pass source/target data through these layers first, but only set
-        # training=True when feeding through real data. Note: axis=2 to be the
-        # feature axis. Defaults to 1 I think, which would be the time axis.
-        if FLAGS.map_prenorm:
-            # source_pre -- run on source-like data, before source_to_target model
-            self.source_pre = CustomSequential([
-                DomainSpecificBatchNorm(momentum=0.999, axis=2),
-            ])
-            # target_pre -- run on target-like data, before target_to_source model
-            self.target_pre = CustomSequential([
-                DomainSpecificBatchNorm(momentum=0.999, axis=2),
-            ])
-        else:
-            self.source_pre = CustomSequential([])
-            self.target_pre = CustomSequential([])
+        # source_pre -- run on source-like data, before source_to_target model
+        self.source_pre = CustomSequential([
+            DomainSpecificBatchNorm(momentum=0.999, axis=2),
+        ])
+        # target_pre -- run on target-like data, before target_to_source model
+        self.target_pre = CustomSequential([
+            DomainSpecificBatchNorm(momentum=0.999, axis=2),
+        ])
 
     def make_generator(self, output_dims):
         num_features = output_dims[1]
