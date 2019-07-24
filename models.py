@@ -1379,12 +1379,14 @@ class ForecastGAN(tf.keras.Model):
     def map_to_target(self, x):
         """ Map source data to target, but make sure we don't update BN stats """
         self.set_learning_phase(False)
-        return self.source_to_target(self.source_pre(x, training=False), training=False)
+        return self.source_to_target(self.source_pre(x, training=False,
+            domain="source"), training=False, domain="source")
 
     def map_to_source(self, x):
         """ Map target data to source, but make sure we don't update BN stats """
         self.set_learning_phase(False)
-        return self.target_to_source(self.target_pre(x, training=False), training=False)
+        return self.target_to_source(self.target_pre(x, training=False,
+            domain="target"), training=False, domain="target")
 
 
 def make_task_loss(adapt):
