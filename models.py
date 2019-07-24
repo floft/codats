@@ -108,6 +108,7 @@ class DomainSpecificBatchNorm(tf.keras.layers.Layer):
         super().__init__(**kwargs)
         self.source_bn = tf.keras.layers.BatchNormalization(momentum=momentum, axis=axis)
         self.target_bn = tf.keras.layers.BatchNormalization(momentum=momentum, axis=axis)
+        self.concat = tf.keras.layers.Concatenate(axis=0)
 
     def call(self, inputs, domain="source", **kwargs):
         """
@@ -121,13 +122,19 @@ class DomainSpecificBatchNorm(tf.keras.layers.Layer):
             if domain == "both":
                 batch_size = inputs.shape[0]
                 time_steps = inputs.shape[1]
-                source_data = tf.slice(inputs, [0, 0, 0], [batch_size // 2, time_steps, -1])
-                target_data = tf.slice(inputs, [0, 0, 0], [batch_size // 2, time_steps, -1])
+
+                first_half_len = batch_size // 2
+                first_half_start = 0
+                second_half_len = batch_size - first_half_len
+                second_half_start = first_half_len
+
+                source_data = tf.slice(inputs, [first_half_start, 0, 0], [first_half_len, time_steps, -1])
+                target_data = tf.slice(inputs, [second_half_start, 0, 0], [second_half_len, time_steps, -1])
 
                 sbn = self.source_bn(source_data, **kwargs)
                 tbn = self.target_bn(target_data, **kwargs)
 
-                return tf.concat((sbn, tbn), axis=0)
+                return self.concat([sbn, tbn])
             elif domain == "source":
                 return self.source_bn(inputs, **kwargs)
             else:
