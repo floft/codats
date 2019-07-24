@@ -39,6 +39,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_boolean("parallel", True, "Run multiple in parallel")
 flags.DEFINE_integer("jobs", 0, "Parallel jobs (if parallel=True), 0 = # of CPU cores")
+flags.DEFINE_enum("normalize", "meanstd", ["none", "minmax", "meanstd"], "How to normalize data")
 
 
 def write(filename, x, y):
@@ -81,6 +82,50 @@ def valid_split(data, labels, seed=None, validation_size=1000):
     return valid_data, valid_labels, train_data, train_labels
 
 
+def calc_normalization(x, method):
+    """
+    Calculate zero mean unit variance normalization statistics
+
+    We calculate separate mean/std or min/max statistics for each
+    feature/channel, the default (-1) for BatchNormalization in TensorFlow and
+    I think makes the most sense. If we set axis=0, then we end up with a
+    separate statistic for each time step and feature, and then we can get odd
+    jumps between time steps. Though, we get shape problems when setting axis=2
+    in numpy, so instead we reshape/transpose.
+    """
+    # from (10000,100,1) to (1,100,10000)
+    x = x.T
+    # from (1,100,10000) to (1,100*10000)
+    x = x.reshape((x.shape[0], -1))
+    # then we compute statistics over axis=1, i.e. along 100*10000 and end up
+    # with 1 statistic per channel (in this example only one)
+
+    if method == "meanstd":
+        values = (np.mean(x, axis=1), np.std(x, axis=1))
+    elif method == "minmax":
+        values = (np.min(x, axis=1), np.max(x, axis=1))
+    else:
+        raise NotImplementedError("unsupported normalization method")
+
+    return method, values
+
+
+def apply_normalization(x, normalization, epsilon=1e-5):
+    """ Apply zero mean unit variance normalization statistics """
+    method, values = normalization
+
+    if method == "meanstd":
+        mean, std = values
+        x = (x - mean) / (std + epsilon)
+    elif method == "minmax":
+        minx, maxx = values
+        x = (x - minx) / (maxx - minx + epsilon) - 0.5
+
+    x[np.isnan(x)] = 0
+
+    return x
+
+
 def save_one(source, target, dataset_name, dataset, seed):
     """ Save single dataset """
     valid_data, valid_labels, \
@@ -88,12 +133,24 @@ def save_one(source, target, dataset_name, dataset, seed):
         valid_split(dataset.train_data, dataset.train_labels,
             seed=seed)
 
+    # Calculate normalization only on the training data
+    if FLAGS.normalize != "none":
+        normalization = calc_normalization(train_data, FLAGS.normalize)
+
+        # Apply the normalization to the training, validation, and testing data
+        train_data = apply_normalization(train_data, normalization)
+        valid_data = apply_normalization(valid_data, normalization)
+        test_data = apply_normalization(dataset.test_data, normalization)
+    else:
+        test_data = dataset.test_data
+
+    # Saving
     write(tfrecord_filename(source, target, dataset_name, "train"),
         train_data, train_labels)
     write(tfrecord_filename(source, target, dataset_name, "valid"),
         valid_data, valid_labels)
     write(tfrecord_filename(source, target, dataset_name, "test"),
-        dataset.test_data, dataset.test_labels)
+        test_data, dataset.test_labels)
 
 
 def save_adaptation(source, target, seed=0):

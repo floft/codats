@@ -14,6 +14,8 @@ from absl import flags
 
 import datasets
 
+from generate_tfrecords import calc_normalization, apply_normalization
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_enum("source", None, datasets.names(), "What dataset to use as the source")
@@ -32,6 +34,10 @@ def display(name, data, feature_names):
     fig, axes = plt.subplots(nrows=num_features, ncols=1,
         sharex=True, sharey=False)
     fig.suptitle(name)
+
+    # Normalize
+    if FLAGS.normalize != "none":
+        data = apply_normalization(data, calc_normalization(data, FLAGS.normalize))
 
     for i in range(num_features):
         if num_features == 1:
