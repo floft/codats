@@ -168,7 +168,9 @@ def save_adaptation(source, target, seed=0):
 def main(argv):
     # Only list one direction since the other direction uses the same data
     adaptation_problems = [
-        # ("utdata_wrist", "utdata_pocket"),
+        ("utdata_wrist", None),
+        ("utdata_pocket", None),
+        ("utdata_wrist", "utdata_pocket"),
 
         # ("positive_slope", "positive_slope_low"),
         # ("positive_slope", "positive_slope_noise"),

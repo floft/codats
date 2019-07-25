@@ -232,8 +232,7 @@ class UTDataBase(Dataset):
         self.utdata_domain = utdata_domain
         super().__init__(UTDataBase.num_classes, UTDataBase.class_labels,
             UTDataBase.window_size, UTDataBase.window_overlap,
-            UTDataBase.feature_names, UTDataBase.invertible,
-            *args, **kwargs)
+            UTDataBase.feature_names, *args, **kwargs)
 
     def download(self):
         (dataset_fp,) = self.download_dataset(["ut-data-complex.rar"],
@@ -422,7 +421,6 @@ def make_trivial_negpos_invertible(filename_prefix):
                 "trivial/"+filename_prefix+"_TEST",
                 Trivial.num_classes,
                 Trivial.class_labels,
-                Trivial.invertible,
                 *args, **kwargs)
 
     return Trivial
@@ -448,8 +446,9 @@ def make_trivial_lowhigh_invertible(filename_prefix):
 
 # List of datasets
 datasets = {
-    # "utdata_wrist": UTDataWrist,
-    # "utdata_pocket": UTDataPocket,
+    "utdata_wrist": UTDataWrist,
+    "utdata_pocket": UTDataPocket,
+
     # "positive_slope": make_trivial_negpos("positive_slope"),
     # "positive_slope_low": make_trivial_negpos("positive_slope_low"),
     # "positive_slope_noise": make_trivial_negpos("positive_slope_noise"),
