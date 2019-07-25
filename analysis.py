@@ -8,6 +8,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+# Use nice names for the plot
+nice_method_names = {
+    "none": "Lower Bound (no adaptation)",
+    "upper": "Upper Bound (train on target)",
+    "dann": "DANN",
+    "cyclegan": "CycleGAN",
+    "cyclegan_dann": "CycleGAN+DANN",
+    "cycada": "CyCADA",
+    "deepjdot": "DeepJDOT",
+    "rdann": "R-DANN",
+    "vrada": "VRADA",
+}
+
+
 def get_tuning_files(dir_name, prefix="results_runwalk01_"):
     """ Get all the hyperparameter evaluation result files """
     files = []
@@ -125,7 +139,7 @@ def compute_eval_stats(df, filename, has_target_clasifier=False, ignore_label_fl
     return pd.DataFrame(data=data, columns=["Dataset", "Avg", "Std"])
 
 
-def parse_name(name):
+def parse_name_synthetic(name):
     # Get values
     values = name.split("-")
 
@@ -140,9 +154,24 @@ def parse_name(name):
     }
 
 
+def parse_name_real(name):
+    # Get values
+    values = name.split("-")
+
+    method = values[0]
+    source = values[1]
+    target = values[2]
+
+    return {
+        "method": method,
+        "source": source,
+        "target": target,
+    }
+
+
 def all_stats(files, recompute_averages=True, sort_on_test=False,
         sort_on_b=False, sort_by_name=False, has_target_clasifier=False,
-        ignore_label_flipping=False):
+        ignore_label_flipping=False, real_data=False):
     stats = []
 
     for name, file in files:
@@ -160,9 +189,14 @@ def all_stats(files, recompute_averages=True, sort_on_test=False,
 
         validavg = compute_val_stats(validation, ignore_label_flipping, name)
 
+        if real_data:
+            params = parse_name_real(name)
+        else:
+            params = parse_name_synthetic(name)
+
         stats.append({
             "name": name,
-            "parameters": parse_name(name),
+            "parameters": params,
             "file": file,
             "validation": validation,
             "traintest": traintest,
@@ -210,17 +244,13 @@ def gen_jitter(length, amount=0.04):
     return np.array(x, dtype=np.float32)
 
 
-def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix=""):
-    """ Generate a plot for each dataset comparing how well the various
-    adaptation methods handle varying amounts of domain shift """
+def process_results(results, real_data=False):
     datasets = {}
 
     for result in results:
         params = result["parameters"]
         avgs = result["averages"]
-        dataset = params["dataset"]
         method = params["method"]
-        adaptation = params["adaptation"]
         source_accuracy = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
         source_accuracy_std = avgs[avgs["Dataset"] == "Test A"]["Std"].values[0]
         target_accuracy = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
@@ -231,18 +261,14 @@ def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix="")
             target_accuracy = source_accuracy
             target_accuracy_std = source_accuracy_std
 
-        # Use nice names for the plot
-        nice_method_names = {
-            "none": "Lower Bound (no adaptation)",
-            "upper": "Upper Bound (train on target)",
-            "dann": "DANN",
-            "cyclegan": "CycleGAN",
-            "cyclegan_dann": "CycleGAN+DANN",
-            "cycada": "CyCADA",
-            "deepjdot": "DeepJDOT",
-            "rdann": "R-DANN",
-            "vrada": "VRADA",
-        }
+        if real_data:
+            if method == "upper":
+                dataset = params["source"]
+            else:
+                dataset = params["source"] + " --> " + params["target"]
+        else:
+            dataset = params["dataset"]
+            adaptation = params["adaptation"]
 
         method = nice_method_names[method]
 
@@ -251,11 +277,25 @@ def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix="")
         if method not in datasets[dataset]:
             datasets[dataset][method] = []
 
-        # (x,y,error) - x axis is adaptation problem {0..5} and y axes is accuracy
-        datasets[dataset][method].append([adaptation, target_accuracy,
-            target_accuracy_std])
-        # Sort on adaptation problem, so we get 0, 1, 2, 3, 4, 5
-        datasets[dataset][method].sort(key=lambda x: x[0])
+        if real_data:
+            # Not .append() since there's only one of each method/dataset on
+            # the real data
+            datasets[dataset][method] = [target_accuracy, target_accuracy_std]
+        else:
+            # (x,y,error) - x axis is adaptation problem {0..5} and y axes is accuracy
+            datasets[dataset][method].append([adaptation, target_accuracy,
+                target_accuracy_std])
+            # Sort on adaptation problem, so we get 0, 1, 2, 3, 4, 5
+            datasets[dataset][method].sort(key=lambda x: x[0])
+
+    return datasets
+
+
+def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
+        title_suffix=""):
+    """ Generate a plot for each dataset comparing how well the various
+    adaptation methods handle varying amounts of domain shift """
+    datasets = process_results(results)
 
     for dataset_name, dataset_values in datasets.items():
         methods = list(dataset_values.keys())
@@ -288,14 +328,37 @@ def plot_results(results, save_plot=False, save_prefix="plot_", title_suffix="")
         plt.show()
 
 
+def to_list(datasets):
+    """ Convert two-level dictionary to list """
+    output = []
+    for dataset, data in datasets.items():
+        for method, values in data.items():
+            output.append((dataset, method, values[0]*100, values[1]*100))
+    return output
+
+
+def print_real_results(results, title=None):
+    """ Print table comparing different methods on real datasets """
+    datasets = process_results(results, real_data=True)
+    df = pd.DataFrame(to_list(datasets),
+        columns=["Adaptation", "Method", "Mean", "Std"])
+
+    if title is not None:
+        print(title)
+    print(df)
+
+
 if __name__ == "__main__":
     # Ignoring label flipping won't work on best model since if it flips the
     # labels, it'll pick (and actually save during training) the wrong "best"
     # model
     #files = get_tuning_files(".", prefix="results_runwalk01_best-")
-    #results = all_stats(files, sort_by_name=True, ignore_label_flipping=False)
-    #plot_results(results, save_plot=True, save_prefix="plot_runwalk01_best_", title_suffix=" (best)")
+    #results = all_stats(files, sort_by_name=True)
+    #plot_synthetic_results(results, save_plot=True, save_prefix="plot_runwalk01_best_", title_suffix=" (best)")
 
+    #
+    # Synthetic data
+    #
     datasets = [
         #"runwalk01",
         #"runwalk2",
@@ -305,6 +368,19 @@ if __name__ == "__main__":
 
     for dataset in datasets:
         files = get_tuning_files(".", prefix="results_"+dataset+"_last-")
-        results = all_stats(files, sort_by_name=True, ignore_label_flipping=False)
-        plot_results(results, save_plot=True,
+        results = all_stats(files, sort_by_name=True)
+        plot_synthetic_results(results, save_plot=True,
             save_prefix="plot_"+dataset+"_last_", title_suffix=" (last)")
+
+    #
+    # Real data
+    #
+    datasets = [
+        "real_utdata1",
+    ]
+
+    for dataset in datasets:
+        for variant in ["best", "last"]:
+            files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
+            results = all_stats(files, sort_by_name=True, real_data=True)
+            print_real_results(results, title="Real Dataset Adaptation ("+variant+")")
