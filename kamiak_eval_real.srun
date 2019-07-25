@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-7
+#SBATCH --array=0-15
 
 . kamiak_config.sh
 
@@ -23,12 +23,13 @@ suffix=$1; shift
 # Adapt in both directions, then do upper bound
 model=fcn
 methods=("none" "upper" "dann" "deepjdot")
+variants=("best" "last")
 sources=("utdata_wrist"  "utdata_pocket")
 targets=("utdata_pocket" "utdata_wrist")
 
 # Make sure we're using the right number
 correct_min=0
-correct_max=$(( ${#methods[@]} * ${#sources[@]} - 1))
+correct_max=$(( ${#methods[@]} * ${#variants[@]} * ${#sources[@]} - 1))
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "source/target sizes should match"; handle_error; }
 [[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
@@ -39,15 +40,19 @@ correct_max=$(( ${#methods[@]} * ${#sources[@]} - 1))
 # Indexing: https://stackoverflow.com/a/34363187
 index=$SLURM_ARRAY_TASK_ID
 index1max=${#sources[@]}
+index2max=${#variants[@]}
+index3=$((index / (index1max * index2max)))
+index=$((index - index3 * index1max * index2max))
 index2=$((index / index1max))
 index1=$((index % index1max))
 
-method="${methods[$index2]}"
+method="${methods[$index3]}"
+variant="${variants[$index2]}"
 source="${sources[$index1]}"
 target="${targets[$index1]}"
 
 # Output name uses method from above not the "none" for "upper"
-out="results_$suffix-$method-$source-$target.txt"
+out="results_${suffix}_$variant-$method-$source-$target.txt"
 
 # Upper bound is actually "none" but without a target domain and with other args
 additional_args=()
@@ -55,6 +60,11 @@ if [[ $method == "upper" ]]; then
     method="none"
     target=""
     additional_args+=("--best_source")
+fi
+
+# Argument if evaluating last model
+if [[ $variant == "last" ]]; then
+    additional_args+=("--last")
 fi
 
 echo "Args: $@" > "$out"
