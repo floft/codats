@@ -1,0 +1,73 @@
+#!/bin/bash
+#SBATCH --job-name=real_eval
+#SBATCH --output=slurm_logs/eval_%A_%a.out
+#SBATCH --error=slurm_logs/eval_%A_%a.err
+#SBATCH --cpus-per-task=3
+#SBATCH --gres=gpu:1
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=20G
+#SBATCH --array=0-7
+
+. kamiak_config.sh
+
+# Errors
+handle_terminate() { echo "Exiting"; exit 1; }
+handle_error() { echo "Error occured -- exiting"; exit 1; }
+trap "handle_terminate" SIGTERM SIGINT
+
+# Get suffix, i.e. files stored in kamiak-{models,logs}-suffix
+suffix=$1; shift
+[[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
+
+# Adapt in both directions, then do upper bound
+model=fcn
+methods=("none" "upper" "dann" "deepjdot")
+sources=("utdata_wrist"  "utdata_pocket")
+targets=("utdata_pocket" "utdata_wrist")
+
+# Make sure we're using the right number
+correct_min=0
+correct_max=$(( ${#methods[@]} * ${#sources[@]} - 1))
+[[ ${#sources[@]} == ${#targets[@]} ]] || \
+    { echo "source/target sizes should match"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
+    { echo "array min should be $correct_min"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
+    { echo "array max should be $correct_max"; handle_error; }
+
+# Indexing: https://stackoverflow.com/a/34363187
+index=$SLURM_ARRAY_TASK_ID
+index1max=${#sources[@]}
+index2=$((index / index1max))
+index1=$((index % index1max))
+
+method="${methods[$index2]}"
+source="${sources[$index1]}"
+target="${targets[$index1]}"
+
+# Output name uses method from above not the "none" for "upper"
+out="results_$suffix-$method-$source-$target.txt"
+
+# Upper bound is actually "none" but without a target domain and with other args
+additional_args=()
+if [[ $method == "upper" ]]; then
+    method="none"
+    target=""
+    additional_args+=("--best_source")
+fi
+
+echo "Args: $@" > "$out"
+echo "$suffix #$SLURM_ARRAY_TASK_ID" >> "$out"
+echo "Method: $method" >> "$out"
+echo "$source --> $target" >> "$out"
+
+cd "$remotedir"
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
+{ python3 main_eval.py \
+    --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
+    --jobs=1 --gpus=1 --gpumem=0 \
+    --match="${source}-${target}-${model}-${method}-[0-9]*" \
+    "${additional_args[@]}" "$@" || handle_error; } | \
+    tee -a "$out"
