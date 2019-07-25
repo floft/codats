@@ -62,6 +62,7 @@ fi
 echo "$suffix #$SLURM_ARRAY_TASK_ID"
 echo "Method: $method"
 echo "DebugNum: $debugnum"
+echo "Other args: $@"
 echo "$source --> $target"
 
 cd "$remotedir"

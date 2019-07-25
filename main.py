@@ -30,6 +30,8 @@ flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
+flags.DEFINE_enum("dann_loss", "gan", ["gan", "lsgan", "wgan"], "When using adversarial adaptation, which loss to use")
+flags.DEFINE_boolean("dann_bidirectional", True, "Compute adversarial loss bidirectionally for DANN (as used in Shu et al.)")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
 flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
@@ -194,28 +196,54 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
         # Correct task labels (only for source domain)
         task_y_true_a = y_a
 
-        # Correct domain labels
-        # Source domain = 0, target domain = 1
-        domain_y_true_a = tf.zeros_like(domain_y_pred_a)
-        domain_y_true_b = tf.ones_like(domain_y_pred_b)
-
         # Update feature extractor and task classifier to correctly predict
         # labels on source domain
         t_loss = task_loss(task_y_true_a, task_y_pred_a)
 
-        if FLAGS.domain_invariant:
-            # Update feature extractor to fool discriminator - min_theta step
-            # (swap ones/zeros from correct, update FE rather than D weights)
-            d_loss_fool = domain_loss(domain_y_true_b, domain_y_pred_a) \
-                + domain_loss(domain_y_true_a, domain_y_pred_b)
+        # d_loss_fool: update feature extractor to fool discriminator
+        #  - min_theta step (swap ones/zeros from correct, update FE rather
+        #    than D weights)
+        # d_loss_true: update discriminator
+        #  - min_D step (train D to be correct, update D weights)
+        if FLAGS.dann_loss == "wgan":
+            # Non-bidirectional means we just want the target features to look
+            # like the source features. With bidirectional, we want the target
+            # to look like the source and the source to look like the target
+            # (i.e. discriminator confused in both directions, hopefully on
+            # average 0.5 probability of either domain?).
+            d_loss_fool = tf.reduce_mean(domain_y_pred_b)
+            if FLAGS.dann_bidirectional:
+                d_loss_fool += -tf.reduce_mean(domain_y_pred_a)
+            d_loss_true = tf.reduce_mean(domain_y_pred_a) - \
+                tf.reduce_mean(domain_y_pred_b)
 
-            # Weight by same schedule as GRL to make this more equivalent
-            d_loss_fool *= grl_schedule(global_step)
+            # if FLAGS.dann_loss == "wgan-gp":
+            #     model.set_learning_phase(False)  # Don't update BN stats
+            #     # TODO fe_a or fe_b if RNN is tuple, so take first?
+            #     gp = wgan_gradient_penalty(fe_a, fe_b, model.domain_classifier)
+            #     d_loss_true += 10*gp
+        elif FLAGS.dann_loss == "lsgan":
+            # TODO do these exactly cancel out?
+            d_loss_fool = tf.reduce_mean(tf.math.squared_difference(domain_y_pred_b, 0))
+            if FLAGS.dann_bidirectional:
+                d_loss_fool += tf.reduce_mean(tf.math.squared_difference(domain_y_pred_a, 1))
+            d_loss_true = \
+                tf.reduce_mean(tf.math.squared_difference(domain_y_pred_a, 0)) \
+                + tf.reduce_mean(tf.math.squared_difference(domain_y_pred_b, 1))
+        elif FLAGS.dann_loss == "gan":
+            # Correct domain labels
+            # Source domain = 0, target domain = 1
+            domain_y_true_a = tf.zeros_like(domain_y_pred_a)
+            domain_y_true_b = tf.ones_like(domain_y_pred_b)
 
-        # Update discriminator - min_D step
-        # (train D to be correct, update D weights)
-        d_loss_true = domain_loss(domain_y_true_a, domain_y_pred_a) \
-            + domain_loss(domain_y_true_b, domain_y_pred_b)
+            d_loss_fool = domain_loss(domain_y_true_a, domain_y_pred_b)
+            if FLAGS.dann_bidirectional:
+                d_loss_fool += domain_loss(domain_y_true_b, domain_y_pred_a)
+            d_loss_true = domain_loss(domain_y_true_a, domain_y_pred_a) \
+                + domain_loss(domain_y_true_b, domain_y_pred_b)
+
+        # Weight by same schedule as GRL to make this more equivalent
+        d_loss_fool *= grl_schedule(global_step)
 
         if FLAGS.method == "vrada":
             vrnn_state_a = fe_a[1]
@@ -239,6 +267,11 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     if FLAGS.method == "vrada":  # use d_opt since different updates than above?
         d_opt.apply_gradients(zip(v_grad, model.feature_extractor.trainable_variables))
     d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
+
+    # WGAN weight clipping
+    if FLAGS.dann_loss == "wgan":
+        for weight in model.domain_classifier.trainable_variables:
+            weight.assign(tf.clip_by_value(weight, -0.01, 0.01))
 
     # TODO for inference, use the exponential moving average of the batch norm
     # statistics on the *target* data -- above will mix them probably.
@@ -767,12 +800,14 @@ def main(argv):
         mapping_model = None
 
     # Optimizers
-    opt = tf.keras.optimizers.Adam(FLAGS.lr)
-    d_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_domain_mult)
-    if FLAGS.cyclegan_loss == "wgan":
-        mapping_opt = tf.keras.optimizers.RMSprop(FLAGS.lr*FLAGS.lr_mapping_mult)
+    if FLAGS.cyclegan_loss == "wgan" or FLAGS.dann_loss == "wgan":
+        optimizer = tf.keras.optimizers.RMSprop
     else:
-        mapping_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_mapping_mult)
+        optimizer = tf.keras.optimizers.Adam
+
+    opt = optimizer(FLAGS.lr)
+    d_opt = optimizer(FLAGS.lr*FLAGS.lr_domain_mult)
+    mapping_opt = optimizer(FLAGS.lr*FLAGS.lr_mapping_mult)
 
     # For GAN-like training (train_step_gan), we'll weight by the GRL schedule
     # to make it more equivalent to when use_grl=True.

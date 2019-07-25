@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_real
+#SBATCH --job-name=eval_synthetic
 #SBATCH --output=slurm_logs/eval_%A_%a.out
 #SBATCH --error=slurm_logs/eval_%A_%a.err
 #SBATCH --cpus-per-task=3
@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-15
+#SBATCH --array=0-23
 
 . kamiak_config.sh
 
@@ -22,10 +22,16 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("none" "upper" "dann" "deepjdot")
+methods=("dann")
 variants=("best" "last")
-sources=("utdata_wrist"  "utdata_pocket")
-targets=("utdata_pocket" "utdata_wrist")
+sources=(
+    "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
+    "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
+)
+targets=(
+    "freqshift_phase_b0" "freqshift_phase_b1" "freqshift_phase_b2" "freqshift_phase_b3" "freqshift_phase_b4" "freqshift_phase_b5"
+    "freqscale_phase_b0" "freqscale_phase_b1" "freqscale_phase_b2" "freqscale_phase_b3" "freqscale_phase_b4" "freqscale_phase_b5"
+)
 
 # Make sure we're using the right number
 correct_min=0

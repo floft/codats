@@ -147,13 +147,28 @@ def compute_eval_stats(df, filename, has_target_clasifier=False, ignore_label_fl
     return pd.DataFrame(data=data, columns=["Dataset", "Avg", "Std"])
 
 
-def parse_name_synthetic(name):
+def parse_name_synthetic_old(name):
     # Get values
     values = name.split("-")
 
     dataset = values[0]
     method = values[1]
     adaptation = int(values[2].replace("b", ""))
+
+    return {
+        "dataset": dataset,
+        "method": method,
+        "adaptation": adaptation,
+    }
+
+
+def parse_name_synthetic(name):
+    # Get values
+    values = name.split("-")
+
+    method = values[0]
+    dataset = values[1]
+    adaptation = int(values[2].split("_")[-1].replace("b", ""))
 
     return {
         "dataset": dataset,
@@ -337,7 +352,9 @@ def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
         if save_plot:
             plt.savefig(save_prefix+dataset_name+".png", bbox_inches='tight')
 
-    if not save_plot:
+    if save_plot:
+        plt.close()
+    else:
         plt.show()
 
 
@@ -376,14 +393,23 @@ def main(argv):
         #"runwalk01",
         #"runwalk2",
         #"runwalk3",
-        "runwalk4",
+        #"runwalk4",
+        "losses-grl-bi",
+        "losses-gan-bi",
+        "losses-lsgan-bi",
+        "losses-wgan-bi",
+        "losses-gan-nobi",
+        "losses-lsgan-nobi",
+        "losses-wgan-nobi",
     ]
 
     for dataset in datasets:
-        files = get_tuning_files(".", prefix="results_"+dataset+"_last-")
-        results = all_stats(files, sort_by_name=True)
-        plot_synthetic_results(results, save_plot=True,
-            save_prefix="plot_"+dataset+"_last_", title_suffix=" (last)")
+        for variant in ["best", "last"]:
+            files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
+            results = all_stats(files, sort_by_name=True)
+            plot_synthetic_results(results, save_plot=True,
+                save_prefix="plot_"+dataset+"_"+variant+"_",
+                title_suffix=" ("+variant+")")
 
     #
     # Real data

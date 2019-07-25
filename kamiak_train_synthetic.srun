@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=eval_real
-#SBATCH --output=slurm_logs/eval_%A_%a.out
-#SBATCH --error=slurm_logs/eval_%A_%a.err
+#SBATCH --job-name=train_synthetic
+#SBATCH --output=slurm_logs/train_%A_%a.out
+#SBATCH --error=slurm_logs/train_%A_%a.err
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-15
+#SBATCH --array=0-35
 
 . kamiak_config.sh
 
@@ -22,14 +22,20 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("none" "upper" "dann" "deepjdot")
-variants=("best" "last")
-sources=("utdata_wrist"  "utdata_pocket")
-targets=("utdata_pocket" "utdata_wrist")
+methods=("dann")
+debugnums=(1 2 3)
+sources=(
+    "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
+    "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
+)
+targets=(
+    "freqshift_phase_b0" "freqshift_phase_b1" "freqshift_phase_b2" "freqshift_phase_b3" "freqshift_phase_b4" "freqshift_phase_b5"
+    "freqscale_phase_b0" "freqscale_phase_b1" "freqscale_phase_b2" "freqscale_phase_b3" "freqscale_phase_b4" "freqscale_phase_b5"
+)
 
 # Make sure we're using the right number
 correct_min=0
-correct_max=$(( ${#methods[@]} * ${#variants[@]} * ${#sources[@]} - 1))
+correct_max=$(( ${#methods[@]} * ${#debugnums[@]} * ${#sources[@]} - 1))
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "source/target sizes should match"; handle_error; }
 [[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
@@ -40,44 +46,36 @@ correct_max=$(( ${#methods[@]} * ${#variants[@]} * ${#sources[@]} - 1))
 # Indexing: https://stackoverflow.com/a/34363187
 index=$SLURM_ARRAY_TASK_ID
 index1max=${#sources[@]}
-index2max=${#variants[@]}
+index2max=${#debugnums[@]}
 index3=$((index / (index1max * index2max)))
 index=$((index - index3 * index1max * index2max))
 index2=$((index / index1max))
 index1=$((index % index1max))
 
 method="${methods[$index3]}"
-variant="${variants[$index2]}"
+debugnum="${debugnums[$index2]}"
 source="${sources[$index1]}"
 target="${targets[$index1]}"
-
-# Output name uses method from above not the "none" for "upper"
-out="results_${suffix}_$variant-$method-$source-$target.txt"
 
 # Upper bound is actually "none" but without a target domain and with other args
 additional_args=()
 if [[ $method == "upper" ]]; then
     method="none"
     target=""
-    additional_args+=("--best_source")
+    additional_args+=("--best_source" "--notrain_on_source_valid")
 fi
 
-# Argument if evaluating last model
-if [[ $variant == "last" ]]; then
-    additional_args+=("--last")
-fi
-
-echo "$suffix #$SLURM_ARRAY_TASK_ID" > "$out"
-echo "Method: $method" >> "$out"
-echo "Other args: $@" >> "$out"
-echo "$source --> $target" >> "$out"
+echo "$suffix #$SLURM_ARRAY_TASK_ID"
+echo "Method: $method"
+echo "DebugNum: $debugnum"
+echo "Other args: $@"
+echo "$source --> $target"
 
 cd "$remotedir"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
-{ python3 main_eval.py \
+python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --jobs=1 --gpus=1 --gpumem=0 \
-    --match="${source}-${target}-${model}-${method}-[0-9]*" \
-    "${additional_args[@]}" "$@" || handle_error; } | \
-    tee -a "$out"
+    --model=$model --steps=15000 --train_batch=250 --pretrain_steps=1000 --lr=0.0001 \
+    --method="$method" --source="$source" --target="$target" --debugnum="$debugnum" \
+    --gpumem=0 "${additional_args[@]}" "$@" || handle_error
