@@ -7,6 +7,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from absl import app
+from absl import flags
+
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
+
 
 # Use nice names for the plot
 nice_method_names = {
@@ -270,6 +278,11 @@ def process_results(results, real_data=False):
             dataset = params["dataset"]
             adaptation = params["adaptation"]
 
+        # Skip if desired
+        if method in FLAGS.ignore.split(","):
+            print("Skipping", method)
+            continue
+
         method = nice_method_names[method]
 
         if dataset not in datasets:
@@ -348,7 +361,7 @@ def print_real_results(results, title=None):
     print(df)
 
 
-if __name__ == "__main__":
+def main(argv):
     # Ignoring label flipping won't work on best model since if it flips the
     # labels, it'll pick (and actually save during training) the wrong "best"
     # model
@@ -384,3 +397,7 @@ if __name__ == "__main__":
             files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
             results = all_stats(files, sort_by_name=True, real_data=True)
             print_real_results(results, title="Real Dataset Adaptation ("+variant+")")
+
+
+if __name__ == "__main__":
+    app.run(main)
