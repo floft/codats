@@ -201,7 +201,7 @@ def all_stats(files, recompute_averages=True, sort_on_test=False,
         parse_result = parse_file(file)
 
         if parse_result is None:
-            print("Warning: skipping", file)
+            print("Warning: no data, skipping", file)
             continue
 
         validation, traintest, averages = parse_result
@@ -390,17 +390,18 @@ def main(argv):
     # Synthetic data
     #
     datasets = [
-        #"runwalk01",
-        #"runwalk2",
-        #"runwalk3",
-        #"runwalk4",
-        "losses-grl-bi",
-        "losses-gan-bi",
-        "losses-lsgan-bi",
-        "losses-wgan-bi",
-        "losses-gan-nobi",
-        "losses-lsgan-nobi",
-        "losses-wgan-nobi",
+        # "runwalk01",
+        # "runwalk2",
+        # "runwalk3",
+        # "runwalk4",
+        # "losses-grl-bi",
+        # "losses-gan-bi",
+        # "losses-lsgan-bi",
+        # "losses-wgan-bi",
+        # "losses-gan-nobi",
+        # "losses-lsgan-nobi",
+        # "losses-wgan-nobi",
+        "runwalk5",
     ]
 
     for dataset in datasets:
@@ -415,7 +416,7 @@ def main(argv):
     # Real data
     #
     datasets = [
-        "real_utdata1",
+        # "real_utdata1",
     ]
 
     for dataset in datasets:

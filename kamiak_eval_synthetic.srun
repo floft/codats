@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-23
+#SBATCH --array=0-215
 
 . kamiak_config.sh
 
@@ -22,7 +22,7 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("dann")
+methods=("none" "dann" "deepjdot" "cyclegan" "cyclegan_dann" "cycada" "rdann" "vrada" "upper")
 variants=("best" "last")
 sources=(
     "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"

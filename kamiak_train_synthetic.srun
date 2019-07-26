@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-35
+#SBATCH --array=0-539
 
 . kamiak_config.sh
 
@@ -21,9 +21,8 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-model=fcn
-methods=("dann")
-debugnums=(1 2 3)
+methods=("none" "dann" "deepjdot" "cyclegan" "cyclegan_dann" "cycada" "rdann" "vrada" "upper")
+debugnums=(1 2 3 4 5)
 sources=(
     "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
     "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
@@ -65,6 +64,22 @@ if [[ $method == "upper" ]]; then
     additional_args+=("--best_source" "--notrain_on_source_valid")
 fi
 
+# Model and batch
+if [[ $method == "vrada" || $method == "rdann" ]]; then
+    model="$method"
+    batch=64
+else
+    model="fcn"
+    batch=250
+fi
+
+# Pretraining - VRADA requires its custom reconstruction loss
+if [[ $method == "vrada" ]]; then
+    pretraining=0
+else
+    pretraining=1000
+fi
+
 echo "$suffix #$SLURM_ARRAY_TASK_ID"
 echo "Method: $method"
 echo "DebugNum: $debugnum"
@@ -76,6 +91,6 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --model=$model --steps=15000 --train_batch=250 --pretrain_steps=1000 --lr=0.0001 \
+    --model="$model" --steps=15000 --train_batch=$batch --pretrain_steps=$pretraining --lr=0.0001 \
     --method="$method" --source="$source" --target="$target" --debugnum="$debugnum" \
     --gpumem=0 "${additional_args[@]}" "$@" || handle_error
