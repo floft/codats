@@ -37,10 +37,10 @@ correct_min=0
 correct_max=$(( ${#methods[@]} * ${#variants[@]} * ${#sources[@]} - 1))
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "source/target sizes should match"; handle_error; }
-# [[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
-#     { echo "array min should be $correct_min"; handle_error; }
-# [[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
-#     { echo "array max should be $correct_max"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
+    { echo "array min should be $correct_min"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
+    { echo "array max should be $correct_max"; handle_error; }
 
 # Indexing: https://stackoverflow.com/a/34363187
 index=$SLURM_ARRAY_TASK_ID
