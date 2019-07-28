@@ -60,6 +60,7 @@ target="${targets[$index1]}"
 additional_args=()
 if [[ $method == "upper" ]]; then
     method="none"
+    source="$target"
     target=""
     additional_args+=("--best_source" "--notrain_on_source_valid")
 fi
@@ -91,6 +92,6 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --model="$model" --steps=15000 --train_batch=$batch --pretrain_steps=$pretraining --lr=0.0001 \
+    --model="$model" --steps=30000 --train_batch=$batch --pretrain_steps=$pretraining --lr=0.0001 \
     --method="$method" --source="$source" --target="$target" --debugnum="$debugnum" \
     --gpumem=0 "${additional_args[@]}" "$@" || handle_error

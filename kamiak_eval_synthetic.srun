@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-#SBATCH --time=1-00:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
 #SBATCH --array=0-215
 
@@ -21,7 +21,6 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-model=fcn
 methods=("none" "dann" "deepjdot" "cyclegan" "cyclegan_dann" "cycada" "rdann" "vrada" "upper")
 variants=("best" "last")
 sources=(
@@ -38,10 +37,10 @@ correct_min=0
 correct_max=$(( ${#methods[@]} * ${#variants[@]} * ${#sources[@]} - 1))
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "source/target sizes should match"; handle_error; }
-[[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
-    { echo "array min should be $correct_min"; handle_error; }
-[[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
-    { echo "array max should be $correct_max"; handle_error; }
+# [[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
+#     { echo "array min should be $correct_min"; handle_error; }
+# [[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
+#     { echo "array max should be $correct_max"; handle_error; }
 
 # Indexing: https://stackoverflow.com/a/34363187
 index=$SLURM_ARRAY_TASK_ID
@@ -64,8 +63,16 @@ out="results_${suffix}_$variant-$method-$source-$target.txt"
 additional_args=()
 if [[ $method == "upper" ]]; then
     method="none"
+    source="$target"
     target=""
     additional_args+=("--best_source")
+fi
+
+# Model and batch
+if [[ $method == "vrada" || $method == "rdann" ]]; then
+    model="$method"
+else
+    model="fcn"
 fi
 
 # Argument if evaluating last model
