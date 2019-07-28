@@ -138,6 +138,15 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
         d_loss = domain_loss(domain_y_true, domain_y_pred)
         loss = task_loss(task_y_true, task_y_pred, training=True) + d_loss
 
+        # TODO
+        # https://www.tensorflow.org/beta/guide/keras/overview#configure_the_layers
+        # https://www.tensorflow.org/beta/guide/keras/custom_layers_and_models#layers_recursively_collect_losses_created_during_the_forward_pass
+        # https://www.tensorflow.org/beta/guide/keras/training_and_evaluation#low-level_handling_of_extra_losses
+        # e.g. weight decay, note sum these once after each call of model()
+        # regularization = sum(model.losses)
+        # loss += regularization
+        # d_loss += regularization
+
     grad = tape.gradient(loss, model.trainable_variables_task_domain)
     opt.apply_gradients(zip(grad, model.trainable_variables_task_domain))
 
