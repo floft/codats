@@ -12,7 +12,6 @@ import numpy as np
 import tensorflow as tf
 
 from absl import flags
-from tensorflow.python.keras import backend as K
 
 from vrnn import VRNN
 from tcn import TemporalConvNet
@@ -1401,7 +1400,7 @@ def make_task_loss(adapt):
         of the batch since this is unsupervised
         """
         if training is None:
-            training = K.learning_phase()
+            training = tf.keras.backend.learning_phase()
 
         # If doing domain adaptation, then we'll need to ignore the second half of the
         # batch for task classification during training since we don't know the labels

@@ -2,12 +2,25 @@
 #SBATCH --job-name=eval_synthetic
 #SBATCH --output=slurm_logs/eval_%A_%a.out
 #SBATCH --error=slurm_logs/eval_%A_%a.err
-#SBATCH --cpus-per-task=3
-#SBATCH --gres=gpu:1
-#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:0
+#SBATCH --partition=cook
 #SBATCH --time=0-01:00:00
-#SBATCH --mem=20G
-#SBATCH --array=0-167
+#SBATCH --mem=10G
+#SBATCH --array=0-23
+
+# My computer
+gpumem=4000
+# SBATCH --partition=cook
+# SBATCH --cpus-per-task=4
+# SBATCH --gres=gpu:0
+# SBATCH --mem=10G
+# Kamiak
+#gpumem=0
+# SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+# SBATCH --cpus-per-task=3
+# SBATCH --gres=gpu:1
+# SBATCH --mem=20G
 
 . kamiak_config.sh
 
@@ -21,7 +34,8 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-methods=("none" "dann" "deepjdot" "cycada" "rdann" "vrada" "upper")
+#methods=("none" "dann" "deepjdot" "cycada" "rdann" "vrada" "upper")
+methods=("random")
 variants=("best" "last")
 sources=(
     "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
@@ -68,7 +82,7 @@ if [[ $method == "upper" ]]; then
     additional_args+=("--best_source")
 fi
 
-# Model and batch
+# Model
 if [[ $method == "vrada" || $method == "rdann" ]]; then
     model="$method"
 else
@@ -90,7 +104,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 { python3 main_eval.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --jobs=1 --gpus=1 --gpumem=0 \
+    --jobs=1 --gpus=1 --gpumem="$gpumem" \
     --match="${source}-${target}-${model}-${method}-[0-9]*" \
     "${additional_args[@]}" "$@" || handle_error; } | \
     tee -a "$out"

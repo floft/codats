@@ -409,19 +409,20 @@ def train_step_none(data_a, data_b, model, opt, d_opt,
 @tf.function
 def train_step_random(data_a, data_b, model, opt, d_opt,
         task_loss, domain_loss):
-    """ Compiled random "adaptation" """
+    """ Re-init every so often, and by random chance we'll probably get some
+    models that work well on the target data """
     x_a, y_a = data_a
 
-    # Random feature extractor every so many iterations
-    weight_init = tf.initializers.glorot_normal()
-
     tf.print("Re-initialized")
-    # for weight in model.feature_extractor.trainable_variables:
     for weight in model.trainable_variables_task:
-        if "bias" in weight.name:
+        if "bias" in weight.name or "beta" in weight.name:
             weight.assign(tf.zeros_like(weight))
-        if "kernel" in weight.name:
-            weight.assign(weight_init(weight.shape))
+        elif "gamma" in weight.name:
+            weight.assign(tf.ones_like(weight))
+        elif "kernel" in weight.name:
+            weight.assign(tf.initializers.glorot_uniform()(weight.shape))
+        else:
+            raise NotImplementedError("unknown weight to initialize "+weight.name)
 
 
 @tf.function
@@ -828,7 +829,10 @@ def main(argv):
         mapping_model = None
 
     # Optimizers
-    if FLAGS.cyclegan_loss == "wgan" or FLAGS.dann_loss == "wgan":
+    if FLAGS.method == "random":
+        # Don't have momentum when reinitializing all the time
+        optimizer = tf.keras.optimizers.SGD
+    elif FLAGS.cyclegan_loss == "wgan" or FLAGS.dann_loss == "wgan":
         optimizer = tf.keras.optimizers.RMSprop
     else:
         optimizer = tf.keras.optimizers.Adam
@@ -927,10 +931,6 @@ def main(argv):
                 # Compute new coupling
                 gamma = deepjdot_compute_gamma(x_a_embedding, x_b_embedding,
                     task_y_true_a, task_y_pred_b)
-            elif adapt and FLAGS.use_grl:
-                train_step_grl(*step_args)
-            elif adapt:
-                instance_weights = train_step_gan(*step_args, grl_schedule, global_step)
             elif FLAGS.method == "random":
                 # Occasionally change weights, -1 since we want to evaluate
                 # the classifier that's trained on enough steps from the random
@@ -940,6 +940,10 @@ def main(argv):
 
                 # Train FE / task classifier
                 train_step_none(*step_args)
+            elif adapt and FLAGS.use_grl:
+                train_step_grl(*step_args)
+            elif adapt:
+                instance_weights = train_step_gan(*step_args, grl_schedule, global_step)
             else:
                 train_step_none(*step_args)
 

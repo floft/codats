@@ -27,6 +27,7 @@ nice_method_names = {
     "deepjdot": "DeepJDOT",
     "rdann": "R-DANN",
     "vrada": "VRADA",
+    "random": "Random",
 }
 
 
@@ -73,7 +74,9 @@ def parse_file(filename):
         for line in f:
             line = line.strip()
 
-            if beginning_match(valid_header, line):
+            if line == "Virtual devices must be set at program startup":
+                pass
+            elif beginning_match(valid_header, line):
                 in_validation = True
                 in_traintest = False
                 in_averages = False
@@ -401,8 +404,10 @@ def main(argv):
         # "losses-gan-nobi",
         # "losses-lsgan-nobi",
         # "losses-wgan-nobi",
-        "runwalk5",
-        "runwalk6",
+        # "runwalk5",
+        # "runwalk6",
+        # "rand1",
+        "rand2",
     ]
 
     for dataset in datasets:
