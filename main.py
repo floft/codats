@@ -27,7 +27,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("dann_loss", "gan", ["gan", "lsgan", "wgan"], "When using adversarial adaptation, which loss to use")
@@ -82,6 +82,7 @@ def get_directory_names():
         "vrada": "-vrada",  # use with "vrada" model
         "pseudo": "-pseudo",
         "instance": "-instance",
+        "random": "-random",
     }
 
     prefix += methods_suffix[FLAGS.method]
@@ -403,6 +404,24 @@ def train_step_none(data_a, data_b, model, opt, d_opt,
 
     grad = tape.gradient(loss, model.trainable_variables_task)
     opt.apply_gradients(zip(grad, model.trainable_variables_task))
+
+
+@tf.function
+def train_step_random(data_a, data_b, model, opt, d_opt,
+        task_loss, domain_loss):
+    """ Compiled random "adaptation" """
+    x_a, y_a = data_a
+
+    # Random feature extractor every so many iterations
+    weight_init = tf.initializers.glorot_normal()
+
+    tf.print("Re-initialized")
+    # for weight in model.feature_extractor.trainable_variables:
+    for weight in model.trainable_variables_task:
+        if "bias" in weight.name:
+            weight.assign(tf.zeros_like(weight))
+        if "kernel" in weight.name:
+            weight.assign(weight_init(weight.shape))
 
 
 @tf.function
@@ -912,6 +931,15 @@ def main(argv):
                 train_step_grl(*step_args)
             elif adapt:
                 instance_weights = train_step_gan(*step_args, grl_schedule, global_step)
+            elif FLAGS.method == "random":
+                # Occasionally change weights, -1 since we want to evaluate
+                # the classifier that's trained on enough steps from the random
+                # initialization
+                if int(global_step-1)%1000 == 0:
+                    train_step_random(*step_args)
+
+                # Train FE / task classifier
+                train_step_none(*step_args)
             else:
                 train_step_none(*step_args)
 
