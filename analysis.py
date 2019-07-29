@@ -402,6 +402,7 @@ def main(argv):
         # "losses-lsgan-nobi",
         # "losses-wgan-nobi",
         "runwalk5",
+        "runwalk6",
     ]
 
     for dataset in datasets:
