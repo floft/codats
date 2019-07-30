@@ -7,10 +7,10 @@
 #SBATCH --partition=cook
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=10G
-#SBATCH --array=0-23
+#SBATCH --array=0-139
 
 # My computer
-gpumem=4000
+gpumem=4500
 # SBATCH --partition=cook
 # SBATCH --cpus-per-task=4
 # SBATCH --gres=gpu:0
@@ -34,16 +34,24 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-#methods=("none" "dann" "deepjdot" "cycada" "rdann" "vrada" "upper")
-methods=("random")
+methods=("none" "dann" "deepjdot" "cycada" "rdann" "vrada" "upper")
+# methods=("random")
 variants=("best" "last")
+# sources=(
+#     "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
+#     "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
+# )
+# targets=(
+#     "freqshift_phase_b0" "freqshift_phase_b1" "freqshift_phase_b2" "freqshift_phase_b3" "freqshift_phase_b4" "freqshift_phase_b5" "freqshift_phase_b6" "freqshift_phase_b7" "freqshift_phase_b8" "freqshift_phase_b9" "freqshift_phase_b10"
+#     "freqscale_phase_b0" "freqscale_phase_b1" "freqscale_phase_b2" "freqscale_phase_b3" "freqscale_phase_b4" "freqscale_phase_b5" "freqscale_phase_b6" "freqscale_phase_b7" "freqscale_phase_b8" "freqscale_phase_b9" "freqscale_phase_b10"
+# )
 sources=(
-    "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
-    "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
+    "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
+    "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
 )
 targets=(
-    "freqshift_phase_b0" "freqshift_phase_b1" "freqshift_phase_b2" "freqshift_phase_b3" "freqshift_phase_b4" "freqshift_phase_b5"
-    "freqscale_phase_b0" "freqscale_phase_b1" "freqscale_phase_b2" "freqscale_phase_b3" "freqscale_phase_b4" "freqscale_phase_b5"
+    "freqshift_phase_b6" "freqshift_phase_b7" "freqshift_phase_b8" "freqshift_phase_b9" "freqshift_phase_b10"
+    "freqscale_phase_b6" "freqscale_phase_b7" "freqscale_phase_b8" "freqscale_phase_b9" "freqscale_phase_b10"
 )
 
 # Make sure we're using the right number
