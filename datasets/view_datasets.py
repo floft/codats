@@ -14,7 +14,7 @@ from absl import flags
 
 import datasets
 
-from generate_tfrecords import calc_normalization, apply_normalization
+from datasets import calc_normalization, apply_normalization
 
 FLAGS = flags.FLAGS
 

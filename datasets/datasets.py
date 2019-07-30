@@ -5,12 +5,112 @@ Load the desired datasets into memory so we can write them to tfrecord files
 in generate_tfrecords.py
 """
 import os
+import re
+import io
+import zipfile
 import rarfile  # pip install rarfile
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
 from sklearn.model_selection import train_test_split
+
+from absl import app
+from absl import flags
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_enum("normalize", "meanstd", ["none", "minmax", "meanstd"], "How to normalize data")
+
+
+# For normalization
+def calc_normalization(x, method):
+    """
+    Calculate zero mean unit variance normalization statistics
+
+    We calculate separate mean/std or min/max statistics for each
+    feature/channel, the default (-1) for BatchNormalization in TensorFlow and
+    I think makes the most sense. If we set axis=0, then we end up with a
+    separate statistic for each time step and feature, and then we can get odd
+    jumps between time steps. Though, we get shape problems when setting axis=2
+    in numpy, so instead we reshape/transpose.
+    """
+    # from (10000,100,1) to (1,100,10000)
+    x = x.T
+    # from (1,100,10000) to (1,100*10000)
+    x = x.reshape((x.shape[0], -1))
+    # then we compute statistics over axis=1, i.e. along 100*10000 and end up
+    # with 1 statistic per channel (in this example only one)
+
+    if method == "meanstd":
+        values = (np.mean(x, axis=1), np.std(x, axis=1))
+    elif method == "minmax":
+        values = (np.min(x, axis=1), np.max(x, axis=1))
+    else:
+        raise NotImplementedError("unsupported normalization method")
+
+    return method, values
+
+
+def calc_normalization_jagged(x, method):
+    """ Same as calc_normalization() except works for arrays of varying-length
+    numpy arrays
+
+    x should be: [
+        np.array([example 1 time steps, example 1 features]),
+        np.array([example 2 time steps, example 2 features]),
+        ...
+    ] where the # time steps can differ between examples.
+    """
+    num_features = x[0].shape[1]
+    features = [None for x in range(num_features)]
+
+    for example in x:
+        transpose = example.T
+
+        for i, feature_values in enumerate(transpose):
+            if features[i] is None:
+                features[i] = feature_values
+            else:
+                features[i] = np.concatenate([features[i], feature_values], axis=0)
+
+    if method == "meanstd":
+        values = (np.array([np.mean(x) for x in features], dtype=np.float32),
+            np.array([np.std(x) for x in features], dtype=np.float32))
+    elif method == "minmax":
+        values = (np.array([np.min(x) for x in features], dtype=np.float32),
+            np.array([np.max(x) for x in features], dtype=np.float32))
+    else:
+        raise NotImplementedError("unsupported normalization method")
+
+    return method, values
+
+
+def apply_normalization(x, normalization, epsilon=1e-5):
+    """ Apply zero mean unit variance normalization statistics """
+    method, values = normalization
+
+    if method == "meanstd":
+        mean, std = values
+        x = (x - mean) / (std + epsilon)
+    elif method == "minmax":
+        minx, maxx = values
+        x = (x - minx) / (maxx - minx + epsilon) - 0.5
+
+    x[np.isnan(x)] = 0
+
+    return x
+
+
+def apply_normalization_jagged(x, normalization, epsilon=1e-5):
+    """ Same as apply_normalization() except works for arrays of varying-length
+    numpy arrays """
+    normalized = []
+
+    for example in x:
+        normalized.append(apply_normalization(example, normalization, epsilon))
+
+    return normalized
 
 
 class Dataset:
@@ -372,6 +472,177 @@ class UnivariateCSVBase(Dataset):
         return super().process(data, labels)
 
 
+class uWaveBase(Dataset):
+    """
+    uWave Gesture dataset
+
+    See: https://zhen-wang.appspot.com/rice/projects_uWave.html
+
+    Either split on days or users:
+      - If users: pass days=None, users=[1,2,3,4,5,6,7,8]
+      - If days: pass days=[1,2,3,4,5,6,7], users=None
+      - To get all data: days=None, users=None
+    (or specify any subset of those users/days)
+    """
+    invertible = False
+    feature_names = ["accel_x", "accel_y", "accel_z"]
+
+    def __init__(self, days, users, num_classes, class_labels,
+            *args, **kwargs):
+        self.days = days
+        self.users = users
+        super().__init__(num_classes, class_labels, None, None,
+            uWaveBase.feature_names, *args, **kwargs)
+
+    def download(self):
+        (dataset_fp,) = self.download_dataset(["uWaveGestureLibrary.zip"],
+            "https://zhen-wang.appspot.com/rice/files/uwave")
+        return dataset_fp
+
+    def get_file_in_archive(self, archive, filename):
+        """ Read one file out of the already-open zip/rar file """
+        with archive.open(filename) as fp:
+            contents = fp.read()
+        return contents
+
+    def parse_example(self, filename, content):
+        """ Load file containing a single example """
+        # Get data
+        lines = content.decode("utf-8").strip().split("\n")
+        data = []
+
+        for line in lines:
+            x, y, z = line.split(" ")
+
+            x = float(x)
+            y = float(y)
+            z = float(z)
+
+            data.append([x, y, z])
+
+        data = np.array(data, dtype=np.float32)
+
+        # Get label from filename
+        # Note: there's at least one without a repeat_index, so make it optional
+        matches = re.findall(r"[0-9]+-[0-9]*", filename)
+        assert len(matches) == 1, \
+            "Filename should be in format X_Template_Acceleration#-#.txt but is " \
+            + filename + " instead"
+        parts = matches[0].split("-")
+        assert len(parts) == 2, "Match should be tuple of (gesture index, repeat index)"
+        gesture_index, repeat_index = parts
+        # The label is the gesture index
+        label = int(gesture_index)
+
+        return data, label
+
+    def load_rar(self, filename):
+        """ Load RAR file containing examples from one user for one day """
+        data = []
+        labels = []
+
+        with rarfile.RarFile(filename, "r") as archive:
+            filelist = archive.namelist()
+
+            for f in filelist:
+                if ".txt" in f and "Acceleration" in f:
+                    contents = self.get_file_in_archive(archive, f)
+                    new_data, new_label = self.parse_example(f, contents)
+                    data.append(new_data)
+                    labels.append(new_label)
+
+        return data, labels
+
+    def load_zip(self, filename):
+        """ Load ZIP file containing all the RAR files """
+        data = []
+        labels = []
+
+        with zipfile.ZipFile(filename, "r") as archive:
+            filelist = archive.namelist()
+
+            for f in filelist:
+                if ".rar" in f:
+                    matches = re.findall(r"[0-9]+", f)
+                    assert len(matches) == 2, "should be 2 numbers in .rar filename"
+                    user, day = matches
+                    user = int(user)
+                    day = int(day)
+
+                    # Skip data we don't want
+                    if self.users is not None:
+                        if user not in self.users:
+                            print("Skipping user", user)
+                            continue
+
+                    if self.days is not None:
+                        if day not in self.days:
+                            print("Skipping day", day)
+                            continue
+
+                    print("Processing user", user, "day", day)
+                    contents = self.get_file_in_archive(archive, f)
+                    new_data, new_labels = self.load_rar(io.BytesIO(contents))
+                    data += new_data
+                    labels += new_labels
+
+        # Zero pad (appending zeros) to make all the same shape
+        # for uwave_all, we know the max max([x.shape[0] for x in data]) = 315
+        # and expand the dimensions to [1, time_steps, num_features] so we can
+        # vstack them properly
+        #data = [np.expand_dims(self.pad_to(d, 315), axis=0) for d in data]
+
+        #x = np.vstack(data).astype(np.float32)
+        y = np.hstack(labels).astype(np.float32)
+
+        return data, y
+
+    def pad_to(self, data, desired_length):
+        """ Pad to the desired length """
+        current_length = data.shape[0]
+        assert current_length <= desired_length, "Cannot shrink size by padding"
+        return np.pad(data, [(0, desired_length - current_length), (0, 0)],
+                mode="constant", constant_values=0)
+
+    def load(self):
+        # Load data
+        dataset_fp = self.download()
+        x, y = self.load_zip(dataset_fp)
+        # Split into train/test sets
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
+
+        # Normalize here since we know which data is train vs. test and we have
+        # to normalize before we zero pad or the zero padding messes up the
+        # mean calculation a lot
+        #
+        # TODO we'll normalize this twice, once here and once later on when
+        # generating the tfrecord files.... but, it's the same normalization, so
+        # it doesn't really matter, but it's a waste of time
+        if FLAGS.normalize != "none":
+            normalization = calc_normalization_jagged(train_data, FLAGS.normalize)
+            train_data = apply_normalization_jagged(train_data, normalization)
+            test_data = apply_normalization_jagged(test_data, normalization)
+
+        # Then zero-pad to be the right length
+        train_data = np.vstack([np.expand_dims(self.pad_to(d, 315), axis=0)
+            for d in train_data]).astype(np.float32)
+        test_data = np.vstack([np.expand_dims(self.pad_to(d, 315), axis=0)
+            for d in test_data]).astype(np.float32)
+
+        return train_data, train_labels, test_data, test_labels
+
+    def process(self, data, labels):
+        """ One-hot encode labels
+        Note: uWave classes are index-one """
+        # Check we have data in [examples, time_steps, 3]
+        assert len(data.shape) == 3, "should shape [examples, time_steps, 3]"
+        assert data.shape[2] == 3, "should have 3 features"
+
+        labels = self.one_hot(labels, index_one=True)
+        return super().process(data, labels)
+
+
 def make_trivial_negpos(filename_prefix):
     """ make a -/+ dataset object, since we have a bunch of these """
     class Trivial(UnivariateCSVBase):
@@ -444,10 +715,32 @@ def make_trivial_lowhigh_invertible(filename_prefix):
     return Trivial
 
 
+def make_uwave(days=None, users=None):
+    """ Make uWave dataset split on either days or users """
+    class uWaveGestures(uWaveBase):
+        invertible = False
+        num_classes = 8
+        class_labels = list(range(num_classes))
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                days, users,
+                uWaveGestures.num_classes,
+                uWaveGestures.class_labels,
+                *args, **kwargs)
+
+    return uWaveGestures
+
+
 # List of datasets
 datasets = {
     "utdata_wrist": UTDataWrist,
     "utdata_pocket": UTDataPocket,
+    "uwave_all": make_uwave(),
+    "uwave_days_first": make_uwave(days=[1, 2, 3]),
+    "uwave_days_second": make_uwave(days=[5, 6, 7]),
+    "uwave_users_first": make_uwave(users=[1, 2, 3, 4]),
+    "uwave_users_second": make_uwave(users=[5, 6, 7, 8]),
 
     # "positive_slope": make_trivial_negpos("positive_slope"),
     # "positive_slope_low": make_trivial_negpos("positive_slope_low"),
@@ -493,13 +786,13 @@ datasets = {
     # "sineslope4low": make_trivial_negpos_invertible("sineslope4low"),
     # "sineslope4high": make_trivial_negpos_invertible("sineslope4high"),
 
-    "freqshift_a": make_trivial_negpos("freqshift_a"),
-    "freqshift_b0": make_trivial_negpos("freqshift_b0"),
-    "freqshift_b1": make_trivial_negpos("freqshift_b1"),
-    "freqshift_b2": make_trivial_negpos("freqshift_b2"),
-    "freqshift_b3": make_trivial_negpos("freqshift_b3"),
-    "freqshift_b4": make_trivial_negpos("freqshift_b4"),
-    "freqshift_b5": make_trivial_negpos("freqshift_b5"),
+    # "freqshift_a": make_trivial_negpos("freqshift_a"),
+    # "freqshift_b0": make_trivial_negpos("freqshift_b0"),
+    # "freqshift_b1": make_trivial_negpos("freqshift_b1"),
+    # "freqshift_b2": make_trivial_negpos("freqshift_b2"),
+    # "freqshift_b3": make_trivial_negpos("freqshift_b3"),
+    # "freqshift_b4": make_trivial_negpos("freqshift_b4"),
+    # "freqshift_b5": make_trivial_negpos("freqshift_b5"),
     "freqshift_phase_a": make_trivial_negpos("freqshift_phase_a"),
     "freqshift_phase_b0": make_trivial_negpos("freqshift_phase_b0"),
     "freqshift_phase_b1": make_trivial_negpos("freqshift_phase_b1"),
@@ -507,14 +800,19 @@ datasets = {
     "freqshift_phase_b3": make_trivial_negpos("freqshift_phase_b3"),
     "freqshift_phase_b4": make_trivial_negpos("freqshift_phase_b4"),
     "freqshift_phase_b5": make_trivial_negpos("freqshift_phase_b5"),
+    "freqshift_phase_b6": make_trivial_negpos("freqshift_phase_b6"),
+    "freqshift_phase_b7": make_trivial_negpos("freqshift_phase_b7"),
+    "freqshift_phase_b8": make_trivial_negpos("freqshift_phase_b8"),
+    "freqshift_phase_b9": make_trivial_negpos("freqshift_phase_b9"),
+    "freqshift_phase_b10": make_trivial_negpos("freqshift_phase_b10"),
 
-    "freqscale_a": make_trivial_negpos("freqscale_a"),
-    "freqscale_b0": make_trivial_negpos("freqscale_b0"),
-    "freqscale_b1": make_trivial_negpos("freqscale_b1"),
-    "freqscale_b2": make_trivial_negpos("freqscale_b2"),
-    "freqscale_b3": make_trivial_negpos("freqscale_b3"),
-    "freqscale_b4": make_trivial_negpos("freqscale_b4"),
-    "freqscale_b5": make_trivial_negpos("freqscale_b5"),
+    # "freqscale_a": make_trivial_negpos("freqscale_a"),
+    # "freqscale_b0": make_trivial_negpos("freqscale_b0"),
+    # "freqscale_b1": make_trivial_negpos("freqscale_b1"),
+    # "freqscale_b2": make_trivial_negpos("freqscale_b2"),
+    # "freqscale_b3": make_trivial_negpos("freqscale_b3"),
+    # "freqscale_b4": make_trivial_negpos("freqscale_b4"),
+    # "freqscale_b5": make_trivial_negpos("freqscale_b5"),
     "freqscale_phase_a": make_trivial_negpos("freqscale_phase_a"),
     "freqscale_phase_b0": make_trivial_negpos("freqscale_phase_b0"),
     "freqscale_phase_b1": make_trivial_negpos("freqscale_phase_b1"),
@@ -522,21 +820,26 @@ datasets = {
     "freqscale_phase_b3": make_trivial_negpos("freqscale_phase_b3"),
     "freqscale_phase_b4": make_trivial_negpos("freqscale_phase_b4"),
     "freqscale_phase_b5": make_trivial_negpos("freqscale_phase_b5"),
+    "freqscale_phase_b6": make_trivial_negpos("freqscale_phase_b6"),
+    "freqscale_phase_b7": make_trivial_negpos("freqscale_phase_b7"),
+    "freqscale_phase_b8": make_trivial_negpos("freqscale_phase_b8"),
+    "freqscale_phase_b9": make_trivial_negpos("freqscale_phase_b9"),
+    "freqscale_phase_b10": make_trivial_negpos("freqscale_phase_b10"),
 
-    "jumpmean_a": make_trivial_negpos("jumpmean_a"),
-    "jumpmean_b0": make_trivial_negpos("jumpmean_b0"),
-    "jumpmean_b1": make_trivial_negpos("jumpmean_b1"),
-    "jumpmean_b2": make_trivial_negpos("jumpmean_b2"),
-    "jumpmean_b3": make_trivial_negpos("jumpmean_b3"),
-    "jumpmean_b4": make_trivial_negpos("jumpmean_b4"),
-    "jumpmean_b5": make_trivial_negpos("jumpmean_b5"),
-    "jumpmean_phase_a": make_trivial_negpos("jumpmean_phase_a"),
-    "jumpmean_phase_b0": make_trivial_negpos("jumpmean_phase_b0"),
-    "jumpmean_phase_b1": make_trivial_negpos("jumpmean_phase_b1"),
-    "jumpmean_phase_b2": make_trivial_negpos("jumpmean_phase_b2"),
-    "jumpmean_phase_b3": make_trivial_negpos("jumpmean_phase_b3"),
-    "jumpmean_phase_b4": make_trivial_negpos("jumpmean_phase_b4"),
-    "jumpmean_phase_b5": make_trivial_negpos("jumpmean_phase_b5"),
+    # "jumpmean_a": make_trivial_negpos("jumpmean_a"),
+    # "jumpmean_b0": make_trivial_negpos("jumpmean_b0"),
+    # "jumpmean_b1": make_trivial_negpos("jumpmean_b1"),
+    # "jumpmean_b2": make_trivial_negpos("jumpmean_b2"),
+    # "jumpmean_b3": make_trivial_negpos("jumpmean_b3"),
+    # "jumpmean_b4": make_trivial_negpos("jumpmean_b4"),
+    # "jumpmean_b5": make_trivial_negpos("jumpmean_b5"),
+    # "jumpmean_phase_a": make_trivial_negpos("jumpmean_phase_a"),
+    # "jumpmean_phase_b0": make_trivial_negpos("jumpmean_phase_b0"),
+    # "jumpmean_phase_b1": make_trivial_negpos("jumpmean_phase_b1"),
+    # "jumpmean_phase_b2": make_trivial_negpos("jumpmean_phase_b2"),
+    # "jumpmean_phase_b3": make_trivial_negpos("jumpmean_phase_b3"),
+    # "jumpmean_phase_b4": make_trivial_negpos("jumpmean_phase_b4"),
+    # "jumpmean_phase_b5": make_trivial_negpos("jumpmean_phase_b5"),
 }
 
 
@@ -571,7 +874,7 @@ def names():
     return list(datasets.keys())
 
 
-if __name__ == "__main__":
+def main(argv):
     sd, td = load_da("utdata_wrist", "utdata_pocket")
 
     print("Source")
@@ -584,3 +887,7 @@ if __name__ == "__main__":
     print(td.train_data.shape, td.train_labels.shape)
     print(td.test_data, td.test_labels)
     print(td.test_data.shape, td.test_labels.shape)
+
+
+if __name__ == "__main__":
+    app.run(main)
