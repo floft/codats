@@ -74,7 +74,7 @@ def generate_positive_slope_data(n, display=False, add_noise=False,
     if display:
         display_xy(x, y)
 
-    return to_pandas(y, labels)
+    return y, labels
 
 
 def sine(m=1.0, b=0.0, f=None, amps=None, freq_noise=1.0, phase_shift=5.0,
@@ -199,10 +199,11 @@ def generate_freq(n, display=False, amp_noise=False, freq_noise=False,
     if display:
         display_xy(x, y)
 
-    return to_pandas(y, labels)
+    return y, labels
 
 
-def generate_multi_freq(n, pos_f, neg_f, pos_amp=None, neg_amp=None,
+def generate_multi_freq(n, pos_f_all, neg_f_all,
+        pos_amp_all=None, neg_amp_all=None,
         display=False,
         amp_noise=0.1, freq_noise=1.0, phase_shift=5.0,
         sample_freq=50, duration=2, b=0.0):
@@ -212,70 +213,160 @@ def generate_multi_freq(n, pos_f, neg_f, pos_amp=None, neg_amp=None,
     Optionally specify different amplitudes for each of the frequencies. If not,
     then they all have the same amplitude (possibly with amplitude noise if
     amp_noise is not None).
+
+    Note: {pos,neg}_{f,amp} is a 2D list to split frequencies/amplitudes across
+    multiple channels. If you only want one channel, then do
+        generate_multi_freq(x, [run_f], [walk_f], [run_amp], [walk_amp], ...)
     """
-    assert pos_amp is None or len(pos_amp) == len(pos_f), \
-        "pos_amp must be same length as pos_f"
-    assert neg_amp is None or len(neg_amp) == len(neg_f), \
-        "neg_amp must be same length as neg_f"
-
-    if pos_amp is not None:
-        pos_amp = np.array(pos_amp, dtype=np.float32)
-    else:
-        pos_amp = np.array([1.0]*len(pos_f), dtype=np.float32)
-
-    if neg_amp is not None:
-        neg_amp = np.array(neg_amp, dtype=np.float32)
-    else:
-        neg_amp = np.array([1.0]*len(neg_f), dtype=np.float32)
-
-    pos_f = np.array(pos_f, dtype=np.float32)
-    neg_f = np.array(neg_f, dtype=np.float32)
-
-    # Match sizes by zero padding, otherwise we can't convert to single matrix
-    if len(pos_f) > len(neg_f):
-        padding = len(pos_f) - len(neg_f)
-        neg_f = np.pad(neg_f, (0, padding), 'constant', constant_values=(0.0, 0.0))
-        neg_amp = np.pad(neg_amp, (0, padding), 'constant', constant_values=(0.0, 0.0))
-    elif len(neg_f) > len(pos_f):
-        padding = len(neg_f) - len(pos_f)
-        pos_f = np.pad(pos_f, (0, padding), 'constant', constant_values=(0.0, 0.0))
-        pos_amp = np.pad(pos_amp, (0, padding), 'constant', constant_values=(0.0, 0.0))
+    assert pos_amp_all is None or len(pos_amp_all) == len(pos_f_all), \
+        "pos_amp_all must be same length as pos_f_all"
+    assert neg_amp_all is None or len(neg_amp_all) == len(neg_f_all), \
+        "neg_amp_all must be same length as neg_f_all"
 
     # Generate the labels, ~1/2 from + and 1/2 from - classes
     labels = np.random.randint(2, size=n)
 
-    # Get approximately the pos_f/neg_f frequencies for each
-    freqs = []
-    amps = []
+    # Multi-dimensional data
+    data = []
 
-    for label in labels:
-        f = neg_f if label == 0 else pos_f
-        amp = neg_amp if label == 0 else pos_amp
-        freqs.append(f)
-        amps.append(amp)
+    # For each channel
+    for channel in range(len(pos_f_all)):
+        pos_f = np.array(pos_f_all[channel], dtype=np.float32)
+        neg_f = np.array(neg_f_all[channel], dtype=np.float32)
 
-    freqs = np.array(freqs, dtype=np.float32)
-    amps = np.array(amps, dtype=np.float32)
-    amps[np.isnan(amps)] = 1.0  # None is NaN, and so just set to 1.0 amplitude
+        if pos_amp_all is not None:
+            pos_amp = np.array(pos_amp_all[channel], dtype=np.float32)
+        else:
+            pos_amp = np.array([1.0]*len(pos_f_all), dtype=np.float32)
 
-    # Generate time series data
-    x, y = sine(b=b, f=freqs, amps=amps, maxt=duration, length=duration*sample_freq,
-        freq_noise=freq_noise, phase_shift=phase_shift)
+        if neg_amp_all is not None:
+            neg_amp = np.array(neg_amp_all[channel], dtype=np.float32)
+        else:
+            neg_amp = np.array([1.0]*len(neg_f_all), dtype=np.float32)
 
-    if amp_noise is not None:
-        y += np.random.normal(0.0, amp_noise, (y.shape[0], n))
+        assert pos_amp is None or len(pos_amp) == len(pos_f), \
+            "pos_amp must be same length as pos_f"
+        assert neg_amp is None or len(neg_amp) == len(neg_f), \
+            "neg_amp must be same length as neg_f"
 
-    if display:
-        display_xy(x, y)
+        # Match sizes by zero padding, otherwise we can't convert to single matrix
+        if len(pos_f) > len(neg_f):
+            padding = len(pos_f) - len(neg_f)
+            neg_f = np.pad(neg_f, (0, padding), 'constant', constant_values=(0.0, 0.0))
+            neg_amp = np.pad(neg_amp, (0, padding), 'constant', constant_values=(0.0, 0.0))
+        elif len(neg_f) > len(pos_f):
+            padding = len(neg_f) - len(pos_f)
+            pos_f = np.pad(pos_f, (0, padding), 'constant', constant_values=(0.0, 0.0))
+            pos_amp = np.pad(pos_amp, (0, padding), 'constant', constant_values=(0.0, 0.0))
 
-    return to_pandas(y, labels)
+        # Get approximately the pos_f/neg_f frequencies for each
+        freqs = []
+        amps = []
+
+        for label in labels:
+            f = neg_f if label == 0 else pos_f
+            amp = neg_amp if label == 0 else pos_amp
+            freqs.append(f)
+            amps.append(amp)
+
+        freqs = np.array(freqs, dtype=np.float32)
+        amps = np.array(amps, dtype=np.float32)
+        amps[np.isnan(amps)] = 1.0  # None is NaN, and so just set to 1.0 amplitude
+
+        # Generate time series data
+        x, y = sine(b=b, f=freqs, amps=amps, maxt=duration, length=duration*sample_freq,
+            freq_noise=freq_noise, phase_shift=phase_shift)
+
+        if amp_noise is not None:
+            y += np.random.normal(0.0, amp_noise, (y.shape[0], n))
+
+        if display:
+            display_xy(x, y)
+
+        data.append(y)
+
+    # Transpose from [features, time_steps, examples] to
+    # [examples, time_steps, features]
+    data = np.array(data, dtype=np.float32).T
+
+    # Make labels 1-indexed
+    labels += 1
+
+    return data, labels
+
+
+def rotate2d(x, degrees):
+    """
+    Rotate the 2D data in x a certain number of degrees (clockwise, if each
+    point in x is (x,y))
+
+    If x is a single point (i.e. x is something like (x,y)) then it's only
+    rotates that point. However, more useful is if x is a time series, where the
+    values to be rotated (i.e. the feature dimension) is last. For example, pass
+    x with shape: [examples, time_steps, num_features] where num_features = 2
+    (since this is a 2D rotation matrix).
+
+    Note: if you want counterclockwise, do a left-multiply instead of a
+    right-multiply
+
+    See:
+    https://en.wikipedia.org/wiki/Rotation_matrix
+    https://scipython.com/book/chapter-6-numpy/examples/creating-a-rotation-matrix-in-numpy/
+    """
+    theta = np.radians(degrees)
+    c = np.cos(theta)
+    s = np.sin(theta)
+    rotation_matrix = np.array(((c, -s), (s, c)))
+    return np.dot(x, rotation_matrix)
+
+
+def rotate2d_data(data, labels, degrees):
+    """ rotate2d but only rotates data and directly passes through labels """
+    return rotate2d(data, degrees), labels
+
+
+def save_data_file(values, labels, filename):
+    """
+    To be compatible with UCR dataset format with 1D data (univariate), commas
+    separate label first then all the data with one example on each line.
+    However, to support multivariate data, features for each time step are
+    delimitated by semicolons.
+
+    Example:
+      univariate: label,timestep1,timestep2,timestep3,...
+      multivariate: label,ts1f1;ts1f2;ts1f3,fs2f1;fs2f2;ts2f3,...
+    """
+    with open(filename, "w") as f:
+        for i, x in enumerate(values):
+            y = labels[i]
+            s = str(y) + ","
+
+            # If only one feature, we don't have the extra dimension
+            if len(x.shape) == 1:
+                s += ",".join([str(v) for v in x])
+            elif len(x.shape) == 2:
+                for j, time_step in enumerate(x):
+                    s += ";".join([str(v) for v in time_step])
+
+                    if j != len(x) - 1:
+                        s += ","
+            else:
+                raise NotImplementedError(
+                    "only support shapes [examples, time_steps]"
+                    " or [examples, time_steps, features]")
+
+            f.write(s+"\n")
 
 
 def save_data(func, fn, display=False):
     """ Use func to create examples that are saved to fn_TRAIN and fn_TEST """
     print(fn)
-    func(10000, False).to_csv('trivial/'+fn+'_TRAIN', header=False, index=False)
-    func(2000, display).to_csv('trivial/'+fn+'_TEST', header=False, index=False)
+    save_data_file(*func(10000, False), 'trivial/'+fn+'_TRAIN')
+    save_data_file(*func(2000, display), 'trivial/'+fn+'_TEST')
+
+    # Using pandas, but doesn't work with multi-dimensional data
+    # to_pandas(*func(10000, False)).to_csv('trivial/'+fn+'_TRAIN', header=False, index=False)
+    # to_pandas(*func(2000, display)).to_csv('trivial/'+fn+'_TEST', header=False, index=False)
 
 
 if __name__ == '__main__':
@@ -363,6 +454,14 @@ if __name__ == '__main__':
     walk_f = np.array([1, 2, 4], dtype=np.float32)
     walk_amp = np.array([0.5, 0.25, 0.06], dtype=np.float32)
 
+    # Since we want 1D data and I modified generate_multi_freq to support
+    # multi-dimensional data, but use numpy arrays so we can still do
+    # addition/multiplication on these
+    run_f = np.expand_dims(run_f, axis=0)
+    run_amp = np.expand_dims(run_amp, axis=0)
+    walk_f = np.expand_dims(walk_f, axis=0)
+    walk_amp = np.expand_dims(walk_amp, axis=0)
+
     # Frequency shift
     np.random.seed(0)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None, None), 'freqshift_a', dsp)
@@ -427,5 +526,39 @@ if __name__ == '__main__':
     # save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None, b=16.0), 'jumpmean_phase_b4', dsp)
     # save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None, b=32.0), 'jumpmean_phase_b5', dsp)
 
-    # Linear transform (random/fixed)
-    # ...
+    #
+    # 2D classification problem:
+    # Walking (negative) vs. running (positive)
+    #
+    # Same as 1D but split every-other frequency components/amplitudes across
+    # x and y, starting with first frequency for x
+    #
+    run_f_x = np.array([1, 3, 5], dtype=np.float32)
+    run_amp_x = np.array([0.75, 0.38, 0.08], dtype=np.float32)
+    run_f_y = np.array([2, 4, 6], dtype=np.float32)
+    run_amp_y = np.array([0.56, 0.19, 0.04], dtype=np.float32)
+
+    walk_f_x = np.array([1, 4], dtype=np.float32)
+    walk_amp_x = np.array([0.5, 0.06], dtype=np.float32)
+    walk_f_y = np.array([2], dtype=np.float32)
+    walk_amp_y = np.array([0.25], dtype=np.float32)
+
+    run_f = [run_f_x, run_f_y]
+    run_amp = [run_amp_x, run_amp_y]
+    walk_f = [walk_f_x, walk_f_y]
+    walk_amp = [walk_amp_x, walk_amp_y]
+
+    # Linear transform (random/fixed), rotating from 0 degrees to 180 degrees (e.g. 2D accelerometer)
+    np.random.seed(0)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'rotate_phase_a', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 0), 'rotate_phase_b0', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 18), 'rotate_phase_b1', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 36), 'rotate_phase_b2', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 54), 'rotate_phase_b3', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 72), 'rotate_phase_b4', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 90), 'rotate_phase_b5', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 108), 'rotate_phase_b6', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 126), 'rotate_phase_b7', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 144), 'rotate_phase_b8', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 162), 'rotate_phase_b9', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 180), 'rotate_phase_b10', dsp)

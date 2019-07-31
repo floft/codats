@@ -472,6 +472,67 @@ class UnivariateCSVBase(Dataset):
         return super().process(data, labels)
 
 
+class MultivariateCSVBase(Dataset):
+    """ Base class for loading UCR-like multivariate datasets, where we have
+    x and y rather than just one feature """
+    invertible = False
+    feature_names = ["x", "y"]
+
+    def __init__(self, train_filename, test_filename, num_classes, class_labels,
+            *args, **kwargs):
+        self.train_filename = train_filename
+        self.test_filename = test_filename
+        super().__init__(num_classes, class_labels, None, None,
+            MultivariateCSVBase.feature_names, *args, **kwargs)
+
+    def load_file(self, filename):
+        """
+        Load CSV files in UCR time-series data format but with semicolons
+        delimiting the features
+
+        Returns:
+            data - numpy array with data of shape (num_examples, time_steps, num_features)
+            labels - numpy array with labels of shape: (num_examples, 1)
+        """
+        with open(filename, "r") as f:
+            data = []
+            labels = []
+
+            for line in f:
+                parts = line.split(",")
+                assert len(parts) >= 2, "must be at least a label and a data value"
+                label = int(parts[0])
+                values_str = parts[1:]
+                values = []
+
+                for value in values_str:
+                    features_str = value.split(";")
+                    features = [float(v) for v in features_str]
+                    values.append(features)
+
+                labels.append(label)
+                data.append(values)
+
+        data = np.array(data, dtype=np.float32)
+        labels = np.expand_dims(np.array(labels, dtype=np.int32), axis=1)
+
+        return data, labels
+
+    def load(self):
+        train_data, train_labels = self.load_file(self.train_filename)
+        test_data, test_labels = self.load_file(self.test_filename)
+
+        return train_data, train_labels, test_data, test_labels
+
+    def process(self, data, labels):
+        """ Normalize, one-hot encode labels
+        Note: UCR datasets are index-one """
+        assert len(data.shape) == 3, \
+            "multivariate data should be of shape [examples, time_steps, 2]"
+        labels = self.one_hot(labels, index_one=True)
+        return super().process(data, labels)
+
+
 class uWaveBase(Dataset):
     """
     uWave Gesture dataset
@@ -832,6 +893,24 @@ def make_trivial_lowhigh_invertible(filename_prefix):
     return Trivial
 
 
+def make_trivial2d(filename_prefix):
+    """ make a -/+ dataset object """
+    class Trivial(MultivariateCSVBase):
+        invertible = False
+        num_classes = 2
+        class_labels = ["negative", "positive"]
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                "trivial/"+filename_prefix+"_TRAIN",
+                "trivial/"+filename_prefix+"_TEST",
+                Trivial.num_classes,
+                Trivial.class_labels,
+                *args, **kwargs)
+
+    return Trivial
+
+
 def make_uwave(days=None, users=None):
     """ Make uWave dataset split on either days or users """
     class uWaveGestures(uWaveBase):
@@ -977,6 +1056,19 @@ datasets = {
     # "jumpmean_phase_b3": make_trivial_negpos("jumpmean_phase_b3"),
     # "jumpmean_phase_b4": make_trivial_negpos("jumpmean_phase_b4"),
     # "jumpmean_phase_b5": make_trivial_negpos("jumpmean_phase_b5"),
+
+    "rotate_phase_a": make_trivial2d("rotate_phase_a"),
+    "rotate_phase_b0": make_trivial2d("rotate_phase_b0"),
+    "rotate_phase_b1": make_trivial2d("rotate_phase_b1"),
+    "rotate_phase_b2": make_trivial2d("rotate_phase_b2"),
+    "rotate_phase_b3": make_trivial2d("rotate_phase_b3"),
+    "rotate_phase_b4": make_trivial2d("rotate_phase_b4"),
+    "rotate_phase_b5": make_trivial2d("rotate_phase_b5"),
+    "rotate_phase_b6": make_trivial2d("rotate_phase_b6"),
+    "rotate_phase_b7": make_trivial2d("rotate_phase_b7"),
+    "rotate_phase_b8": make_trivial2d("rotate_phase_b8"),
+    "rotate_phase_b9": make_trivial2d("rotate_phase_b9"),
+    "rotate_phase_b10": make_trivial2d("rotate_phase_b10"),
 }
 
 
