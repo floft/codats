@@ -136,6 +136,10 @@ def main(argv):
         ("uwave_users_second", None),
         ("uwave_users_first", "uwave_users_second"),
 
+        ("sleep_users_first", None),
+        ("sleep_users_second", None),
+        ("sleep_users_first", "sleep_users_second"),
+
         # ("positive_slope", "positive_slope_low"),
         # ("positive_slope", "positive_slope_noise"),
         # ("positive_sine", "positive_sine_low"),

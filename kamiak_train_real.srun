@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-23
+#SBATCH --array=0-71
 
 . kamiak_config.sh
 
@@ -24,8 +24,10 @@ suffix=$1; shift
 model=fcn
 methods=("none" "upper" "dann" "deepjdot")
 debugnums=(1 2 3)
-sources=("utdata_wrist"  "utdata_pocket")
-targets=("utdata_pocket" "utdata_wrist")
+#sources=("utdata_wrist"  "utdata_pocket")
+#targets=("utdata_pocket" "utdata_wrist")
+sources=("uwave_days_first"  "uwave_days_second" "uwave_users_first"  "uwave_users_second" "sleep_users_first"  "sleep_users_second")
+targets=("uwave_days_second" "uwave_days_first"  "uwave_users_second" "uwave_users_first"  "sleep_users_second" "sleep_users_first")
 
 # Make sure we're using the right number
 correct_min=0

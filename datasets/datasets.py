@@ -643,6 +643,123 @@ class uWaveBase(Dataset):
         return super().process(data, labels)
 
 
+class SleepBase(Dataset):
+    """
+    Loads sleep RF data files in datasets/RFSleep.zip/*.npy
+
+    Notes:
+      - RF data is 30 seconds of data sampled at 25 samples per second, thus
+        750 samples. For each of these sets of 750 samples there is a stage
+        label.
+      - The RF data is complex, so we'll split the complex 5 features into
+        the 5 real and then 5 imaginary components to end up with 10 features.
+    """
+    invertible = False
+    feature_names = ["real1", "real2", "real3", "real4", "real5",
+        "imag1", "imag2", "imag3", "imag4", "imag5"]
+
+    def __init__(self, days, users, num_classes, class_labels,
+            *args, **kwargs):
+        self.days = days
+        self.users = users
+        super().__init__(num_classes, class_labels, None, None,
+            SleepBase.feature_names, *args, **kwargs)
+
+    def download(self):
+        (dataset_fp,) = self.download_dataset(["uWaveGestureLibrary.zip"],
+            "https://zhen-wang.appspot.com/rice/files/uwave")
+        return dataset_fp
+
+    def get_file_in_archive(self, archive, filename):
+        """ Read one file out of the already-open zip/rar file """
+        with archive.open(filename) as fp:
+            contents = fp.read()
+        return contents
+
+    def process_examples(self, filename, fp):
+        d = np.load(fp, allow_pickle=True).item()
+        day = int(filename.replace(".npy", ""))
+        user = d["subject"]
+
+        # Skip data we don't want
+        if self.days is not None:
+            if day not in self.days:
+                print("Skipping day", day)
+                return None, None
+
+        if self.users is not None:
+            if user not in self.users:
+                print("Skipping user", user)
+                return None, None
+
+        print("Processing user", user, "day", day)
+
+        stage_labels = d["stage"]
+        rf = d["rf"]
+
+        # Split 5 complex features into 5 real and 5 imaginary, i.e.
+        # now we have 10 features
+        rf = np.vstack([np.real(rf), np.imag(rf)])
+
+        assert stage_labels.shape[0]*750 == rf.shape[-1], \
+            "If stage labels is of shape (n) then rf should be of shape (5, 750n)"
+
+        # Reshape and transpose into desired format
+        x = np.transpose(np.reshape(rf, (rf.shape[0], -1, stage_labels.shape[0])))
+
+        # Drop those that have a label other than 0-5 (sleep stages) since
+        # label 6 means "no signal" and 9 means "error"
+        no_error = stage_labels < 6
+        x = x[no_error]
+        stage_labels = stage_labels[no_error]
+
+        assert x.shape[0] == stage_labels.shape[0], \
+            "Incorrect first dimension of x (not length of stage labels)"
+        assert x.shape[1] == 750, \
+            "Incorrect second dimension of x (not 750)"
+        assert x.shape[2] == 10, \
+            "Incorrect third dimension of x (not 10)"
+
+        return x, stage_labels
+
+    def load_file(self, filename):
+        """ Load ZIP file containing all the .npy files """
+        if not os.path.exists(filename):
+            print("Download unencrypted "+filename+" into the current directory")
+
+        data = []
+        labels = []
+
+        with zipfile.ZipFile(filename, "r") as archive:
+            filelist = archive.namelist()
+
+            for f in filelist:
+                if ".npy" in f:
+                    contents = self.get_file_in_archive(archive, f)
+                    x, label = self.process_examples(f, io.BytesIO(contents))
+
+                    if x is not None and label is not None:
+                        data.append(x)
+                        labels.append(label)
+
+        x = np.vstack(data).astype(np.float32)
+        y = np.hstack(labels).astype(np.float32)
+
+        return x, y
+
+    def load(self):
+        x, y = self.load_file("RFSleep_unencrypted.zip")
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
+
+        return train_data, train_labels, test_data, test_labels
+
+    def process(self, data, labels):
+        """ One-hot encode labels """
+        labels = self.one_hot(labels, index_one=False)
+        return super().process(data, labels)
+
+
 def make_trivial_negpos(filename_prefix):
     """ make a -/+ dataset object, since we have a bunch of these """
     class Trivial(UnivariateCSVBase):
@@ -732,6 +849,23 @@ def make_uwave(days=None, users=None):
     return uWaveGestures
 
 
+def make_sleep(days=None, users=None):
+    """ Make RF sleep dataset split on either days or users """
+    class SleepDataset(SleepBase):
+        invertible = False
+        num_classes = 6
+        class_labels = ["Awake", "N1", "N2", "N3", "Light N2", "REM"]
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                days, users,
+                SleepDataset.num_classes,
+                SleepDataset.class_labels,
+                *args, **kwargs)
+
+    return SleepDataset
+
+
 # List of datasets
 datasets = {
     "utdata_wrist": UTDataWrist,
@@ -741,6 +875,9 @@ datasets = {
     "uwave_days_second": make_uwave(days=[5, 6, 7]),
     "uwave_users_first": make_uwave(users=[1, 2, 3, 4]),
     "uwave_users_second": make_uwave(users=[5, 6, 7, 8]),
+    "sleep_all": make_sleep(),
+    "sleep_users_first": make_sleep(users=list(range(0, 13))),
+    "sleep_users_second": make_sleep(users=list(range(13, 26))),
 
     # "positive_slope": make_trivial_negpos("positive_slope"),
     # "positive_slope_low": make_trivial_negpos("positive_slope_low"),
