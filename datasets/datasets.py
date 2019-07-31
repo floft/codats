@@ -952,11 +952,16 @@ datasets = {
     "uwave_all": make_uwave(),
     "uwave_days_first": make_uwave(days=[1, 2, 3]),
     "uwave_days_second": make_uwave(days=[5, 6, 7]),
+    # Note: in the paper, call these "participants" not "users"
     "uwave_users_first": make_uwave(users=[1, 2, 3, 4]),
     "uwave_users_second": make_uwave(users=[5, 6, 7, 8]),
     "sleep_all": make_sleep(),
-    "sleep_users_first": make_sleep(users=list(range(0, 13))),
-    "sleep_users_second": make_sleep(users=list(range(13, 26))),
+    # Split users randomly since if first/second half then there's a large
+    # difference in amount of data
+    # import random; a = list(range(0, 26)); random.shuffle(a)
+    # First and second: a[:13], a[13:]
+    "sleep_users_first": make_sleep(users=[21, 15, 25, 19, 8, 23, 4, 12, 10, 13, 0, 9, 3]),
+    "sleep_users_second": make_sleep(users=[17, 16, 6, 2, 20, 18, 1, 24, 22, 7, 5, 11, 14]),
 
     # "positive_slope": make_trivial_negpos("positive_slope"),
     # "positive_slope_low": make_trivial_negpos("positive_slope_low"),
