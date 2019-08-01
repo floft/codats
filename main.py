@@ -60,7 +60,6 @@ flags.DEFINE_boolean("test", False, "Use real test set for evaluation rather tha
 flags.DEFINE_boolean("subdir", True, "Save models/logs in subdirectory of prefix")
 flags.DEFINE_boolean("debug", False, "Start new log/model/images rather than continuing from previous run")
 flags.DEFINE_integer("debugnum", -1, "Specify exact log/model/images number to use rather than incrementing from last. (Don't pass both this and --debug at the same time.)")
-flags.DEFINE_boolean("summary", False, "Print summary of model and exit")
 
 flags.mark_flag_as_required("model")
 flags.mark_flag_as_required("method")
@@ -973,28 +972,6 @@ def main(argv):
 
         global_step.assign_add(1)
         t = time.time() - t
-
-        # Print summary, if desired, and exit; for example:
-        # CUDA_VISIBLE_DEVICES=
-        # ./main.py --logdir=deleteme-logs --modeldir=deleteme-models \
-        #   --method=none --model=fcn --source=freqshift_phase_b0 --summary
-        # Note: we have to do it after one step or else we won't build the model
-        if FLAGS.summary:
-            if model is not None:
-                print("Feature extractor")
-                model.feature_extractor.summary()
-                print("Task classifier")
-                model.task_classifier.summary()
-                print("Domain classifier")
-                model.domain_classifier.summary()
-
-            if mapping_model is not None:
-                print("Generator (source to target)")
-                mapping_model.source_to_target.summary()
-                print("Discriminator (source)")
-                mapping_model.source_discriminator.summary()
-
-            exit()
 
         if i%100 == 0:
             logging.info("step %d took %f seconds", int(global_step), t)
