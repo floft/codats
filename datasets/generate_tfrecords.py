@@ -75,6 +75,13 @@ def valid_split(data, labels, seed=None, validation_size=1000):
     data = to_numpy(data)[p]
     labels = to_numpy(labels)[p]
 
+    # If data to small then 1000 examples is too much, so shrink validation size
+    # to max of 20%
+    orig_valid_size = validation_size
+    validation_size = min(validation_size, int(0.2*len(data)))
+    if orig_valid_size != validation_size:
+        print("Warning: using smaller validation set size:", validation_size)
+
     valid_data = data[:validation_size]
     valid_labels = labels[:validation_size]
     train_data = data[validation_size:]
@@ -83,7 +90,8 @@ def valid_split(data, labels, seed=None, validation_size=1000):
     return valid_data, valid_labels, train_data, train_labels
 
 
-def save_one(source, target, dataset_name, dataset, seed):
+def save_one(source, target, dataset_name, dataset, seed,
+        already_normalized=False):
     """ Save single dataset """
     valid_data, valid_labels, \
         train_data, train_labels = \
@@ -91,7 +99,7 @@ def save_one(source, target, dataset_name, dataset, seed):
             seed=seed)
 
     # Calculate normalization only on the training data
-    if FLAGS.normalize != "none":
+    if FLAGS.normalize != "none" and not already_normalized:
         normalization = calc_normalization(train_data, FLAGS.normalize)
 
         # Apply the normalization to the training, validation, and testing data
@@ -116,10 +124,18 @@ def save_adaptation(source, target, seed=0):
 
     source_dataset, target_dataset = datasets.load_da(source, target)
 
-    save_one(source, target, source, source_dataset, seed=0)
+    already_normalized = False
+
+    # UCI HAR datasets already normalized and bounded
+    if "ucihar" in source:
+        already_normalized = True
+
+    save_one(source, target, source, source_dataset, seed=0,
+        already_normalized=already_normalized)
 
     if target is not None:
-        save_one(source, target, target, target_dataset, seed=1)
+        save_one(source, target, target, target_dataset, seed=1,
+            already_normalized=already_normalized)
 
 
 def main(argv):
@@ -139,6 +155,16 @@ def main(argv):
         ("sleep_users_first", None),
         ("sleep_users_second", None),
         ("sleep_users_first", "sleep_users_second"),
+
+        ("ucihar_first", None),
+        ("ucihar_second", None),
+        ("ucihar_first", "ucihar_second"),
+        ("ucihar_train", None),
+        ("ucihar_test", None),
+        ("ucihar_train", "ucihar_test"),
+        ("ucihar_1", None),
+        ("ucihar_2", None),
+        ("ucihar_1", "ucihar_2"),
 
         # ("positive_slope", "positive_slope_low"),
         # ("positive_slope", "positive_slope_noise"),

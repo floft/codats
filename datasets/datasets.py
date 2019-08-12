@@ -821,6 +821,133 @@ class SleepBase(Dataset):
         return super().process(data, labels)
 
 
+class UciHarBase(Dataset):
+    """
+    Loads human activity recognition data files in datasets/UCI HAR Dataset.zip
+
+    Download from:
+    https://archive.ics.uci.edu/ml/datasets/Human+Activity+Recognition+Using+Smartphones
+    """
+    invertible = False
+    feature_names = [
+        "body_acc_x", "body_acc_y", "body_acc_z",
+        "body_gyro_x", "body_gyro_y", "body_gyro_z",
+        "total_acc_x", "total_acc_y", "total_acc_z",
+    ]
+    num_classes = 6
+    class_labels = [
+        "walking", "walking_upstairs", "walking_downstairs",
+        "sitting", "standing", "laying",
+    ]
+
+    def __init__(self, users, *args, **kwargs):
+        self.users = users
+        super().__init__(UciHarBase.num_classes, UciHarBase.class_labels,
+            None, None, UciHarBase.feature_names, *args, **kwargs)
+
+    def download(self):
+        (dataset_fp,) = self.download_dataset(["UCI%20HAR%20Dataset.zip"],
+            "https://archive.ics.uci.edu/ml/machine-learning-databases/00240")
+        return dataset_fp
+
+    def get_file_in_archive(self, archive, filename):
+        """ Read one file out of the already-open zip/rar file """
+        with archive.open(filename) as fp:
+            contents = fp.read()
+        return contents
+
+    def get_feature(self, content):
+        """
+        Read the space-separated, example on each line file
+
+        Returns 2D array with dimensions: [num_examples, num_time_steps]
+        """
+        lines = content.decode("utf-8").strip().split("\n")
+        features = []
+
+        for line in lines:
+            features.append([float(v) for v in line.strip().split()])
+
+        return features
+
+    def get_data(self, archive, name):
+        """ To shorten duplicate code for name=train or name=test cases """
+        def get_data_single(f):
+            return self.get_feature(self.get_file_in_archive(archive,
+                "UCI HAR Dataset/"+f))
+
+        data = [
+            get_data_single(name+"/Inertial Signals/body_acc_x_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/body_acc_y_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/body_acc_z_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/body_gyro_x_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/body_gyro_y_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/body_gyro_z_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/total_acc_x_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/total_acc_y_"+name+".txt"),
+            get_data_single(name+"/Inertial Signals/total_acc_z_"+name+".txt"),
+        ]
+
+        labels = get_data_single(name+"/y_"+name+".txt")
+
+        subjects = get_data_single(name+"/subject_"+name+".txt")
+
+        data = np.array(data, dtype=np.float32)
+        labels = np.array(labels, dtype=np.float32)
+        # Squeeze so we can easily do selection on this later on
+        subjects = np.squeeze(np.array(subjects, dtype=np.float32))
+
+        # Transpose from [features, examples, time_steps] to
+        # [examples, time_steps (128), features (9)]
+        data = np.transpose(data, axes=[1, 2, 0])
+
+        return data, labels, subjects
+
+    def load_file(self, filename):
+        """ Load ZIP file containing all the .txt files """
+        with zipfile.ZipFile(filename, "r") as archive:
+            train_data, train_labels, train_subjects = self.get_data(archive, "train")
+            test_data, test_labels, test_subjects = self.get_data(archive, "test")
+
+        all_data = np.vstack([train_data, test_data]).astype(np.float32)
+        all_labels = np.vstack([train_labels, test_labels]).astype(np.float32)
+        all_subjects = np.hstack([train_subjects, test_subjects]).astype(np.float32)
+
+        # All data if no selection
+        if self.users is None:
+            return all_data, all_labels
+
+        # Otherwise, select based on the desired users
+        data = []
+        labels = []
+
+        for user in self.users:
+            selection = all_subjects == user
+            data.append(all_data[selection])
+            labels.append(all_labels[selection])
+
+        x = np.vstack(data).astype(np.float32)
+        y = np.vstack(labels).astype(np.float32)
+
+        # print("Selected data:", self.users)
+        # print(x.shape, y.shape)
+
+        return x, y
+
+    def load(self):
+        dataset_fp = self.download()
+        x, y = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
+
+        return train_data, train_labels, test_data, test_labels
+
+    def process(self, data, labels):
+        """ One-hot encode labels """
+        labels = self.one_hot(labels, index_one=True)
+        return super().process(data, labels)
+
+
 def make_trivial_negpos(filename_prefix):
     """ make a -/+ dataset object, since we have a bunch of these """
     class Trivial(UnivariateCSVBase):
@@ -945,6 +1072,15 @@ def make_sleep(days=None, users=None):
     return SleepDataset
 
 
+def make_ucihar(users=None):
+    """ Make UCI HAR dataset split on users """
+    class UciHarDataset(UciHarBase):
+        def __init__(self, *args, **kwargs):
+            super().__init__(users, *args, **kwargs)
+
+    return UciHarDataset
+
+
 # List of datasets
 datasets = {
     "utdata_wrist": UTDataWrist,
@@ -962,6 +1098,17 @@ datasets = {
     # First and second: a[:13], a[13:]
     "sleep_users_first": make_sleep(users=[21, 15, 25, 19, 8, 23, 4, 12, 10, 13, 0, 9, 3]),
     "sleep_users_second": make_sleep(users=[17, 16, 6, 2, 20, 18, 1, 24, 22, 7, 5, 11, 14]),
+
+    # The users of the original train/test sets
+    "ucihar_train": make_ucihar(users=[1, 3, 5, 6, 7, 8, 11, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26, 27, 28, 29, 30]),
+    "ucihar_test": make_ucihar(users=[2, 4, 9, 10, 12, 13, 18, 20, 24]),
+    # Split the users in half
+    "ucihar_first": make_ucihar(users=[17, 6, 22, 9, 19, 20, 14, 15, 16, 10, 26, 23, 7, 4, 24]),
+    "ucihar_second": make_ucihar(users=[11, 3, 1, 30, 13, 28, 12, 21, 27, 25, 18, 5, 8, 29, 2]),
+    # From user X to user Y
+    "ucihar_1": make_ucihar(users=[1]),
+    "ucihar_2": make_ucihar(users=[2]),
+
 
     # "positive_slope": make_trivial_negpos("positive_slope"),
     # "positive_slope_low": make_trivial_negpos("positive_slope_low"),

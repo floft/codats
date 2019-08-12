@@ -5,9 +5,22 @@
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-#SBATCH --time=1-00:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
 #SBATCH --array=0-15
+
+# My computer
+#gpumem=4500
+# SBATCH --partition=cook
+# SBATCH --cpus-per-task=4
+# SBATCH --gres=gpu:0
+# SBATCH --mem=10G
+# Kamiak
+gpumem=0
+# SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+# SBATCH --cpus-per-task=3
+# SBATCH --gres=gpu:1
+# SBATCH --mem=20G
 
 . kamiak_config.sh
 
@@ -24,8 +37,12 @@ suffix=$1; shift
 model=fcn
 methods=("none" "upper" "dann" "deepjdot")
 variants=("best" "last")
-sources=("utdata_wrist"  "utdata_pocket")
-targets=("utdata_pocket" "utdata_wrist")
+#sources=("utdata_wrist"  "utdata_pocket" "uwave_days_first"  "uwave_days_second" "uwave_users_first"  "uwave_users_second" "sleep_users_first"  "sleep_users_second")
+#targets=("utdata_pocket" "utdata_wrist"  "uwave_days_second" "uwave_days_first"  "uwave_users_second" "uwave_users_first"  "sleep_users_second" "sleep_users_first")
+#sources=("ucihar_first"  "ucihar_second" "ucihar_train" "ucihar_test"  "ucihar_1" "ucihar_2")
+#targets=("ucihar_second" "ucihar_first"  "ucihar_test"  "ucihar_train" "ucihar_2" "ucihar_1")
+sources=("ucihar_1" "ucihar_2")
+targets=("ucihar_2" "ucihar_1")
 
 # Make sure we're using the right number
 correct_min=0
@@ -77,7 +94,8 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 { python3 main_eval.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --jobs=1 --gpus=1 --gpumem=0 \
+    --jobs=1 --gpus=1 --gpumem="$gpumem" \
     --match="${source}-${target}-${model}-${method}-[0-9]*" \
     "${additional_args[@]}" "$@" || handle_error; } | \
     tee -a "$out"
+# --eval_batch=2048
