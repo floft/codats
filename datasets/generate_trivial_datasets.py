@@ -465,17 +465,17 @@ if __name__ == '__main__':
     # Frequency shift
     np.random.seed(0)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None, None), 'freqshift_a', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, run_f+0.0, walk_f+0.0, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b0', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, run_f+3.8, walk_f+3.8, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b1', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, run_f+7.6, walk_f+7.6, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b2', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f+0.00, walk_f+0.00, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b0', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f+3.80, walk_f+3.80, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b1', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f+7.60, walk_f+7.60, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b2', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f+11.4, walk_f+11.4, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b3', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f+15.2, walk_f+15.2, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b4', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f+19.0, walk_f+19.0, run_amp, walk_amp, dsp, None, None, None), 'freqshift_b5', dsp)
 
     save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_a', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, run_f+0.0, walk_f+0.0, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b0', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, run_f+3.8, walk_f+3.8, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b1', dsp)
-    save_data(lambda x, dsp: generate_multi_freq(x, run_f+7.6, walk_f+7.6, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b2', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f+0.00, walk_f+0.00, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b0', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f+3.80, walk_f+3.80, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b1', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f+7.60, walk_f+7.60, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b2', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f+11.4, walk_f+11.4, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b3', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f+15.2, walk_f+15.2, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b4', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f+19.0, walk_f+19.0, run_amp, walk_amp, dsp, None, None), 'freqshift_phase_b5', dsp)
@@ -508,6 +508,21 @@ if __name__ == '__main__':
     save_data(lambda x, dsp: generate_multi_freq(x, run_f*6.700, walk_f*6.700, run_amp, walk_amp, dsp, None, None), 'freqscale_phase_b9', dsp)
     save_data(lambda x, dsp: generate_multi_freq(x, run_f*7.333, walk_f*7.333, run_amp, walk_amp, dsp, None, None), 'freqscale_phase_b10', dsp)
 
+    # Frequency scale and shift
+    np.random.seed(0)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_a', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*1.000+0.00, walk_f*1.000+0.00, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b0', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*1.633+3.80, walk_f*1.633+3.80, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b1', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*2.266+7.60, walk_f*2.266+7.60, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b2', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*2.900+11.4, walk_f*2.900+11.4, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b3', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*3.533+15.2, walk_f*3.533+15.2, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b4', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*4.166+19.0, walk_f*4.166+19.0, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b5', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*4.800+22.8, walk_f*4.800+22.8, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b6', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*5.433+26.6, walk_f*5.433+26.6, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b7', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*6.067+30.4, walk_f*6.067+30.4, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b8', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*6.700+34.2, walk_f*6.700+34.2, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b9', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f*7.333+38.0, walk_f*7.333+38.0, run_amp, walk_amp, dsp, None, None), 'freqscaleshift_phase_b10', dsp)
+
     # Jumping mean
     # np.random.seed(0)
     # save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None, None, b=0.0), 'jumpmean_a', dsp)
@@ -533,32 +548,130 @@ if __name__ == '__main__':
     # Same as 1D but split every-other frequency components/amplitudes across
     # x and y, starting with first frequency for x
     #
-    run_f_x = np.array([1, 3, 5], dtype=np.float32)
-    run_amp_x = np.array([0.75, 0.38, 0.08], dtype=np.float32)
-    run_f_y = np.array([2, 4, 6], dtype=np.float32)
-    run_amp_y = np.array([0.56, 0.19, 0.04], dtype=np.float32)
+    # run_f_x = np.array([1, 3, 5], dtype=np.float32)
+    # run_amp_x = np.array([0.75, 0.38, 0.08], dtype=np.float32)
+    # run_f_y = np.array([2, 4, 6], dtype=np.float32)
+    # run_amp_y = np.array([0.56, 0.19, 0.04], dtype=np.float32)
 
-    walk_f_x = np.array([1, 4], dtype=np.float32)
-    walk_amp_x = np.array([0.5, 0.06], dtype=np.float32)
-    walk_f_y = np.array([2], dtype=np.float32)
-    walk_amp_y = np.array([0.25], dtype=np.float32)
+    # walk_f_x = np.array([1, 4], dtype=np.float32)
+    # walk_amp_x = np.array([0.5, 0.06], dtype=np.float32)
+    # walk_f_y = np.array([2], dtype=np.float32)
+    # walk_amp_y = np.array([0.25], dtype=np.float32)
 
-    run_f = [run_f_x, run_f_y]
-    run_amp = [run_amp_x, run_amp_y]
-    walk_f = [walk_f_x, walk_f_y]
-    walk_amp = [walk_amp_x, walk_amp_y]
+    # run_f = [run_f_x, run_f_y]
+    # run_amp = [run_amp_x, run_amp_y]
+    # walk_f = [walk_f_x, walk_f_y]
+    # walk_amp = [walk_amp_x, walk_amp_y]
+
+    # # Linear transform (random/fixed), rotating from 0 degrees to 180 degrees (e.g. 2D accelerometer)
+    # np.random.seed(0)
+    # save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'rotate_phase_a', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 0), 'rotate_phase_b0', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 18), 'rotate_phase_b1', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 36), 'rotate_phase_b2', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 54), 'rotate_phase_b3', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 72), 'rotate_phase_b4', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 90), 'rotate_phase_b5', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 108), 'rotate_phase_b6', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 126), 'rotate_phase_b7', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 144), 'rotate_phase_b8', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 162), 'rotate_phase_b9', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 180), 'rotate_phase_b10', dsp)
+
+    #
+    # 2D classification problem:
+    # Walking (negative) vs. running (positive)
+    #
+    # Split first half / second half of frequencies into x vs. y rather than
+    # every other one so that the two channels look quite different. Hopefully
+    # this makes adaptation more useful.
+    #
+    run_f_x = np.array([1, 2, 3], dtype=np.float32)
+    run_amp_x = np.array([0.75, 0.56, 0.38], dtype=np.float32)
+    run_f_y = np.array([4, 5, 6], dtype=np.float32)
+    run_amp_y = np.array([0.19, 0.08, 0.04], dtype=np.float32)
+
+    walk_f_x = np.array([1, 2], dtype=np.float32)
+    walk_amp_x = np.array([0.5, 0.25], dtype=np.float32)
+    walk_f_y = np.array([4, 0], dtype=np.float32)  # match shape
+    walk_amp_y = np.array([0.06, 0], dtype=np.float32)
+
+    # Keep as numpy arrays since otherwise we can't add/multiply for shifts
+    run_f = np.array([run_f_x, run_f_y], dtype=np.float32)
+    run_amp = np.array([run_amp_x, run_amp_y], dtype=np.float32)
+    walk_f = np.array([walk_f_x, walk_f_y], dtype=np.float32)
+    walk_amp = np.array([walk_amp_x, walk_amp_y], dtype=np.float32)
 
     # Linear transform (random/fixed), rotating from 0 degrees to 180 degrees (e.g. 2D accelerometer)
     np.random.seed(0)
-    save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'rotate_phase_a', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 0), 'rotate_phase_b0', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 18), 'rotate_phase_b1', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 36), 'rotate_phase_b2', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 54), 'rotate_phase_b3', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 72), 'rotate_phase_b4', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 90), 'rotate_phase_b5', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 108), 'rotate_phase_b6', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 126), 'rotate_phase_b7', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 144), 'rotate_phase_b8', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 162), 'rotate_phase_b9', dsp)
-    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 180), 'rotate_phase_b10', dsp)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'rotate2_phase_a', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 0), 'rotate2_phase_b0', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 18), 'rotate2_phase_b1', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 36), 'rotate2_phase_b2', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 54), 'rotate2_phase_b3', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 72), 'rotate2_phase_b4', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 90), 'rotate2_phase_b5', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 108), 'rotate2_phase_b6', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 126), 'rotate2_phase_b7', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 144), 'rotate2_phase_b8', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 162), 'rotate2_phase_b9', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 180), 'rotate2_phase_b10', dsp)
+
+    # np.random.seed(0)
+    # save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 'rotate2_noise_a', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 0), 'rotate2_noise_b0', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 18), 'rotate2_noise_b1', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 36), 'rotate2_noise_b2', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 54), 'rotate2_noise_b3', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 72), 'rotate2_noise_b4', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 90), 'rotate2_noise_b5', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 108), 'rotate2_noise_b6', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 126), 'rotate2_noise_b7', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 144), 'rotate2_noise_b8', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 162), 'rotate2_noise_b9', dsp)
+    # save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp), 180), 'rotate2_noise_b10', dsp)
+
+    # Shift and rotate
+    np.random.seed(0)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'freqshiftrotate_phase_a', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+0.00, walk_f+0.00, run_amp, walk_amp, dsp, None, None), 0), 'freqshiftrotate_phase_b0', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+3.80, walk_f+3.80, run_amp, walk_amp, dsp, None, None), 18), 'freqshiftrotate_phase_b1', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+7.60, walk_f+7.60, run_amp, walk_amp, dsp, None, None), 36), 'freqshiftrotate_phase_b2', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+11.4, walk_f+11.4, run_amp, walk_amp, dsp, None, None), 54), 'freqshiftrotate_phase_b3', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+15.2, walk_f+15.2, run_amp, walk_amp, dsp, None, None), 72), 'freqshiftrotate_phase_b4', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+19.0, walk_f+19.0, run_amp, walk_amp, dsp, None, None), 90), 'freqshiftrotate_phase_b5', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+22.8, walk_f+22.8, run_amp, walk_amp, dsp, None, None), 108), 'freqshiftrotate_phase_b6', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+26.6, walk_f+26.6, run_amp, walk_amp, dsp, None, None), 126), 'freqshiftrotate_phase_b7', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+30.4, walk_f+30.4, run_amp, walk_amp, dsp, None, None), 144), 'freqshiftrotate_phase_b8', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+34.2, walk_f+34.2, run_amp, walk_amp, dsp, None, None), 162), 'freqshiftrotate_phase_b9', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f+38.0, walk_f+38.0, run_amp, walk_amp, dsp, None, None), 180), 'freqshiftrotate_phase_b10', dsp)
+
+    # Scale and rotate
+    np.random.seed(0)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'freqscalerotate_phase_a', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*1.000, walk_f*1.000, run_amp, walk_amp, dsp, None, None), 0), 'freqscalerotate_phase_b0', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*1.633, walk_f*1.633, run_amp, walk_amp, dsp, None, None), 18), 'freqscalerotate_phase_b1', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*2.266, walk_f*2.266, run_amp, walk_amp, dsp, None, None), 36), 'freqscalerotate_phase_b2', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*2.900, walk_f*2.900, run_amp, walk_amp, dsp, None, None), 54), 'freqscalerotate_phase_b3', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*3.533, walk_f*3.533, run_amp, walk_amp, dsp, None, None), 72), 'freqscalerotate_phase_b4', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*4.166, walk_f*4.166, run_amp, walk_amp, dsp, None, None), 90), 'freqscalerotate_phase_b5', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*4.800, walk_f*4.800, run_amp, walk_amp, dsp, None, None), 108), 'freqscalerotate_phase_b6', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*5.433, walk_f*5.433, run_amp, walk_amp, dsp, None, None), 126), 'freqscalerotate_phase_b7', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*6.067, walk_f*6.067, run_amp, walk_amp, dsp, None, None), 144), 'freqscalerotate_phase_b8', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*6.700, walk_f*6.700, run_amp, walk_amp, dsp, None, None), 162), 'freqscalerotate_phase_b9', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*7.333, walk_f*7.333, run_amp, walk_amp, dsp, None, None), 180), 'freqscalerotate_phase_b10', dsp)
+
+    # Scale, shift, and rotate
+    np.random.seed(0)
+    save_data(lambda x, dsp: generate_multi_freq(x, run_f, walk_f, run_amp, walk_amp, dsp, None, None), 'freqscaleshiftrotate_phase_a', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*1.000+0.00, walk_f*1.000+0.00, run_amp, walk_amp, dsp, None, None), 0), 'freqscaleshiftrotate_phase_b0', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*1.633+3.80, walk_f*1.633+3.80, run_amp, walk_amp, dsp, None, None), 18), 'freqscaleshiftrotate_phase_b1', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*2.266+7.60, walk_f*2.266+7.60, run_amp, walk_amp, dsp, None, None), 36), 'freqscaleshiftrotate_phase_b2', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*2.900+11.4, walk_f*2.900+11.4, run_amp, walk_amp, dsp, None, None), 54), 'freqscaleshiftrotate_phase_b3', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*3.533+15.2, walk_f*3.533+15.2, run_amp, walk_amp, dsp, None, None), 72), 'freqscaleshiftrotate_phase_b4', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*4.166+19.0, walk_f*4.166+19.0, run_amp, walk_amp, dsp, None, None), 90), 'freqscaleshiftrotate_phase_b5', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*4.800+22.8, walk_f*4.800+22.8, run_amp, walk_amp, dsp, None, None), 108), 'freqscaleshiftrotate_phase_b6', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*5.433+26.6, walk_f*5.433+26.6, run_amp, walk_amp, dsp, None, None), 126), 'freqscaleshiftrotate_phase_b7', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*6.067+30.4, walk_f*6.067+30.4, run_amp, walk_amp, dsp, None, None), 144), 'freqscaleshiftrotate_phase_b8', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*6.700+34.2, walk_f*6.700+34.2, run_amp, walk_amp, dsp, None, None), 162), 'freqscaleshiftrotate_phase_b9', dsp)
+    save_data(lambda x, dsp: rotate2d_data(*generate_multi_freq(x, run_f*7.333+38.0, walk_f*7.333+38.0, run_amp, walk_amp, dsp, None, None), 180), 'freqscaleshiftrotate_phase_b10', dsp)

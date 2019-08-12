@@ -2,21 +2,21 @@
 #SBATCH --job-name=eval_synthetic
 #SBATCH --output=slurm_logs/eval_%A_%a.out
 #SBATCH --error=slurm_logs/eval_%A_%a.err
-#SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:0
-#SBATCH --partition=cook
+#SBATCH --cpus-per-task=3
+#SBATCH --gres=gpu:1
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
-#SBATCH --mem=10G
-#SBATCH --array=0-139
+#SBATCH --mem=20G
+#SBATCH --array=0-175
 
 # My computer
-gpumem=4500
+#gpumem=4500
 # SBATCH --partition=cook
 # SBATCH --cpus-per-task=4
 # SBATCH --gres=gpu:0
 # SBATCH --mem=10G
 # Kamiak
-#gpumem=0
+gpumem=0
 # SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 # SBATCH --cpus-per-task=3
 # SBATCH --gres=gpu:1
@@ -34,24 +34,23 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-methods=("none" "dann" "deepjdot" "cycada" "rdann" "vrada" "upper")
+# methods=("none" "dann" "deepjdot" "cycada" "rdann" "vrada" "upper")
+methods=("none" "upper" "dann" "deepjdot")
 # methods=("random")
-variants=("best" "last")
-# sources=(
-#     "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
-#     "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
-# )
-# targets=(
-#     "freqshift_phase_b0" "freqshift_phase_b1" "freqshift_phase_b2" "freqshift_phase_b3" "freqshift_phase_b4" "freqshift_phase_b5" "freqshift_phase_b6" "freqshift_phase_b7" "freqshift_phase_b8" "freqshift_phase_b9" "freqshift_phase_b10"
-#     "freqscale_phase_b0" "freqscale_phase_b1" "freqscale_phase_b2" "freqscale_phase_b3" "freqscale_phase_b4" "freqscale_phase_b5" "freqscale_phase_b6" "freqscale_phase_b7" "freqscale_phase_b8" "freqscale_phase_b9" "freqscale_phase_b10"
-# )
+#methods=("cycada" "rdann" "vrada")
+#variants=("best" "last")
+variants=("best")
 sources=(
-    "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"
-    "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"  "freqscale_phase_a"
+    "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"  "freqscaleshift_phase_a"
+    "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"  "freqshiftrotate_phase_a"
+    "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"  "freqscalerotate_phase_a"
+    "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"  "freqscaleshiftrotate_phase_a"
 )
 targets=(
-    "freqshift_phase_b6" "freqshift_phase_b7" "freqshift_phase_b8" "freqshift_phase_b9" "freqshift_phase_b10"
-    "freqscale_phase_b6" "freqscale_phase_b7" "freqscale_phase_b8" "freqscale_phase_b9" "freqscale_phase_b10"
+    "freqscaleshift_phase_b0" "freqscaleshift_phase_b1" "freqscaleshift_phase_b2" "freqscaleshift_phase_b3" "freqscaleshift_phase_b4" "freqscaleshift_phase_b5" "freqscaleshift_phase_b6" "freqscaleshift_phase_b7" "freqscaleshift_phase_b8" "freqscaleshift_phase_b9" "freqscaleshift_phase_b10"
+    "freqshiftrotate_phase_b0" "freqshiftrotate_phase_b1" "freqshiftrotate_phase_b2" "freqshiftrotate_phase_b3" "freqshiftrotate_phase_b4" "freqshiftrotate_phase_b5" "freqshiftrotate_phase_b6" "freqshiftrotate_phase_b7" "freqshiftrotate_phase_b8" "freqshiftrotate_phase_b9" "freqshiftrotate_phase_b10"
+    "freqscalerotate_phase_b0" "freqscalerotate_phase_b1" "freqscalerotate_phase_b2" "freqscalerotate_phase_b3" "freqscalerotate_phase_b4" "freqscalerotate_phase_b5" "freqscalerotate_phase_b6" "freqscalerotate_phase_b7" "freqscalerotate_phase_b8" "freqscalerotate_phase_b9" "freqscalerotate_phase_b10"
+    "freqscaleshiftrotate_phase_b0" "freqscaleshiftrotate_phase_b1" "freqscaleshiftrotate_phase_b2" "freqscaleshiftrotate_phase_b3" "freqscaleshiftrotate_phase_b4" "freqscaleshiftrotate_phase_b5" "freqscaleshiftrotate_phase_b6" "freqscaleshiftrotate_phase_b7" "freqscaleshiftrotate_phase_b8" "freqscaleshiftrotate_phase_b9" "freqscaleshiftrotate_phase_b10"
 )
 
 # Make sure we're using the right number
