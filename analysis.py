@@ -2,6 +2,7 @@
 """
 Analyze the results
 """
+import sys
 import pathlib
 import numpy as np
 import pandas as pd
@@ -76,6 +77,9 @@ def parse_file(filename):
 
             if line == "Virtual devices must be set at program startup":
                 pass
+            elif line == "Error occured -- exiting":
+                print("Found:", line, "in", filename, file=sys.stderr)
+                exit(1)
             elif beginning_match(valid_header, line):
                 in_validation = True
                 in_traintest = False
@@ -132,7 +136,8 @@ def compute_mean_std(df, name, ignore_label_flipping, filename):
     length = len(data)
 
     if length != 3 and length != 5:
-        print("Warning: number of runs ", length, "(not 3 or 5) for", filename)
+        print("Warning: number of runs ", length, "(not 3 or 5) for", filename,
+            file=sys.stderr)
 
     # ddof=0 is the numpy default, ddof=1 is Pandas' default
     return data.mean(), data.std(ddof=0)
@@ -204,7 +209,7 @@ def all_stats(files, recompute_averages=True, sort_on_test=False,
         parse_result = parse_file(file)
 
         if parse_result is None:
-            print("Warning: no data, skipping", file)
+            print("Warning: no data, skipping", file, file=sys.stderr)
             continue
 
         validation, traintest, averages = parse_result
@@ -298,7 +303,7 @@ def process_results(results, real_data=False):
 
         # Skip if desired
         if method in FLAGS.ignore.split(","):
-            print("Skipping", method)
+            print("Skipping", method, file=sys.stderr)
             continue
 
         method = nice_method_names[method]
@@ -372,6 +377,11 @@ def to_list(datasets):
 
 def print_real_results(results, title=None):
     """ Print table comparing different methods on real datasets """
+    # Don't truncate
+    pd.set_option("display.max_columns", None)
+    pd.set_option("display.max_colwidth", -1)
+    pd.set_option("display.width", None)
+
     datasets = process_results(results, real_data=True)
     df = pd.DataFrame(to_list(datasets),
         columns=["Adaptation", "Method", "Mean", "Std"])
@@ -407,7 +417,9 @@ def main(argv):
         # "runwalk5",
         # "runwalk6",
         # "rand1",
-        "rand2",
+        # "rand2",
+        # "runwalk7",
+        "rotate1",
     ]
 
     for dataset in datasets:
@@ -423,13 +435,19 @@ def main(argv):
     #
     datasets = [
         # "real_utdata1",
+        # "real_utdata_rand1",
+        # "realdata1",
+        # "ucihar1",
     ]
 
     for dataset in datasets:
+        print("Dataset:", dataset)
+
         for variant in ["best", "last"]:
             files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
             results = all_stats(files, sort_by_name=True, real_data=True)
             print_real_results(results, title="Real Dataset Adaptation ("+variant+")")
+            print()
 
 
 if __name__ == "__main__":
