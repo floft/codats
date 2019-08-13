@@ -21,7 +21,8 @@ flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
 nice_method_names = {
     "none": "Lower Bound (no adaptation)",
     "upper": "Upper Bound (train on target)",
-    "dann": "DANN",
+    "dann": "DANN-Shu",
+    "dann_grl": "DANN-GRL",
     "cyclegan": "CycleGAN",
     "cyclegan_dann": "CycleGAN+DANN",
     "cycada": "CyCADA",
@@ -399,6 +400,9 @@ def main(argv):
     #results = all_stats(files, sort_by_name=True)
     #plot_synthetic_results(results, save_plot=True, save_prefix="plot_runwalk01_best_", title_suffix=" (best)")
 
+    #variants = ["best", "last"]
+    variants = ["best"]
+
     #
     # Synthetic data
     #
@@ -419,11 +423,12 @@ def main(argv):
         # "rand1",
         # "rand2",
         # "runwalk7",
-        "rotate1",
+        # "rotate1",
+        # "comb1",
     ]
 
     for dataset in datasets:
-        for variant in ["best", "last"]:
+        for variant in variants:
             files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
             results = all_stats(files, sort_by_name=True)
             plot_synthetic_results(results, save_plot=True,
@@ -438,12 +443,13 @@ def main(argv):
         # "real_utdata_rand1",
         # "realdata1",
         # "ucihar1",
+        "ucihar2",
     ]
 
     for dataset in datasets:
         print("Dataset:", dataset)
 
-        for variant in ["best", "last"]:
+        for variant in variants:
             files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
             results = all_stats(files, sort_by_name=True, real_data=True)
             print_real_results(results, title="Real Dataset Adaptation ("+variant+")")

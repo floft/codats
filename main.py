@@ -27,7 +27,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("dann_loss", "gan", ["gan", "lsgan", "wgan"], "When using adversarial adaptation, which loss to use")
@@ -51,7 +51,6 @@ flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
 flags.DEFINE_integer("log_val_steps", 4000, "Log validation information every so many steps (also saves model)")
 flags.DEFINE_integer("log_plots_steps", 4000, "Log plots every so many steps")
-flags.DEFINE_boolean("use_grl", False, "Use gradient reversal layer for training discriminator for adaptation")
 flags.DEFINE_boolean("use_alt_weight", False, "Use alternate weighting for target classifier")
 flags.DEFINE_boolean("use_domain_confidence", True, "Use domain classifier for confidence instead of task classifier")
 flags.DEFINE_boolean("domain_invariant", True, "Train feature extractor to be domain-invariant")
@@ -76,7 +75,8 @@ def get_directory_names():
         "cyclegan_dann": "-cyclegan_dann",
         "forecast": "-forecast",
         "cycada": "-cycada",
-        "dann": "-dann",
+        "dann": "-dann",  # TODO rename dann_shu eventually
+        "dann_grl": "-dann_grl",
         "deepjdot": "-deepjdot",
         "rdann": "-rdann",  # same as DANN but use with --model=rdann
         "vrada": "-vrada",  # use with "vrada" model
@@ -749,8 +749,8 @@ def main(argv):
         os.makedirs(log_dir)
 
     # We adapt for any method other than "none", "cyclegan", or "forecast"
-    adapt = FLAGS.method in ["cycada", "dann", "pseudo", "instance",
-        "cyclegan_dann", "rdann", "vrada"]
+    adapt = FLAGS.method in ["cycada", "dann", "dann_grl", "pseudo",
+        "instance", "cyclegan_dann", "rdann", "vrada"]
 
     assert not (adapt and not FLAGS.task), \
         "If adapting (e.g. method=dann), must not pass --notask"
@@ -759,7 +759,8 @@ def main(argv):
     # data, so to keep the batch_size about the same, we'll cut it in half
     train_batch = FLAGS.train_batch
 
-    if adapt and FLAGS.use_grl:
+    use_grl = FLAGS.method == "dann_grl"
+    if adapt and use_grl:
         train_batch = train_batch // 2
 
     # Input training data
@@ -793,7 +794,7 @@ def main(argv):
     num_classes = source_dataset.num_classes
 
     # Loss functions
-    task_loss = models.make_task_loss(adapt and FLAGS.use_grl)
+    task_loss = models.make_task_loss(adapt and use_grl)
     domain_loss = models.make_domain_loss(adapt)
     weighted_task_loss = models.make_weighted_loss()
     mapping_loss = models.make_mapping_loss()
@@ -804,7 +805,7 @@ def main(argv):
     # Build the (mapping and/or task) models
     if FLAGS.task:
         model = models.DomainAdaptationModel(num_classes, FLAGS.model,
-            global_step, FLAGS.steps, use_grl=FLAGS.use_grl)
+            global_step, FLAGS.steps, use_grl=use_grl)
     else:
         model = None
 
@@ -940,7 +941,7 @@ def main(argv):
 
                 # Train FE / task classifier
                 train_step_none(*step_args)
-            elif adapt and FLAGS.use_grl:
+            elif adapt and use_grl:
                 train_step_grl(*step_args)
             elif adapt:
                 instance_weights = train_step_gan(*step_args, grl_schedule, global_step)

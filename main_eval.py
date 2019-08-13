@@ -31,7 +31,7 @@ from gpu_memory import set_gpu_memory
 
 FLAGS = flags.FLAGS
 
-methods = ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "deepjdot", "pseudo", "instance", "rdann", "vrada"]
+methods = ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"]
 
 # Same as in main.py
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
