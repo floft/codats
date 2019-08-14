@@ -16,7 +16,7 @@ Steps:
 This requires the following packages:
 
     pip install --user numpy cython
-    pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile POT
+    pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile POT dtw
 
 ## Training
 
