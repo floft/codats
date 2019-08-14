@@ -17,3 +17,4 @@ slurm_logs
 trivial/
 *_TRAIN
 *_TEST
+*.pdf
