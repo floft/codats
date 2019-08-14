@@ -19,8 +19,8 @@ flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
 
 # Use nice names for the plot
 nice_method_names = {
-    "none": "Lower Bound (no adaptation)",
-    "upper": "Upper Bound (train on target)",
+    "none": "Lower Bound",  # (no adaptation)
+    "upper": "Upper Bound",  # (train on target)
     "dann": "DANN-Shu",
     "dann_grl": "DANN-GRL",
     "cyclegan": "CycleGAN",
@@ -329,10 +329,14 @@ def process_results(results, real_data=False):
 
 
 def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
-        title_suffix=""):
+        title_suffix="", show_title=False, suffix="pdf"):
     """ Generate a plot for each dataset comparing how well the various
     adaptation methods handle varying amounts of domain shift """
     datasets = process_results(results)
+
+    # See: https://matplotlib.org/3.1.1/api/markers_api.html
+    markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
+        "1", "2", "3", "4", "+", "x"]
 
     for dataset_name, dataset_values in datasets.items():
         methods = list(dataset_values.keys())
@@ -346,10 +350,12 @@ def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
             x = method_data[:, 0] + jitter[i]
             y = method_data[:, 1]*100
             std = method_data[:, 2]*100
-            plt.errorbar(x, y, yerr=std, label=methods[i], fmt="o--", alpha=0.8)
+            plt.errorbar(x, y, yerr=std, label=methods[i], fmt=markers[i]+"--", alpha=0.8)
 
-        plt.title("Various Adaptation Methods on Dataset "+dataset_name+title_suffix)
-        ax.set_xlabel("Domain Shift (0 = no shift, 5 = the most shift)")
+        if show_title:
+            plt.title("Various Adaptation Methods on Dataset "+dataset_name+title_suffix)
+
+        ax.set_xlabel("Domain Shift Amount")
         ax.set_ylabel("Target Domain Accuracy (%)")
 
         # Put legend outside the graph http://stackoverflow.com/a/4701285
@@ -359,7 +365,7 @@ def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
         plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
         if save_plot:
-            plt.savefig(save_prefix+dataset_name+".png", bbox_inches='tight')
+            plt.savefig(save_prefix+dataset_name+"."+suffix, bbox_inches='tight')
 
     if save_plot:
         plt.close()
@@ -425,6 +431,7 @@ def main(argv):
         # "runwalk7",
         # "rotate1",
         # "comb1",
+        "synthetic1",
     ]
 
     for dataset in datasets:
@@ -443,7 +450,9 @@ def main(argv):
         # "real_utdata_rand1",
         # "realdata1",
         # "ucihar1",
-        "ucihar2",
+        # "ucihar2",
+        # "uwave2",
+        "real1",
     ]
 
     for dataset in datasets:
