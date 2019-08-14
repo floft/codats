@@ -1091,6 +1091,16 @@ datasets = {
     # Note: in the paper, call these "participants" not "users"
     "uwave_users_first": make_uwave(users=[1, 2, 3, 4]),
     "uwave_users_second": make_uwave(users=[5, 6, 7, 8]),
+    # From user X to user Y
+    "uwave_1": make_uwave(users=[1]),
+    "uwave_2": make_uwave(users=[2]),
+    "uwave_3": make_uwave(users=[3]),
+    "uwave_4": make_uwave(users=[4]),
+    "uwave_5": make_uwave(users=[5]),
+    "uwave_6": make_uwave(users=[6]),
+    "uwave_7": make_uwave(users=[7]),
+    "uwave_8": make_uwave(users=[8]),
+
     "sleep_all": make_sleep(),
     # Split users randomly since if first/second half then there's a large
     # difference in amount of data
@@ -1108,6 +1118,34 @@ datasets = {
     # From user X to user Y
     "ucihar_1": make_ucihar(users=[1]),
     "ucihar_2": make_ucihar(users=[2]),
+    "ucihar_3": make_ucihar(users=[3]),
+    "ucihar_4": make_ucihar(users=[4]),
+    "ucihar_5": make_ucihar(users=[5]),
+    "ucihar_6": make_ucihar(users=[6]),
+    "ucihar_7": make_ucihar(users=[7]),
+    "ucihar_8": make_ucihar(users=[8]),
+    "ucihar_9": make_ucihar(users=[9]),
+    "ucihar_10": make_ucihar(users=[10]),
+    "ucihar_11": make_ucihar(users=[11]),
+    "ucihar_12": make_ucihar(users=[12]),
+    "ucihar_13": make_ucihar(users=[13]),
+    "ucihar_14": make_ucihar(users=[14]),
+    "ucihar_15": make_ucihar(users=[15]),
+    "ucihar_16": make_ucihar(users=[16]),
+    "ucihar_17": make_ucihar(users=[17]),
+    "ucihar_18": make_ucihar(users=[18]),
+    "ucihar_19": make_ucihar(users=[19]),
+    "ucihar_20": make_ucihar(users=[20]),
+    "ucihar_21": make_ucihar(users=[21]),
+    "ucihar_22": make_ucihar(users=[22]),
+    "ucihar_23": make_ucihar(users=[23]),
+    "ucihar_24": make_ucihar(users=[24]),
+    "ucihar_25": make_ucihar(users=[25]),
+    "ucihar_26": make_ucihar(users=[26]),
+    "ucihar_27": make_ucihar(users=[27]),
+    "ucihar_28": make_ucihar(users=[28]),
+    "ucihar_29": make_ucihar(users=[29]),
+    "ucihar_30": make_ucihar(users=[30]),
 
 
     # "positive_slope": make_trivial_negpos("positive_slope"),
