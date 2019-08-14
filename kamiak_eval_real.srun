@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-15
+#SBATCH --array=0-179
 
 # My computer
 #gpumem=4500
@@ -35,14 +35,11 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("none" "upper" "dann" "deepjdot")
-variants=("best" "last")
-#sources=("utdata_wrist"  "utdata_pocket" "uwave_days_first"  "uwave_days_second" "uwave_users_first"  "uwave_users_second" "sleep_users_first"  "sleep_users_second")
-#targets=("utdata_pocket" "utdata_wrist"  "uwave_days_second" "uwave_days_first"  "uwave_users_second" "uwave_users_first"  "sleep_users_second" "sleep_users_first")
-#sources=("ucihar_first"  "ucihar_second" "ucihar_train" "ucihar_test"  "ucihar_1" "ucihar_2")
-#targets=("ucihar_second" "ucihar_first"  "ucihar_test"  "ucihar_train" "ucihar_2" "ucihar_1")
-sources=("ucihar_1" "ucihar_2")
-targets=("ucihar_2" "ucihar_1")
+methods=("none" "upper" "dann" "deepjdot" "random" "dann_grl" "cycada" "rdann" "vrada")
+#variants=("best" "last")
+variants=("best")
+sources=("ucihar_1" "ucihar_2" "ucihar_3" "ucihar_4" "ucihar_5" "ucihar_6" "ucihar_7" "ucihar_8" "ucihar_9" "ucihar_10" "ucihar_11" "ucihar_12" "uwave_1" "uwave_2" "uwave_3" "uwave_4" "uwave_5" "uwave_6" "uwave_7" "uwave_8")
+targets=("ucihar_2" "ucihar_1" "ucihar_4" "ucihar_3" "ucihar_6" "ucihar_5" "ucihar_8" "ucihar_7" "ucihar_10" "ucihar_9" "ucihar_12" "ucihar_11" "uwave_2" "uwave_1" "uwave_4" "uwave_3" "uwave_6" "uwave_5" "uwave_8" "uwave_7")
 
 # Make sure we're using the right number
 correct_min=0
@@ -75,8 +72,16 @@ out="results_${suffix}_$variant-$method-$source-$target.txt"
 additional_args=()
 if [[ $method == "upper" ]]; then
     method="none"
+    source="$target"
     target=""
     additional_args+=("--best_source")
+fi
+
+# Model
+if [[ $method == "vrada" || $method == "rdann" ]]; then
+    model="$method"
+else
+    model="fcn"
 fi
 
 # Argument if evaluating last model

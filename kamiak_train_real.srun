@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-23
+#SBATCH --array=0-539
 
 # My computer
 #gpumem=4500
@@ -35,14 +35,12 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("none" "upper" "dann" "deepjdot")
+methods=("vrada" "rdann" "cycada" "random" "dann" "deepjdot" "dann_grl" "none" "upper")  # slowest to fastest for shortest time
 debugnums=(1 2 3)
-#sources=("utdata_wrist"  "utdata_pocket" "uwave_days_first"  "uwave_days_second" "uwave_users_first"  "uwave_users_second" "sleep_users_first"  "sleep_users_second")
-#targets=("utdata_pocket" "utdata_wrist"  "uwave_days_second" "uwave_days_first"  "uwave_users_second" "uwave_users_first"  "sleep_users_second" "sleep_users_first")
-#sources=("ucihar_first"  "ucihar_second" "ucihar_train" "ucihar_test"  "ucihar_1" "ucihar_2")
-#targets=("ucihar_second" "ucihar_first"  "ucihar_test"  "ucihar_train" "ucihar_2" "ucihar_1")
-sources=("ucihar_1" "ucihar_2")
-targets=("ucihar_2" "ucihar_1")
+#sources=("utdata_wrist"  "utdata_pocket")
+#targets=("utdata_pocket" "utdata_wrist")
+sources=("ucihar_1" "ucihar_2" "ucihar_3" "ucihar_4" "ucihar_5" "ucihar_6" "ucihar_7" "ucihar_8" "ucihar_9" "ucihar_10" "ucihar_11" "ucihar_12" "uwave_1" "uwave_2" "uwave_3" "uwave_4" "uwave_5" "uwave_6" "uwave_7" "uwave_8")
+targets=("ucihar_2" "ucihar_1" "ucihar_4" "ucihar_3" "ucihar_6" "ucihar_5" "ucihar_8" "ucihar_7" "ucihar_10" "ucihar_9" "ucihar_12" "ucihar_11" "uwave_2" "uwave_1" "uwave_4" "uwave_3" "uwave_6" "uwave_5" "uwave_8" "uwave_7")
 
 # Make sure we're using the right number
 correct_min=0
@@ -72,8 +70,31 @@ target="${targets[$index1]}"
 additional_args=()
 if [[ $method == "upper" ]]; then
     method="none"
+    source="$target"
     target=""
     additional_args+=("--best_source" "--notrain_on_source_valid")
+fi
+
+# Training / model options
+steps=15000
+lr=0.0001
+model=fcn
+
+if [[ $method == "vrada" || $method == "rdann" ]]; then
+    model="$method"
+    batch=64
+elif [[ $method == "random" ]]; then
+    batch=50
+    additional_args+=("--log_val_steps=100")
+else
+    batch=250
+fi
+
+# Pretraining - VRADA requires its custom reconstruction loss
+if [[ $method == "vrada" || $method == "random" ]]; then
+    pretraining=0
+else
+    pretraining=1000
 fi
 
 echo "$suffix #$SLURM_ARRAY_TASK_ID"
@@ -87,6 +108,6 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --model=$model --steps=30000 --train_batch=250 --pretrain_steps=1000 --lr=0.0001 \
+    --model="$model" --steps="$steps" --train_batch=$batch --pretrain_steps=$pretraining --lr="$lr" \
     --method="$method" --source="$source" --target="$target" --debugnum="$debugnum" \
     --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error
