@@ -102,6 +102,12 @@ def parse_file(filename):
                     return None
 
                 if in_validation:
+                    # If there was no model yet (e.g. if a method errors before
+                    # starting training)
+                    if values[5] == "None":
+                        print("Warning: no best model for", filename, file=sys.stderr)
+                        return None
+
                     validation.append((values[0], values[1], values[2],
                         values[3], values[4], int(values[5]), float(values[6])))
                 elif in_traintest:
@@ -328,8 +334,18 @@ def process_results(results, real_data=False):
     return datasets
 
 
+def export_legend(legend, filename="key.pdf", expand=[-5, -5, 5, 5]):
+    """ See: https://stackoverflow.com/a/47749903 """
+    fig = legend.figure
+    fig.canvas.draw()
+    bbox = legend.get_window_extent()
+    bbox = bbox.from_extents(*(bbox.extents + np.array(expand)))
+    bbox = bbox.transformed(fig.dpi_scale_trans.inverted())
+    fig.savefig(filename, dpi="figure", bbox_inches=bbox)
+
+
 def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
-        title_suffix="", show_title=False, suffix="pdf"):
+        title_suffix="", show_title=False, legend_separate=True, suffix="pdf"):
     """ Generate a plot for each dataset comparing how well the various
     adaptation methods handle varying amounts of domain shift """
     datasets = process_results(results)
@@ -343,7 +359,7 @@ def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
         data = list(dataset_values.values())
         jitter = gen_jitter(len(data))  # "dodge" points so they don't overlap
 
-        fig, ax = plt.subplots(1, 1, figsize=(10, 5), dpi=100)
+        fig, ax = plt.subplots(1, 1, figsize=(10, 4.1), dpi=100)
 
         for i in range(len(data)):
             method_data = np.array(data[i])
@@ -358,11 +374,18 @@ def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
         ax.set_xlabel("Domain Shift Amount")
         ax.set_ylabel("Target Domain Accuracy (%)")
 
-        # Put legend outside the graph http://stackoverflow.com/a/4701285
-        # Shrink current axis by 20%
-        box = ax.get_position()
-        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-        plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+        if legend_separate:
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+            export_legend(legend)
+            legend.remove()
+        else:
+            # Put legend outside the graph http://stackoverflow.com/a/4701285
+            # Shrink current axis by 20%
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
         if save_plot:
             plt.savefig(save_prefix+dataset_name+"."+suffix, bbox_inches='tight')
@@ -385,6 +408,7 @@ def to_list(datasets):
 def print_real_results(results, title=None):
     """ Print table comparing different methods on real datasets """
     # Don't truncate
+    pd.set_option("display.max_rows", None)
     pd.set_option("display.max_columns", None)
     pd.set_option("display.max_colwidth", -1)
     pd.set_option("display.width", None)
