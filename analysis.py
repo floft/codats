@@ -21,12 +21,12 @@ flags.DEFINE_string("ignore", "random", "List of models to ignore, comma separat
 nice_method_names = {
     "none": "Lower Bound",  # (no adaptation)
     "upper": "Upper Bound",  # (train on target)
-    "dann": "DANN-Shu",
-    "dann_grl": "DANN-GRL",
-    "cyclegan": "CycleGAN",
-    "cyclegan_dann": "CycleGAN+DANN",
-    "cycada": "CyCADA",
-    "deepjdot": "DeepJDOT",
+    "dann": "CoDATS + DANN-Shu",
+    "dann_grl": "CoDATS + DANN-GRL",
+    "cyclegan": "CoDATS + CycleGAN",
+    "cyclegan_dann": "CoDATS + CycleGAN + DANN",
+    "cycada": "CoDATS + CyCADA",
+    "deepjdot": "CoDATS + DeepJDOT",
     "rdann": "R-DANN",
     "vrada": "VRADA",
     "random": "Random",
@@ -498,8 +498,8 @@ def print_latex_results(results):
         for method, values in data.items():
             indexed_by_target[adaptation][method] = "{:.1f} $\\pm$ {:.1f}".format(values[0]*100, values[1]*100)
 
-    columns = ["Lower Bound", "R-DANN", "VRADA", "DANN-GRL",
-        "DANN-Shu", "CyCADA", "DeepJDOT", "Upper Bound"]
+    columns = ["Lower Bound", "R-DANN", "VRADA", "CoDATS + DANN-GRL",
+        "CoDATS + DANN-Shu", "CoDATS + CyCADA", "CoDATS + DeepJDOT", "Upper Bound"]
     rows = [
         ("HAR 1", "HAR 2"), ("HAR 2", "HAR 1"),
         ("HAR 3", "HAR 4"), ("HAR 4", "HAR 3"),
@@ -592,7 +592,7 @@ def main(argv):
         # "runwalk7",
         # "rotate1",
         # "comb1",
-        # "synthetic1",
+        "synthetic1",
     ]
 
     for dataset in datasets:
