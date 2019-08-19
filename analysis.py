@@ -14,7 +14,7 @@ from absl import flags
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
+flags.DEFINE_string("ignore", "random", "List of models to ignore, comma separated")
 
 
 # Use nice names for the plot
@@ -405,7 +405,7 @@ def to_list(datasets):
     return output
 
 
-def print_real_results(results, title=None):
+def print_real_results(results, title=None, filename=None):
     """ Print table comparing different methods on real datasets """
     # Don't truncate
     pd.set_option("display.max_rows", None)
@@ -420,6 +420,143 @@ def print_real_results(results, title=None):
     if title is not None:
         print(title)
     print(df)
+
+    if filename is not None:
+        df.to_csv(filename)
+
+
+def make_replacements(s, replacements):
+    """ Make a bunch of replacements in a string """
+    if s is None:
+        return s
+
+    for before, after in replacements:
+        s = s.replace(before, after)
+
+    return s
+
+
+def replace_highest_bold(values):
+    """ Replace highest DDD.D $\pm$ DDD.D with \textbf{...} """
+    max_index = None
+    max_value = None
+
+    for i, v in enumerate(values):
+        if len(v) > 0:
+            parts = v.split(" $\pm$ ")
+
+            if len(parts) == 1 or len(parts) == 2:
+                float_value = float(parts[0])
+
+                if max_value is None or float_value > max_value:
+                    max_value = float_value
+                    max_index = i
+
+    if max_index is not None:
+        new_values = []
+
+        for i, v in enumerate(values):
+            if i == max_index:
+                new_values.append("\\textbf{"+v+"}")
+            else:
+                new_values.append(v)
+
+        return new_values
+    else:
+        return values
+
+
+def print_latex_results(results):
+    """ There's >350 values to fill in... I'm not going to manually type that
+    in LaTex, especially when I'll have to do it more than once. This is not
+    clean code per se. """
+    datasets = process_results(results, real_data=True)
+    indexed_by_target = {}
+
+    replacements = [
+        ("ucihar_", "HAR "),
+        ("uwave_", "uWave "),
+        ("utdata_wrist", "Wrist"),
+        ("utdata_pocket", "Pocket"),
+    ]
+
+    for dataset, data in datasets.items():
+        values = dataset.split(" --> ")
+
+        if len(values) == 2:
+            source, target = values
+        elif len(values) == 1:
+            source = None
+            target = values[0]
+
+        source = make_replacements(source, replacements)
+        target = make_replacements(target, replacements)
+
+        adaptation = (source, target)
+        indexed_by_target[adaptation] = {}
+
+        for method, values in data.items():
+            indexed_by_target[adaptation][method] = "{:.1f} $\\pm$ {:.1f}".format(values[0]*100, values[1]*100)
+
+    columns = ["Lower Bound", "R-DANN", "VRADA", "DANN-GRL",
+        "DANN-Shu", "CyCADA", "DeepJDOT", "Upper Bound"]
+    rows = [
+        ("HAR 1", "HAR 2"), ("HAR 2", "HAR 1"),
+        ("HAR 3", "HAR 4"), ("HAR 4", "HAR 3"),
+        ("HAR 5", "HAR 6"), ("HAR 6", "HAR 5"),
+        ("HAR 7", "HAR 8"), ("HAR 8", "HAR 7"),
+        ("HAR 9", "HAR 10"), ("HAR 10", "HAR 9"),
+        ("HAR 11", "HAR 12"), ("HAR 12", "HAR 11"),
+        ("\\hline",),
+        ("uWave 1", "uWave 2"), ("uWave 2", "uWave 1"),
+        ("uWave 3", "uWave 4"), ("uWave 4", "uWave 3"),
+        ("uWave 5", "uWave 6"), ("uWave 6", "uWave 5"),
+        ("uWave 7", "uWave 8"), ("uWave 8", "uWave 7"),
+        ("\\hline",),
+        #("Wrist", "Pocket"), ("Pocket", "Wrist"),
+    ]
+
+    # Create table
+    table = []
+
+    for row in rows:
+        # The \hline's
+        if len(row) == 1:
+            table.append([row[0]])
+            continue
+
+        thisrow = [row[0], row[1]]
+
+        for column in columns:
+            if column == "Upper Bound":
+                val = indexed_by_target[(None, row[1])][column]
+            else:
+                if column in indexed_by_target[row]:
+                    val = indexed_by_target[row][column]
+                else:
+                    # Not done yet (e.g. CyCADA gave errors at some point)
+                    val = ""
+
+            thisrow.append(val)
+
+        table.append(thisrow)
+
+    # Print table, but bold the highest in each row excluding the last
+    for row in table:
+        row[2:8] = replace_highest_bold(row[2:8])
+
+        # \hline's
+        if len(row) == 1:
+            print(row[0])
+            continue
+
+        for i, column in enumerate(row):
+            print(column, end=" ")
+
+            if i == len(row)-1:
+                print("\\\\")
+            else:
+                print("&", end=" ")
 
 
 def main(argv):
@@ -455,7 +592,7 @@ def main(argv):
         # "runwalk7",
         # "rotate1",
         # "comb1",
-        "synthetic1",
+        # "synthetic1",
     ]
 
     for dataset in datasets:
@@ -485,7 +622,10 @@ def main(argv):
         for variant in variants:
             files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
             results = all_stats(files, sort_by_name=True, real_data=True)
-            print_real_results(results, title="Real Dataset Adaptation ("+variant+")")
+            #print_real_results(results, title="Real Dataset Adaptation ("+variant+")",
+            #    filename="analysis_"+dataset+"_"+variant+".csv")
+            # Just make the .tex code
+            print_latex_results(results)
             print()
 
 
