@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 
 from absl import app
 from absl import flags
+from scipy import stats
 
 
 FLAGS = flags.FLAGS
@@ -282,6 +283,84 @@ def gen_jitter(length, amount=0.04):
     return np.array(x, dtype=np.float32)
 
 
+def compute_significance(results, significance_level=0.05):
+    """ Calculate significance:
+
+    For each CoDATS method, is the mean significantly different than the
+    mean of both of the RNN methods (separately compare with R-DANN and VRADA
+    and it's significant if p<0.05 for both)
+
+    Note: only works for real data
+    """
+    # Indexed by target_accuracy[dataset][method]
+    datasets = {}
+
+    for result in results:
+        params = result["parameters"]
+        traintest = result["traintest"]
+        method = params["method"]
+        target_accuracy = traintest["Test B"].values
+
+        # Skip
+        if method == "upper" or method == "lower" or method == "random":
+            continue
+
+        if method in FLAGS.ignore.split(","):
+            print("Skipping", method, file=sys.stderr)
+            continue
+
+        dataset = params["source"] + " --> " + params["target"]
+        method = nice_method_names[method]
+
+        if dataset not in datasets:
+            datasets[dataset] = {}
+        if method not in datasets[dataset]:
+            datasets[dataset][method] = []
+
+        datasets[dataset][method] = target_accuracy
+
+    significantly_better = {}
+
+    for dataset, values in datasets.items():
+        dannshu = None
+        danngrl = None
+        cycada = None
+        deepjdot = None
+
+        if "CoDATS + DANN-Shu" in values:
+            dannshu = \
+                stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-Shu"]).pvalue < significance_level and \
+                stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-Shu"]).pvalue < significance_level
+
+        if "CoDATS + DANN-GRL" in values:
+            danngrl = \
+                stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-GRL"]).pvalue < significance_level and \
+                stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-GRL"]).pvalue < significance_level
+
+        if "CoDATS + CyCADA" in values:
+            cycada = \
+                stats.ttest_rel(values["R-DANN"], values["CoDATS + CyCADA"]).pvalue < significance_level and \
+                stats.ttest_rel(values["VRADA"], values["CoDATS + CyCADA"]).pvalue < significance_level
+
+        if "CoDATS + DeepJDOT" in values:
+            deepjdot = \
+                stats.ttest_rel(values["R-DANN"], values["CoDATS + DeepJDOT"]).pvalue < significance_level and \
+                stats.ttest_rel(values["VRADA"], values["CoDATS + DeepJDOT"]).pvalue < significance_level
+
+            stats.ttest_rel
+
+        print(dataset, "- DANN-Shu", dannshu, "DANN-GRL", danngrl, "CyCADA", cycada, "DeepJDOT", deepjdot)
+
+        significantly_better[dataset] = {
+            "CoDATS + DANN-Shu": dannshu,
+            "CoDATS + DANN-GRL": danngrl,
+            "CoDATS + CyCADA": cycada,
+            "CoDATS + DeepJDOT": deepjdot,
+        }
+
+    return significantly_better
+
+
 def process_results(results, real_data=False):
     datasets = {}
 
@@ -446,6 +525,10 @@ def replace_highest_bold(values):
             parts = v.split(" $\pm$ ")
 
             if len(parts) == 1 or len(parts) == 2:
+                if "underline{" in parts[0]:
+                    parts[0] = parts[0].replace("\\underline{", "")
+                    parts[1] = parts[1].replace("?", "")
+
                 float_value = float(parts[0])
 
                 if max_value is None or float_value > max_value:
@@ -470,6 +553,7 @@ def print_latex_results(results):
     """ There's >350 values to fill in... I'm not going to manually type that
     in LaTex, especially when I'll have to do it more than once. This is not
     clean code per se. """
+    significantly_better = compute_significance(results)
     datasets = process_results(results, real_data=True)
     indexed_by_target = {}
 
@@ -497,6 +581,13 @@ def print_latex_results(results):
 
         for method, values in data.items():
             indexed_by_target[adaptation][method] = "{:.1f} $\\pm$ {:.1f}".format(values[0]*100, values[1]*100)
+
+            # Check for significance
+            if dataset in significantly_better and \
+                    method in significantly_better[dataset] and \
+                    significantly_better[dataset][method]:
+                indexed_by_target[adaptation][method] = \
+                    "\\underline{" + indexed_by_target[adaptation][method] + "}"
 
     columns = ["Lower Bound", "R-DANN", "VRADA", "CoDATS + DANN-GRL",
         "CoDATS + DANN-Shu", "CoDATS + CyCADA", "CoDATS + DeepJDOT", "Upper Bound"]
@@ -592,7 +683,7 @@ def main(argv):
         # "runwalk7",
         # "rotate1",
         # "comb1",
-        "synthetic1",
+        # "synthetic1",
     ]
 
     for dataset in datasets:
