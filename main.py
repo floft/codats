@@ -514,6 +514,26 @@ def wgan_gradient_penalty(real, fake, discriminator):
     return tf.reduce_mean(gradient_penalty)
 
 
+def time_trim(inputs, trim_time_steps):
+    """ Trim along time dimension to make sure we only get the desired output
+    size. """
+    return tf.slice(inputs, [0, 0, 0], [tf.shape(inputs)[0],
+            trim_time_steps, tf.shape(inputs)[2]])
+
+
+def trim_to_min_time_length(a, b):
+    """ Trim to make sure they're the same length in the time dimension. They
+    may not be if the input was odd and it rounded differently when mapping. """
+    min_len = min(a.shape[1], b.shape[1])
+
+    if a.shape[1] != min_len:
+        a = time_trim(a, min_len)
+    if b.shape[1] != min_len:
+        b = time_trim(b, min_len)
+
+    return a, b
+
+
 @tf.function
 def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=None,
         task_loss=None, classify_model=None, semantic_consistency=False):
@@ -535,9 +555,13 @@ def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=No
         ones_a = tf.ones_like(disc_Areal)
         ones_b = tf.ones_like(disc_Breal)
 
+        # Trim to make sure they're same length
+        x_a_trim, gen_AtoBtoA = trim_to_min_time_length(x_a, gen_AtoBtoA)
+        x_b_trim, gen_BtoAtoB = trim_to_min_time_length(x_b, gen_BtoAtoB)
+
         # Generators should by cycle consistent
-        cyc_loss = tf.reduce_mean(tf.abs(x_a - gen_AtoBtoA)) \
-            + tf.reduce_mean(tf.abs(x_b - gen_BtoAtoB))
+        cyc_loss = tf.reduce_mean(tf.abs(x_a_trim - gen_AtoBtoA)) \
+            + tf.reduce_mean(tf.abs(x_b_trim - gen_BtoAtoB))
 
         g_loss = cyc_loss*FLAGS.map_cyc_mult
 
@@ -589,6 +613,13 @@ def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=No
             # on target data mapped back to source
             task_y_pred_b, _, _ = classify_model(x_b, training=False, domain="target")
             task_y_pred_mapped_b, _, _ = classify_model(gen_BtoA, training=False, domain="source")
+
+            # Trim to make sure they're same length - might not be if input was
+            # odd and it rounded differently when mapping
+            task_y_true_a, task_y_pred_mapped_a = \
+                trim_to_min_time_length(task_y_true_a, task_y_pred_mapped_a)
+            task_y_pred_b, task_y_pred_mapped_b = \
+                trim_to_min_time_length(task_y_pred_b, task_y_pred_mapped_b)
 
             # TODO only if classifier has "reasonably low loss", i.e. in CyCADA
             # code if it's (run classify_model on x_a) less than 1.0
