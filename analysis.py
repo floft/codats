@@ -327,27 +327,29 @@ def compute_significance(results, significance_level=0.05):
         cycada = None
         deepjdot = None
 
-        if "CoDATS + DANN-Shu" in values:
-            dannshu = \
-                stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-Shu"]).pvalue < significance_level and \
-                stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-Shu"]).pvalue < significance_level
+        if "R-DANN" in values and "VRADA" in values:
+            if "CoDATS + DANN-Shu" in values:
+                dannshu = \
+                    stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-Shu"]).pvalue < significance_level and \
+                    stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-Shu"]).pvalue < significance_level
 
-        if "CoDATS + DANN-GRL" in values:
-            danngrl = \
-                stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-GRL"]).pvalue < significance_level and \
-                stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-GRL"]).pvalue < significance_level
+            if "CoDATS + DANN-GRL" in values:
+                danngrl = \
+                    stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-GRL"]).pvalue < significance_level and \
+                    stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-GRL"]).pvalue < significance_level
 
-        if "CoDATS + CyCADA" in values:
-            cycada = \
-                stats.ttest_rel(values["R-DANN"], values["CoDATS + CyCADA"]).pvalue < significance_level and \
-                stats.ttest_rel(values["VRADA"], values["CoDATS + CyCADA"]).pvalue < significance_level
+            if "CoDATS + CyCADA" in values:
+                cycada = \
+                    stats.ttest_rel(values["R-DANN"], values["CoDATS + CyCADA"]).pvalue < significance_level and \
+                    stats.ttest_rel(values["VRADA"], values["CoDATS + CyCADA"]).pvalue < significance_level
 
-        if "CoDATS + DeepJDOT" in values:
-            deepjdot = \
-                stats.ttest_rel(values["R-DANN"], values["CoDATS + DeepJDOT"]).pvalue < significance_level and \
-                stats.ttest_rel(values["VRADA"], values["CoDATS + DeepJDOT"]).pvalue < significance_level
+            if "CoDATS + DeepJDOT" in values:
+                deepjdot = \
+                    stats.ttest_rel(values["R-DANN"], values["CoDATS + DeepJDOT"]).pvalue < significance_level and \
+                    stats.ttest_rel(values["VRADA"], values["CoDATS + DeepJDOT"]).pvalue < significance_level
 
-            stats.ttest_rel
+        else:
+            print("Warning: no R-DANN/VRADA so no significance", file=sys.stderr)
 
         print(dataset, "- DANN-Shu", dannshu, "DANN-GRL", danngrl, "CyCADA", cycada, "DeepJDOT", deepjdot)
 
@@ -704,7 +706,8 @@ def main(argv):
         # "ucihar1",
         # "ucihar2",
         # "uwave2",
-        "real1",
+        # "real1",
+        "real2",
     ]
 
     for dataset in datasets:
