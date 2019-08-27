@@ -519,7 +519,7 @@ def make_replacements(s, replacements):
 
 def replace_highest_bold(values):
     """ Replace highest DDD.D $\pm$ DDD.D with \textbf{...} """
-    max_index = None
+    max_index = []
     max_value = None
 
     for i, v in enumerate(values):
@@ -535,13 +535,15 @@ def replace_highest_bold(values):
 
                 if max_value is None or float_value > max_value:
                     max_value = float_value
-                    max_index = i
+                    max_index = [i]
+                elif float_value == max_value:
+                    max_index.append(i)
 
     if max_index is not None:
         new_values = []
 
         for i, v in enumerate(values):
-            if i == max_index:
+            if i in max_index:
                 new_values.append("\\textbf{"+v+"}")
             else:
                 new_values.append(v)
@@ -606,7 +608,7 @@ def print_latex_results(results):
         ("uWave 5", "uWave 6"), ("uWave 6", "uWave 5"),
         ("uWave 7", "uWave 8"), ("uWave 8", "uWave 7"),
         ("\\hline",),
-        #("Wrist", "Pocket"), ("Pocket", "Wrist"),
+        ("Wrist", "Pocket"), ("Pocket", "Wrist"),
     ]
 
     # Create table
@@ -636,7 +638,7 @@ def print_latex_results(results):
 
     # Print table, but bold the highest in each row excluding the last
     for row in table:
-        row[2:8] = replace_highest_bold(row[2:8])
+        row[2:9] = replace_highest_bold(row[2:9])
 
         # \hline's
         if len(row) == 1:
