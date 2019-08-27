@@ -15,7 +15,7 @@ from scipy import stats
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("ignore", "random", "List of models to ignore, comma separated")
+flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
 
 
 # Use nice names for the plot
@@ -30,7 +30,7 @@ nice_method_names = {
     "deepjdot": "CoDATS + DeepJDOT",
     "rdann": "R-DANN",
     "vrada": "VRADA",
-    "random": "Random",
+    "random": "Many Reinit",
 }
 
 
@@ -591,7 +591,7 @@ def print_latex_results(results):
                 indexed_by_target[adaptation][method] = \
                     "\\underline{" + indexed_by_target[adaptation][method] + "}"
 
-    columns = ["Lower Bound", "R-DANN", "VRADA", "CoDATS + DANN-GRL",
+    columns = ["Lower Bound", "Many Reinit", "R-DANN", "VRADA", "CoDATS + DANN-GRL",
         "CoDATS + DANN-Shu", "CoDATS + CyCADA", "CoDATS + DeepJDOT", "Upper Bound"]
     rows = [
         ("HAR 1", "HAR 2"), ("HAR 2", "HAR 1"),
