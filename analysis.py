@@ -638,7 +638,7 @@ def print_latex_results(results):
 
     # Print table, but bold the highest in each row excluding the last
     for row in table:
-        row[2:9] = replace_highest_bold(row[2:9])
+        row[2:9+1] = replace_highest_bold(row[2:9+1])
 
         # \hline's
         if len(row) == 1:
