@@ -5,9 +5,9 @@
 #SBATCH --cpus-per-task=3
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-#SBATCH --time=1-00:00:00
+#SBATCH --time=4-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-539
+#SBATCH --array=0-593
 
 # My computer
 #gpumem=4500
@@ -37,10 +37,8 @@ suffix=$1; shift
 model=fcn
 methods=("vrada" "rdann" "cycada" "random" "dann" "deepjdot" "dann_grl" "none" "upper")  # slowest to fastest for shortest time
 debugnums=(1 2 3)
-#sources=("utdata_wrist"  "utdata_pocket")
-#targets=("utdata_pocket" "utdata_wrist")
-sources=("ucihar_1" "ucihar_2" "ucihar_3" "ucihar_4" "ucihar_5" "ucihar_6" "ucihar_7" "ucihar_8" "ucihar_9" "ucihar_10" "ucihar_11" "ucihar_12" "uwave_1" "uwave_2" "uwave_3" "uwave_4" "uwave_5" "uwave_6" "uwave_7" "uwave_8")
-targets=("ucihar_2" "ucihar_1" "ucihar_4" "ucihar_3" "ucihar_6" "ucihar_5" "ucihar_8" "ucihar_7" "ucihar_10" "ucihar_9" "ucihar_12" "ucihar_11" "uwave_2" "uwave_1" "uwave_4" "uwave_3" "uwave_6" "uwave_5" "uwave_8" "uwave_7")
+sources=("ucihar_1" "ucihar_2" "ucihar_3" "ucihar_4" "ucihar_5" "ucihar_6" "ucihar_7" "ucihar_8" "ucihar_9" "ucihar_10" "ucihar_11" "ucihar_12" "uwave_1" "uwave_2" "uwave_3" "uwave_4" "uwave_5" "uwave_6" "uwave_7" "uwave_8" "utdata_wrist"  "utdata_pocket")
+targets=("ucihar_2" "ucihar_1" "ucihar_4" "ucihar_3" "ucihar_6" "ucihar_5" "ucihar_8" "ucihar_7" "ucihar_10" "ucihar_9" "ucihar_12" "ucihar_11" "uwave_2" "uwave_1" "uwave_4" "uwave_3" "uwave_6" "uwave_5" "uwave_8" "uwave_7" "utdata_pocket" "utdata_wrist")
 
 # Make sure we're using the right number
 correct_min=0
@@ -79,15 +77,12 @@ fi
 steps=30000
 lr=0.0001
 model=fcn
+batch=64
 
 if [[ $method == "vrada" || $method == "rdann" ]]; then
     model="$method"
-    batch=64
 elif [[ $method == "random" ]]; then
-    batch=50
     additional_args+=("--log_val_steps=100")
-else
-    batch=250
 fi
 
 # Pretraining - VRADA requires its custom reconstruction loss

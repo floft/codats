@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-179
+#SBATCH --array=0-197
 
 # My computer
 #gpumem=4500
@@ -38,8 +38,8 @@ model=fcn
 methods=("none" "upper" "dann" "deepjdot" "random" "dann_grl" "cycada" "rdann" "vrada")
 #variants=("best" "last")
 variants=("best")
-sources=("ucihar_1" "ucihar_2" "ucihar_3" "ucihar_4" "ucihar_5" "ucihar_6" "ucihar_7" "ucihar_8" "ucihar_9" "ucihar_10" "ucihar_11" "ucihar_12" "uwave_1" "uwave_2" "uwave_3" "uwave_4" "uwave_5" "uwave_6" "uwave_7" "uwave_8")
-targets=("ucihar_2" "ucihar_1" "ucihar_4" "ucihar_3" "ucihar_6" "ucihar_5" "ucihar_8" "ucihar_7" "ucihar_10" "ucihar_9" "ucihar_12" "ucihar_11" "uwave_2" "uwave_1" "uwave_4" "uwave_3" "uwave_6" "uwave_5" "uwave_8" "uwave_7")
+sources=("ucihar_1" "ucihar_2" "ucihar_3" "ucihar_4" "ucihar_5" "ucihar_6" "ucihar_7" "ucihar_8" "ucihar_9" "ucihar_10" "ucihar_11" "ucihar_12" "uwave_1" "uwave_2" "uwave_3" "uwave_4" "uwave_5" "uwave_6" "uwave_7" "uwave_8" "utdata_wrist"  "utdata_pocket")
+targets=("ucihar_2" "ucihar_1" "ucihar_4" "ucihar_3" "ucihar_6" "ucihar_5" "ucihar_8" "ucihar_7" "ucihar_10" "ucihar_9" "ucihar_12" "ucihar_11" "uwave_2" "uwave_1" "uwave_4" "uwave_3" "uwave_6" "uwave_5" "uwave_8" "uwave_7" "utdata_pocket" "utdata_wrist")
 
 # Make sure we're using the right number
 correct_min=0
