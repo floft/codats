@@ -633,15 +633,15 @@ class uWaveBase(Dataset):
                     # Skip data we don't want
                     if self.users is not None:
                         if user not in self.users:
-                            print("Skipping user", user)
+                            #print("Skipping user", user)
                             continue
 
                     if self.days is not None:
                         if day not in self.days:
-                            print("Skipping day", day)
+                            #print("Skipping day", day)
                             continue
 
-                    print("Processing user", user, "day", day)
+                    #print("Processing user", user, "day", day)
                     contents = self.get_file_in_archive(archive, f)
                     new_data, new_labels = self.load_rar(io.BytesIO(contents))
                     data += new_data
@@ -745,15 +745,15 @@ class SleepBase(Dataset):
         # Skip data we don't want
         if self.days is not None:
             if day not in self.days:
-                print("Skipping day", day)
+                #print("Skipping day", day)
                 return None, None
 
         if self.users is not None:
             if user not in self.users:
-                print("Skipping user", user)
+                #print("Skipping user", user)
                 return None, None
 
-        print("Processing user", user, "day", day)
+        #print("Processing user", user, "day", day)
 
         stage_labels = d["stage"]
         rf = d["rf"]
