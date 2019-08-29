@@ -58,6 +58,7 @@ flags.DEFINE_boolean("compile_metrics", True, "Compile metrics loop with tf.func
 flags.DEFINE_boolean("test", False, "Use real test set for evaluation rather than validation set")
 flags.DEFINE_boolean("subdir", True, "Save models/logs in subdirectory of prefix")
 flags.DEFINE_boolean("debug", False, "Start new log/model/images rather than continuing from previous run")
+flags.DEFINE_boolean("time_training", False, "Print how long each step takes, instead of every 100 steps")
 flags.DEFINE_integer("debugnum", -1, "Specify exact log/model/images number to use rather than incrementing from last. (Don't pass both this and --debug at the same time.)")
 
 flags.mark_flag_as_required("model")
@@ -1004,6 +1005,10 @@ def main(argv):
 
         global_step.assign_add(1)
         t = time.time() - t
+
+        if FLAGS.time_training:
+            print(int(global_step), t, sep=",")
+            continue  # skip evaluation, checkpointing, etc. when timing
 
         if i%100 == 0:
             logging.info("step %d took %f seconds", int(global_step), t)
