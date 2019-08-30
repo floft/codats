@@ -654,6 +654,87 @@ def print_latex_results(results):
                 print("&", end=" ")
 
 
+def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
+        legend_separate=False):
+    """ Similar to plot_synthetic_results but for varying sequence lengths
+    on the real datasets """
+    seqlen_results = {}
+
+    # Get all the results for sequence lengths 10, 20, 30, ..., 100
+    for dataset in datasets:
+        files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
+        results = all_stats(files, sort_by_name=True)
+
+        seqlen = int(dataset.replace("seqlen", ""))
+
+        for result in results:
+            params = result["parameters"]
+            avgs = result["averages"]
+            method = params["method"]
+            dataset_name = params["dataset"]
+            mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
+            std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
+            print(dataset_name, method, seqlen, mean, std, sep=",")
+
+            if dataset_name not in seqlen_results:
+                seqlen_results[dataset_name] = {}
+            if method not in seqlen_results[dataset_name]:
+                seqlen_results[dataset_name][method] = []
+            seqlen_results[dataset_name][method].append((seqlen, mean, std))
+
+    # Make numpy array
+    for dataset, values in seqlen_results.items():
+        for method, seqlen_values in values.items():
+            seqlen_results[dataset][method] = \
+                np.array(seqlen_results[dataset][method], dtype=np.float32)
+
+    # See: https://matplotlib.org/3.1.1/api/markers_api.html
+    markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
+        "1", "2", "3", "4", "+", "x"]
+
+    for dataset_name, dataset_values in seqlen_results.items():
+        methods = list(dataset_values.keys())
+        data = list(dataset_values.values())
+        jitter = gen_jitter(len(data))  # "dodge" points so they don't overlap
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 4.1), dpi=100)
+
+        for i in range(len(data)):
+            method_data = np.array(data[i])
+            x = method_data[:, 0] + jitter[i]
+            y = method_data[:, 1]*100
+            std = method_data[:, 2]*100
+            method_name = nice_method_names[methods[i]]
+            plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+"--", alpha=0.8)
+
+        if show_title:
+            plt.title("Adaptation Methods with Varying Sequence Lengths on "+dataset_name)
+
+        ax.set_xlabel("Trimmed Sequence Length")
+        ax.set_ylabel("Target Domain Accuracy (%)")
+
+        if legend_separate:
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+            export_legend(legend)
+            legend.remove()
+        else:
+            # Put legend outside the graph http://stackoverflow.com/a/4701285
+            # Shrink current axis by 20%
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+
+        if save_plot:
+            plt.savefig(save_prefix+dataset_name+"."+suffix, bbox_inches='tight')
+
+    if save_plot:
+        plt.close()
+    else:
+        plt.show()
+
+
 def main(argv):
     # Ignoring label flipping won't work on best model since if it flips the
     # labels, it'll pick (and actually save during training) the wrong "best"
@@ -709,7 +790,7 @@ def main(argv):
         # "ucihar2",
         # "uwave2",
         # "real1",
-        "real2",
+        # "real2",
     ]
 
     for dataset in datasets:
@@ -723,6 +804,13 @@ def main(argv):
             # Just make the .tex code
             print_latex_results(results)
             print()
+
+    #
+    # Varying sequence lengths
+    #
+    variant = "best"
+    datasets = ["seqlen"+str(i) for i in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]]
+    plot_seqlen(datasets, variant)
 
 
 if __name__ == "__main__":

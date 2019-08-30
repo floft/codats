@@ -41,6 +41,7 @@ flags.DEFINE_integer("eval_shuffle_seed", 0, "Evaluation shuffle seed for repeat
 flags.DEFINE_integer("eval_max_examples", 0, "Max number of examples to evaluate for validation (default 0, i.e. all)")
 flags.DEFINE_boolean("train_on_source_valid", True, "Train on source validation data for small training sets (and in this case, don't draw much from the number)")
 flags.DEFINE_boolean("train_on_target_valid", False, "Train on target validation data for small training sets (i.e., Office-31)")
+flags.DEFINE_integer("trim_time_steps", 0, "For testing RNN vs. CNN handling varying time series length, allow triming to set size (default 0, i.e. use all data)")
 
 
 class Dataset:
@@ -132,6 +133,13 @@ class Dataset:
 
             x = tf.io.parse_tensor(parsed["x"], tf.float32)
             y = tf.io.parse_tensor(parsed["y"], tf.float32)
+
+            # Trim to certain time series length (note single example, not batch)
+            # shape before: [time_steps, features]
+            # shape after:  [min(time_steps, trim_time_steps), features]
+            if FLAGS.trim_time_steps != 0:
+                x = tf.slice(x, [0, 0],
+                    [tf.minimum(tf.shape(x)[0], FLAGS.trim_time_steps), tf.shape(x)[1]])
 
             return x, y
 
