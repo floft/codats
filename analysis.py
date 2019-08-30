@@ -553,6 +553,20 @@ def replace_highest_bold(values):
         return values
 
 
+def pretty_source_target_names(source, target):
+    replacements = [
+        ("ucihar_", "HAR "),
+        ("uwave_", "uWave "),
+        ("utdata_wrist", "Wrist"),
+        ("utdata_pocket", "Pocket"),
+    ]
+
+    source = make_replacements(source, replacements)
+    target = make_replacements(target, replacements)
+
+    return source, target
+
+
 def print_latex_results(results):
     """ There's >350 values to fill in... I'm not going to manually type that
     in LaTex, especially when I'll have to do it more than once. This is not
@@ -560,13 +574,6 @@ def print_latex_results(results):
     significantly_better = compute_significance(results)
     datasets = process_results(results, real_data=True)
     indexed_by_target = {}
-
-    replacements = [
-        ("ucihar_", "HAR "),
-        ("uwave_", "uWave "),
-        ("utdata_wrist", "Wrist"),
-        ("utdata_pocket", "Pocket"),
-    ]
 
     for dataset, data in datasets.items():
         values = dataset.split(" --> ")
@@ -577,9 +584,7 @@ def print_latex_results(results):
             source = None
             target = values[0]
 
-        source = make_replacements(source, replacements)
-        target = make_replacements(target, replacements)
-
+        source, target = pretty_source_target_names(source, target)
         adaptation = (source, target)
         indexed_by_target[adaptation] = {}
 
@@ -663,7 +668,7 @@ def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
     # Get all the results for sequence lengths 10, 20, 30, ..., 100
     for dataset in datasets:
         files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
-        results = all_stats(files, sort_by_name=True)
+        results = all_stats(files, sort_by_name=True, real_data=True)
 
         seqlen = int(dataset.replace("seqlen", ""))
 
@@ -671,10 +676,12 @@ def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
             params = result["parameters"]
             avgs = result["averages"]
             method = params["method"]
-            dataset_name = params["dataset"]
+            source, target = pretty_source_target_names(params["source"], params["target"])
+            dataset_name = source + " --> " + target
             mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
             std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
-            print(dataset_name, method, seqlen, mean, std, sep=",")
+
+            #print(dataset_name, method, seqlen, mean, std, sep=",")
 
             if dataset_name not in seqlen_results:
                 seqlen_results[dataset_name] = {}
