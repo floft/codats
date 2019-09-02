@@ -681,6 +681,11 @@ def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
             mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
             std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
 
+            # For upper bound, we set the source to the target
+            if method == "upper":
+                mean = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
+                std = avgs[avgs["Dataset"] == "Test A"]["Std"].values[0]
+
             #print(dataset_name, method, seqlen, mean, std, sep=",")
 
             if dataset_name not in seqlen_results:

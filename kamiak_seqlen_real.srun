@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=2-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-17
+#SBATCH --array=0-80
 
 #
 # Test how sequence length affects VRADA vs. DANN-GRL performance
@@ -45,7 +45,7 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("vrada" "dann_grl")
+methods=("vrada" "rdann" "cycada" "random" "dann" "deepjdot" "dann_grl" "none" "upper")
 debugnums=(1 2 3)
 sources=("ucihar_1" "uwave_1" "utdata_wrist")
 targets=("ucihar_2" "uwave_2" "utdata_pocket")
