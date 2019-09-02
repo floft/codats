@@ -22,6 +22,7 @@ flags.DEFINE_float("dropout", 0.05, "Dropout probability")
 flags.DEFINE_boolean("prenorm", False, "If true, use initial batchnorm before feeding to model")
 flags.DEFINE_integer("forecast_steps", 5, "How many time steps to forecast (must be less than length of data)")
 flags.DEFINE_boolean("domain_specific_bn", True, "Keep separate batchnorm exponential moving average for each domain")
+flags.DEFINE_boolean("vrada_return_z", True, "Use z for predictions in VRADA like in original paper")
 
 flags.register_validator("dropout", lambda v: v != 1, message="dropout cannot be 1")
 
@@ -403,7 +404,7 @@ class VradaFeatureExtractor(tf.keras.layers.Layer):
         ])
 
         if self.vrada:
-            self.rnn = VRNN(100, 100, return_z=True, return_sequences=False)
+            self.rnn = VRNN(100, 100, return_z=FLAGS.vrada_return_z, return_sequences=False)
         else:
             self.rnn = tf.keras.layers.LSTM(100, return_sequences=False)
 
