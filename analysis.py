@@ -659,11 +659,12 @@ def print_latex_results(results):
                 print("&", end=" ")
 
 
-def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
-        legend_separate=False):
+def plot_seqlen(datasets, variant, save_plot=True, show_title=False,
+        legend_separate=True, save_prefix="seqlen_", suffix="pdf"):
     """ Similar to plot_synthetic_results but for varying sequence lengths
     on the real datasets """
     seqlen_results = {}
+    dataset_filenames = {}
 
     # Get all the results for sequence lengths 10, 20, 30, ..., 100
     for dataset in datasets:
@@ -680,6 +681,9 @@ def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
             dataset_name = source + " --> " + target
             mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
             std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
+
+            # Filenames shouldn't have --> in them for Latex
+            dataset_filenames[dataset_name] = params["source"]
 
             # For upper bound, we set the source to the target
             if method == "upper":
@@ -729,7 +733,7 @@ def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
             legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-            export_legend(legend)
+            export_legend(legend, filename=save_prefix+"key."+suffix)
             legend.remove()
         else:
             # Put legend outside the graph http://stackoverflow.com/a/4701285
@@ -739,7 +743,8 @@ def plot_seqlen(datasets, variant, save_plot=False, show_title=True,
             plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
         if save_plot:
-            plt.savefig(save_prefix+dataset_name+"."+suffix, bbox_inches='tight')
+            dataset_filename = dataset_filenames[dataset_name]
+            plt.savefig(save_prefix+dataset_filename+"."+suffix, bbox_inches='tight')
 
     if save_plot:
         plt.close()
