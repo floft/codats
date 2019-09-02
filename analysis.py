@@ -807,7 +807,7 @@ def main(argv):
         # "ucihar2",
         # "uwave2",
         # "real1",
-        # "real2",
+        "real2",
     ]
 
     for dataset in datasets:
