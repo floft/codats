@@ -660,7 +660,8 @@ def print_latex_results(results):
 
 
 def plot_seqlen(datasets, variant, save_plot=True, show_title=False,
-        legend_separate=True, save_prefix="seqlen_", suffix="pdf"):
+        legend_separate=True, prefix="seqlen", suffix="pdf",
+        xaxis="Trimmed Sequence Length"):
     """ Similar to plot_synthetic_results but for varying sequence lengths
     on the real datasets """
     seqlen_results = {}
@@ -671,7 +672,7 @@ def plot_seqlen(datasets, variant, save_plot=True, show_title=False,
         files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
         results = all_stats(files, sort_by_name=True, real_data=True)
 
-        seqlen = int(dataset.replace("seqlen", ""))
+        seqlen = int(dataset.replace(prefix, ""))
 
         for result in results:
             params = result["parameters"]
@@ -726,14 +727,14 @@ def plot_seqlen(datasets, variant, save_plot=True, show_title=False,
         if show_title:
             plt.title("Adaptation Methods with Varying Sequence Lengths on "+dataset_name)
 
-        ax.set_xlabel("Trimmed Sequence Length")
+        ax.set_xlabel(xaxis)
         ax.set_ylabel("Target Domain Accuracy (%)")
 
         if legend_separate:
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
             legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-            export_legend(legend, filename=save_prefix+"key."+suffix)
+            export_legend(legend, filename=prefix+"_key."+suffix)
             legend.remove()
         else:
             # Put legend outside the graph http://stackoverflow.com/a/4701285
@@ -744,7 +745,7 @@ def plot_seqlen(datasets, variant, save_plot=True, show_title=False,
 
         if save_plot:
             dataset_filename = dataset_filenames[dataset_name]
-            plt.savefig(save_prefix+dataset_filename+"."+suffix, bbox_inches='tight')
+            plt.savefig(prefix+"_"+dataset_filename+"."+suffix, bbox_inches='tight')
 
     if save_plot:
         plt.close()
@@ -828,6 +829,15 @@ def main(argv):
     variant = "best"
     datasets = ["seqlen"+str(i) for i in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]]
     plot_seqlen(datasets, variant)
+
+    #
+    # Varying number of features
+    # (repurpose same seqlen function above)
+    #
+    variant = "best"
+    datasets = ["subset"+str(i) for i in [1, 2, 3]]
+    plot_seqlen(datasets, variant, prefix="subset", xaxis="Number of Features",
+        legend_separate=False)
 
 
 if __name__ == "__main__":

@@ -42,6 +42,7 @@ flags.DEFINE_integer("eval_max_examples", 0, "Max number of examples to evaluate
 flags.DEFINE_boolean("train_on_source_valid", True, "Train on source validation data for small training sets (and in this case, don't draw much from the number)")
 flags.DEFINE_boolean("train_on_target_valid", False, "Train on target validation data for small training sets (i.e., Office-31)")
 flags.DEFINE_integer("trim_time_steps", 0, "For testing RNN vs. CNN handling varying time series length, allow triming to set size (default 0, i.e. use all data)")
+flags.DEFINE_integer("feature_subset", 0, "For testing RNN vs. CNN handling varying numbers of features, allow only using a subset of the features (default 0, i.e. all the features")
 
 
 class Dataset:
@@ -140,6 +141,11 @@ class Dataset:
             if FLAGS.trim_time_steps != 0:
                 x = tf.slice(x, [0, 0],
                     [tf.minimum(tf.shape(x)[0], FLAGS.trim_time_steps), tf.shape(x)[1]])
+
+            # Trim to a certain number of features (the first feature_subset)
+            if FLAGS.feature_subset != 0:
+                x = tf.slice(x, [0, 0],
+                    [tf.shape(x)[0], tf.minimum(tf.shape(x)[1], FLAGS.feature_subset)])
 
             return x, y
 
