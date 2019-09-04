@@ -31,3 +31,26 @@ This requires the following packages:
     sbatch -J eval_synthetic kamiak_eval_synthetic.srun synthetic
 
 Then look at the resulting *results_\*.txt* file or analyze with *analysis.py*.
+
+## Supplementary materials experiments
+Train:
+
+    for i in {10..100..10}; do
+        sbatch -J seq$i kamiak_seqlen_real.srun seqlen$i --trim_time_steps=$i
+    done
+    for i in {1..6}; do
+        sbatch -J subset$i kamiak_seqlen_real.srun subset$i --feature_subset=$i
+    done
+
+Test:
+
+    for i in {10..100..10}; do
+        sbatch -J eval_seq$i kamiak_evalseqlen_real.srun seqlen$i
+    done
+    for i in {1..6}; do
+        sbatch -J eval_subset$i kamiak_evalseqlen_real.srun subset$i --feature_subset=$i
+    done
+
+Generate plots:
+
+    ./analysis.py
