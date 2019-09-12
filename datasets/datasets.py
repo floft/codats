@@ -134,7 +134,8 @@ class Dataset:
 
         def load(self):
             ...
-            return train_data, train_labels, test_data, test_labels
+            return train_data, train_labels, train_domain, \
+                test_data, test_labels, test_domain
 
     Also, add to the datasets={"something": Something, ...} dictionary below.
     """
@@ -166,7 +167,8 @@ class Dataset:
         self.test_percent = test_percent
 
         # Load the dataset
-        train_data, train_labels, test_data, test_labels = self.load()
+        train_data, train_labels, self.train_domain, \
+            test_data, test_labels, self.test_domain = self.load()
 
         if train_data is not None and train_labels is not None:
             self.train_data, self.train_labels = \
@@ -202,107 +204,19 @@ class Dataset:
         """ Perform conversions, etc. If you override,
         you should `return super().process(data, labels)` to make sure these
         options are handled. """
-        # TODO
         return data, labels
 
-    def one_hot(self, y, index_one=False):
-        """ One-hot encode y if not already 2D """
-        squeezed = np.squeeze(y)
-
-        if len(squeezed.shape) < 2:
-            if index_one:
-                y = np.eye(self.num_classes, dtype=np.float32)[squeezed.astype(np.int32) - 1]
-            else:
-                y = np.eye(self.num_classes, dtype=np.float32)[squeezed.astype(np.int32)]
-        else:
-            y = y.astype(np.float32)
-            assert squeezed.shape[1] == self.num_classes, "y.shape[1] != num_classes"
-
-        return y
-
-    def create_windows_x(self, x, window_size, overlap):
-        """
-        Concatenate along dim-1 to meet the desired window_size. We'll skip any
-        windows that reach beyond the end. Only process x (saves memory).
-
-        Two options (examples for window_size=5):
-            Overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
-                label of example 4; and window 1 will be 1,2,3,4,5 and the label of
-                example 5
-            No overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
-                label of example 4; and window 1 will be 5,6,7,8,9 and the label of
-                example 9
-        """
-        x = np.expand_dims(x, axis=1)
-
-        # No work required if the window size is 1, only part required is
-        # the above expand dims
-        if window_size == 1:
-            return x
-
-        windows_x = []
-        i = 0
-
-        while i < len(x)-window_size:
-            window_x = np.expand_dims(np.concatenate(x[i:i+window_size], axis=0), axis=0)
-            windows_x.append(window_x)
-
-            # Where to start the next window
-            if overlap:
-                i += 1
-            else:
-                i += window_size
-
-        return np.vstack(windows_x)
-
-    def create_windows_y(self, y, window_size, overlap):
-        """
-        Concatenate along dim-1 to meet the desired window_size. We'll skip any
-        windows that reach beyond the end. Only process y (saves memory).
-
-        Two options (examples for window_size=5):
-            Overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
-                label of example 4; and window 1 will be 1,2,3,4,5 and the label of
-                example 5
-            No overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
-                label of example 4; and window 1 will be 5,6,7,8,9 and the label of
-                example 9
-        """
-        # No work required if the window size is 1
-        if window_size == 1:
-            return y
-
-        windows_y = []
-        i = 0
-
-        while i < len(y)-window_size:
-            window_y = y[i+window_size-1]
-            windows_y.append(window_y)
-
-            # Where to start the next window
-            if overlap:
-                i += 1
-            else:
-                i += window_size
-
-        return np.hstack(windows_y)
-
-    def create_windows(self, x, y, window_size, overlap):
-        """ Split time-series data into windows """
-        x = self.create_windows_x(x, window_size, overlap)
-        y = self.create_windows_y(y, window_size, overlap)
-        return x, y
-
-    def train_test_split(self, x, y, random_state=42):
+    def train_test_split(self, x, y, domain, random_state=42):
         """
         Split x and y data into train/test sets
 
         Warning: train_test_split() is from sklearn but self.train_test_split()
         is this function, which is what you should use.
         """
-        x_train, x_test, y_train, y_test = train_test_split(x, y,
-            test_size=self.test_percent, stratify=y, random_state=random_state)
-        return x_train, y_train, x_test, y_test
+        x_train, x_test, y_train, y_test, domain_train, domain_test = \
+            train_test_split(x, y, domain, test_size=self.test_percent,
+            stratify=y, random_state=random_state)
+        return x_train, y_train, x_test, y_test, domain_train, domain_test
 
     def label_to_int(self, label_name):
         """ e.g. Bathe to 0 """
@@ -313,224 +227,21 @@ class Dataset:
         return self.class_labels[label_index]
 
 
-class UTDataBase(Dataset):
-    """ Base class for loading the wrist or pocket UT-Data-Complex datasets """
-    invertible = False
-    num_classes = 13
-    class_labels = ["walk", "stand", "jog", "sit", "bike", "upstairs",
-        "downstairs", "type", "write", "coffee", "talk", "smoke", "eat"]
-    window_size = 250  # 5s of data sampled at 50Hz
-    window_overlap = False
-    feature_names = [
-        "acc_x", "acc_y", "acc_z",
-        "lacc_x", "lacc_y", "lacc_z",
-        "gyr_x", "gyr_y", "gyr_z",
-        "mag_x", "mag_y", "mag_z",
-    ]
-
-    def __init__(self, utdata_domain, *args, **kwargs):
-        self.utdata_domain = utdata_domain
-        super().__init__(UTDataBase.num_classes, UTDataBase.class_labels,
-            UTDataBase.window_size, UTDataBase.window_overlap,
-            UTDataBase.feature_names, *args, **kwargs)
-
-    def download(self):
-        (dataset_fp,) = self.download_dataset(["ut-data-complex.rar"],
-            "https://www.utwente.nl/en/eemcs/ps/dataset-folder/")
-        return dataset_fp
-
-    def get_file_in_zip(self, archive, filename):
-        """ Read one file out of the already-open zip file """
-        with archive.open(filename) as fp:
-            contents = fp.read()
-        return contents
-
-    def parse_csv(self, content):
-        """ Load a CSV file, convert data columns to float and label to int """
-        lines = content.decode("utf-8").strip().split("\n")
-        data = []
-        labels = []
-
-        for line in lines:
-            timestamp, acc_x, acc_y, acc_z, lacc_x, lacc_y, lacc_z, \
-                gyr_x, gyr_y, gyr_z, mag_x, mag_y, mag_z, label = \
-                line.split(",")
-
-            acc_x = float(acc_x)
-            acc_y = float(acc_y)
-            acc_z = float(acc_z)
-            lacc_x = float(lacc_x)
-            lacc_y = float(lacc_y)
-            lacc_z = float(lacc_z)
-            gyr_x = float(gyr_x)
-            gyr_y = float(gyr_y)
-            gyr_z = float(gyr_z)
-            mag_x = float(mag_x)
-            mag_y = float(mag_y)
-            mag_z = float(mag_z)
-            label = int(label) - 11111  # make in range [0,12]
-
-            data.append([acc_x, acc_y, acc_z, lacc_x, lacc_y, lacc_z,
-                gyr_x, gyr_y, gyr_z, mag_x, mag_y, mag_z])
-            labels.append(label)
-
-        return data, labels
-
-    def load_file(self, filename):
-        """ Load RAR file, get CSV data from it, convert to numpy arrays """
-        with rarfile.RarFile(filename, "r") as archive:
-            filelist = archive.namelist()
-
-            for f in filelist:
-                if "UT_Data_Complex/" in f:
-                    folder, filename = os.path.split(
-                        f.replace("UT_Data_Complex/", ""))
-
-                    if self.utdata_domain+".csv" in filename:
-                        contents = self.get_file_in_zip(archive, f)
-                        data, labels = self.parse_csv(contents)
-
-        x = np.vstack(data).astype(np.float32)
-        y = np.hstack(labels).astype(np.float32)
-
-        return x, y
-
-    def load(self):
-        # Load data
-        dataset_fp = self.download()
-        all_data, all_labels = self.load_file(dataset_fp)
-        # Split time-series data into windows
-        x_windows, y_windows = self.create_windows(all_data, all_labels,
-            self.window_size, self.window_overlap)
-        # Split into train/test sets
-        train_data, train_labels, test_data, test_labels = \
-            self.train_test_split(x_windows, y_windows)
-
-        return train_data, train_labels, test_data, test_labels
-
-    def process(self, data, labels):
-        """ Normalize, one-hot encode labels """
-        #data = (data - 127.5) / 127.5  # TODO normalize
-        labels = self.one_hot(labels)
-        return super().process(data, labels)
+def one_to_n(n):
+    """ Return [1, 2, 3, ..., n] """
+    return list(range(1, n+1))
 
 
-class UTDataWrist(UTDataBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__("wrist", *args, **kwargs)
+def calc_domains(users, is_target):
+    """
+    Returns [list of domains...] based on the number of users and
+    if this is the target or not
+    """
+    if is_target:
+        assert len(users) == 1, "cannot have more than one target"
+        return [0]
 
-
-class UTDataPocket(UTDataBase):
-    def __init__(self, *args, **kwargs):
-        super().__init__("pocket", *args, **kwargs)
-
-
-class UnivariateCSVBase(Dataset):
-    """ Base class for loading UCR-like univarate datasets """
-    invertible = False
-    feature_names = ["univariate"]
-
-    def __init__(self, train_filename, test_filename, num_classes, class_labels,
-            *args, **kwargs):
-        self.train_filename = train_filename
-        self.test_filename = test_filename
-        super().__init__(num_classes, class_labels, None, None,
-            UnivariateCSVBase.feature_names, *args, **kwargs)
-
-    def load_file(self, filename):
-        """
-        Load CSV files in UCR time-series data format
-
-        Load a time-series dataset. This is set up to load data in the format of the
-        UCR time-series datasets (http://www.cs.ucr.edu/~eamonn/time_series_data/).
-        Or, see the generate_trivial_datasets.py for a trivial dataset.
-
-        Returns:
-            data - numpy array with data of shape (num_examples, num_features)
-            labels - numpy array with labels of shape: (num_examples, 1)
-        """
-        df = pd.read_csv(filename, header=None)
-        df_data = df.drop(0, axis=1).values.astype(np.float32)
-        df_labels = df.loc[:, df.columns == 0].values.astype(np.uint8)
-        return df_data, df_labels
-
-    def load(self):
-        train_data, train_labels = self.load_file(self.train_filename)
-        test_data, test_labels = self.load_file(self.test_filename)
-
-        return train_data, train_labels, test_data, test_labels
-
-    def process(self, data, labels):
-        """ Normalize, one-hot encode labels
-        Note: UCR datasets are index-one """
-        # For if we only have one feature
-        # [examples, time_steps] --> [examples, time_steps, 1]
-        if len(data.shape) < 3:
-            data = np.expand_dims(data, axis=2)
-
-        labels = self.one_hot(labels, index_one=True)
-        return super().process(data, labels)
-
-
-class MultivariateCSVBase(Dataset):
-    """ Base class for loading UCR-like multivariate datasets, where we have
-    x and y rather than just one feature """
-    invertible = False
-    feature_names = ["x", "y"]
-
-    def __init__(self, train_filename, test_filename, num_classes, class_labels,
-            *args, **kwargs):
-        self.train_filename = train_filename
-        self.test_filename = test_filename
-        super().__init__(num_classes, class_labels, None, None,
-            MultivariateCSVBase.feature_names, *args, **kwargs)
-
-    def load_file(self, filename):
-        """
-        Load CSV files in UCR time-series data format but with semicolons
-        delimiting the features
-
-        Returns:
-            data - numpy array with data of shape (num_examples, time_steps, num_features)
-            labels - numpy array with labels of shape: (num_examples, 1)
-        """
-        with open(filename, "r") as f:
-            data = []
-            labels = []
-
-            for line in f:
-                parts = line.split(",")
-                assert len(parts) >= 2, "must be at least a label and a data value"
-                label = int(parts[0])
-                values_str = parts[1:]
-                values = []
-
-                for value in values_str:
-                    features_str = value.split(";")
-                    features = [float(v) for v in features_str]
-                    values.append(features)
-
-                labels.append(label)
-                data.append(values)
-
-        data = np.array(data, dtype=np.float32)
-        labels = np.expand_dims(np.array(labels, dtype=np.int32), axis=1)
-
-        return data, labels
-
-    def load(self):
-        train_data, train_labels = self.load_file(self.train_filename)
-        test_data, test_labels = self.load_file(self.test_filename)
-
-        return train_data, train_labels, test_data, test_labels
-
-    def process(self, data, labels):
-        """ Normalize, one-hot encode labels
-        Note: UCR datasets are index-one """
-        assert len(data.shape) == 3, \
-            "multivariate data should be of shape [examples, time_steps, 2]"
-        labels = self.one_hot(labels, index_one=True)
-        return super().process(data, labels)
+    return one_to_n(len(users))
 
 
 class uWaveBase(Dataset):
@@ -548,10 +259,11 @@ class uWaveBase(Dataset):
     invertible = False
     feature_names = ["accel_x", "accel_y", "accel_z"]
 
-    def __init__(self, days, users, num_classes, class_labels,
+    def __init__(self, days, users, num_classes, class_labels, target,
             *args, **kwargs):
         self.days = days
         self.users = users
+        self.domains = calc_domains(days or users, target)
         super().__init__(num_classes, class_labels, None, None,
             uWaveBase.feature_names, *args, **kwargs)
 
@@ -618,6 +330,7 @@ class uWaveBase(Dataset):
         """ Load ZIP file containing all the RAR files """
         data = []
         labels = []
+        domain = []
 
         with zipfile.ZipFile(filename, "r") as archive:
             filelist = archive.namelist()
@@ -647,6 +360,16 @@ class uWaveBase(Dataset):
                     data += new_data
                     labels += new_labels
 
+                    # Which domain this is for
+                    if self.users is not None:
+                        domain_index = self.users.index(user)
+                    elif self.days is not None:
+                        domain_index = self.days.index(day)
+                    else:
+                        domain_index = 0
+
+                    domain += [self.domains[domain_index]]*len(new_labels)
+
         # Zero pad (appending zeros) to make all the same shape
         # for uwave_all, we know the max max([x.shape[0] for x in data]) = 315
         # and expand the dimensions to [1, time_steps, num_features] so we can
@@ -655,8 +378,9 @@ class uWaveBase(Dataset):
 
         #x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
+        domain = np.hstack(domain).astype(np.float32)
 
-        return data, y
+        return data, y, domain
 
     def pad_to(self, data, desired_length):
         """ Pad to the desired length """
@@ -668,18 +392,14 @@ class uWaveBase(Dataset):
     def load(self):
         # Load data
         dataset_fp = self.download()
-        x, y = self.load_zip(dataset_fp)
+        x, y, domain = self.load_zip(dataset_fp)
         # Split into train/test sets
-        train_data, train_labels, test_data, test_labels = \
-            self.train_test_split(x, y)
+        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
+            self.train_test_split(x, y, domain)
 
         # Normalize here since we know which data is train vs. test and we have
         # to normalize before we zero pad or the zero padding messes up the
         # mean calculation a lot
-        #
-        # TODO we'll normalize this twice, once here and once later on when
-        # generating the tfrecord files.... but, it's the same normalization, so
-        # it doesn't really matter, but it's a waste of time
         if FLAGS.normalize != "none":
             normalization = calc_normalization_jagged(train_data, FLAGS.normalize)
             train_data = apply_normalization_jagged(train_data, normalization)
@@ -691,16 +411,17 @@ class uWaveBase(Dataset):
         test_data = np.vstack([np.expand_dims(self.pad_to(d, 315), axis=0)
             for d in test_data]).astype(np.float32)
 
-        return train_data, train_labels, test_data, test_labels
+        return train_data, train_labels, train_domain, \
+            test_data, test_labels, test_domain
 
     def process(self, data, labels):
-        """ One-hot encode labels
-        Note: uWave classes are index-one """
+        """ uWave classes are index-one """
         # Check we have data in [examples, time_steps, 3]
         assert len(data.shape) == 3, "should shape [examples, time_steps, 3]"
         assert data.shape[2] == 3, "should have 3 features"
 
-        labels = self.one_hot(labels, index_one=True)
+        # Index one
+        labels = labels - 1
         return super().process(data, labels)
 
 
@@ -719,10 +440,11 @@ class SleepBase(Dataset):
     feature_names = ["real1", "real2", "real3", "real4", "real5",
         "imag1", "imag2", "imag3", "imag4", "imag5"]
 
-    def __init__(self, days, users, num_classes, class_labels,
+    def __init__(self, days, users, num_classes, class_labels, target,
             *args, **kwargs):
         self.days = days
         self.users = users
+        self.domains = calc_domains(days or users, target)
         super().__init__(num_classes, class_labels, None, None,
             SleepBase.feature_names, *args, **kwargs)
 
@@ -746,12 +468,12 @@ class SleepBase(Dataset):
         if self.days is not None:
             if day not in self.days:
                 #print("Skipping day", day)
-                return None, None
+                return None, None, None
 
         if self.users is not None:
             if user not in self.users:
                 #print("Skipping user", user)
-                return None, None
+                return None, None, None
 
         #print("Processing user", user, "day", day)
 
@@ -781,7 +503,17 @@ class SleepBase(Dataset):
         assert x.shape[2] == 10, \
             "Incorrect third dimension of x (not 10)"
 
-        return x, stage_labels
+        # Which domain this is for
+        if self.users is not None:
+            domain_index = self.users.index(user)
+        elif self.days is not None:
+            domain_index = self.days.index(day)
+        else:
+            domain_index = 0
+
+        domain = [self.domains[domain_index]]*len(stage_labels)
+
+        return x, stage_labels, domain
 
     def load_file(self, filename):
         """ Load ZIP file containing all the .npy files """
@@ -790,6 +522,7 @@ class SleepBase(Dataset):
 
         data = []
         labels = []
+        domains = []
 
         with zipfile.ZipFile(filename, "r") as archive:
             filelist = archive.namelist()
@@ -797,28 +530,26 @@ class SleepBase(Dataset):
             for f in filelist:
                 if ".npy" in f:
                     contents = self.get_file_in_archive(archive, f)
-                    x, label = self.process_examples(f, io.BytesIO(contents))
+                    x, label, domain = self.process_examples(f, io.BytesIO(contents))
 
-                    if x is not None and label is not None:
+                    if x is not None and label is not None and domain is not None:
                         data.append(x)
                         labels.append(label)
+                        domains.append(domain)
 
         x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
+        domains = np.hstack(domains).astype(np.float32)
 
-        return x, y
+        return x, y, domains
 
     def load(self):
-        x, y = self.load_file("RFSleep_unencrypted.zip")
-        train_data, train_labels, test_data, test_labels = \
-            self.train_test_split(x, y)
+        x, y, domain = self.load_file("RFSleep_unencrypted.zip")
+        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
+            self.train_test_split(x, y, domain)
 
-        return train_data, train_labels, test_data, test_labels
-
-    def process(self, data, labels):
-        """ One-hot encode labels """
-        labels = self.one_hot(labels, index_one=False)
-        return super().process(data, labels)
+        return train_data, train_labels, train_domain, \
+            test_data, test_labels, test_domain
 
 
 class UciHarBase(Dataset):
@@ -840,8 +571,9 @@ class UciHarBase(Dataset):
         "sitting", "standing", "laying",
     ]
 
-    def __init__(self, users, *args, **kwargs):
+    def __init__(self, users, target, *args, **kwargs):
         self.users = users
+        self.domains = calc_domains(users, target)
         super().__init__(UciHarBase.num_classes, UciHarBase.class_labels,
             None, None, UciHarBase.feature_names, *args, **kwargs)
 
@@ -893,7 +625,7 @@ class UciHarBase(Dataset):
         subjects = get_data_single(name+"/subject_"+name+".txt")
 
         data = np.array(data, dtype=np.float32)
-        labels = np.array(labels, dtype=np.float32)
+        labels = np.squeeze(np.array(labels, dtype=np.float32))
         # Squeeze so we can easily do selection on this later on
         subjects = np.squeeze(np.array(subjects, dtype=np.float32))
 
@@ -910,135 +642,54 @@ class UciHarBase(Dataset):
             test_data, test_labels, test_subjects = self.get_data(archive, "test")
 
         all_data = np.vstack([train_data, test_data]).astype(np.float32)
-        all_labels = np.vstack([train_labels, test_labels]).astype(np.float32)
+        all_labels = np.hstack([train_labels, test_labels]).astype(np.float32)
         all_subjects = np.hstack([train_subjects, test_subjects]).astype(np.float32)
 
         # All data if no selection
         if self.users is None:
-            return all_data, all_labels
+            raise NotImplementedError("currently you must select a subset of users")
+            # TODO create domain list for all users
+            #return all_data, all_labels
 
         # Otherwise, select based on the desired users
         data = []
         labels = []
+        domains = []
 
         for user in self.users:
             selection = all_subjects == user
             data.append(all_data[selection])
-            labels.append(all_labels[selection])
+            current_labels = all_labels[selection]
+            labels.append(current_labels)
+
+            domain_index = self.users.index(user)
+            domains.append([self.domains[domain_index]]*len(current_labels))
 
         x = np.vstack(data).astype(np.float32)
-        y = np.vstack(labels).astype(np.float32)
+        y = np.hstack(labels).astype(np.float32)
+        domains = np.hstack(domains).astype(np.float32)
 
         # print("Selected data:", self.users)
-        # print(x.shape, y.shape)
+        # print(x.shape, y.shape, domains.shape)
 
-        return x, y
+        return x, y, domains
 
     def load(self):
         dataset_fp = self.download()
-        x, y = self.load_file(dataset_fp)
-        train_data, train_labels, test_data, test_labels = \
-            self.train_test_split(x, y)
+        x, y, domain = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
+            self.train_test_split(x, y, domain)
 
-        return train_data, train_labels, test_data, test_labels
+        return train_data, train_labels, train_domain, \
+            test_data, test_labels, test_domain
 
     def process(self, data, labels):
-        """ One-hot encode labels """
-        labels = self.one_hot(labels, index_one=True)
+        # Index one
+        labels = labels - 1
         return super().process(data, labels)
 
 
-def make_trivial_negpos(filename_prefix):
-    """ make a -/+ dataset object, since we have a bunch of these """
-    class Trivial(UnivariateCSVBase):
-        invertible = False
-        num_classes = 2
-        class_labels = ["negative", "positive"]
-
-        def __init__(self, *args, **kwargs):
-            super().__init__(
-                "trivial/"+filename_prefix+"_TRAIN",
-                "trivial/"+filename_prefix+"_TEST",
-                Trivial.num_classes,
-                Trivial.class_labels,
-                *args, **kwargs)
-
-    return Trivial
-
-
-def make_trivial_lowhigh(filename_prefix):
-    """ make a low/high dataset object, since we have a bunch of these """
-    class Trivial(UnivariateCSVBase):
-        invertible = False
-        num_classes = 2
-        class_labels = ["low", "high"]
-
-        def __init__(self, *args, **kwargs):
-            super().__init__(
-                "trivial/"+filename_prefix+"_TRAIN",
-                "trivial/"+filename_prefix+"_TEST",
-                Trivial.num_classes,
-                Trivial.class_labels,
-                *args, **kwargs)
-
-    return Trivial
-
-
-def make_trivial_negpos_invertible(filename_prefix):
-    """ make a -/+ dataset object, since we have a bunch of these """
-    class Trivial(UnivariateCSVBase):
-        invertible = True
-        num_classes = 2
-        class_labels = ["negative", "positive"]
-
-        def __init__(self, *args, **kwargs):
-            super().__init__(
-                "trivial/"+filename_prefix+"_TRAIN",
-                "trivial/"+filename_prefix+"_TEST",
-                Trivial.num_classes,
-                Trivial.class_labels,
-                *args, **kwargs)
-
-    return Trivial
-
-
-def make_trivial_lowhigh_invertible(filename_prefix):
-    """ make a low/high dataset object, since we have a bunch of these """
-    class Trivial(UnivariateCSVBase):
-        invertible = True
-        num_classes = 2
-        class_labels = ["low", "high"]
-
-        def __init__(self, *args, **kwargs):
-            super().__init__(
-                "trivial/"+filename_prefix+"_TRAIN",
-                "trivial/"+filename_prefix+"_TEST",
-                Trivial.num_classes,
-                Trivial.class_labels,
-                *args, **kwargs)
-
-    return Trivial
-
-
-def make_trivial2d(filename_prefix):
-    """ make a -/+ dataset object """
-    class Trivial(MultivariateCSVBase):
-        invertible = False
-        num_classes = 2
-        class_labels = ["negative", "positive"]
-
-        def __init__(self, *args, **kwargs):
-            super().__init__(
-                "trivial/"+filename_prefix+"_TRAIN",
-                "trivial/"+filename_prefix+"_TEST",
-                Trivial.num_classes,
-                Trivial.class_labels,
-                *args, **kwargs)
-
-    return Trivial
-
-
-def make_uwave(days=None, users=None):
+def make_uwave(days=None, users=None, target=False):
     """ Make uWave dataset split on either days or users """
     class uWaveGestures(uWaveBase):
         invertible = False
@@ -1050,12 +701,12 @@ def make_uwave(days=None, users=None):
                 days, users,
                 uWaveGestures.num_classes,
                 uWaveGestures.class_labels,
-                *args, **kwargs)
+                target, *args, **kwargs)
 
     return uWaveGestures
 
 
-def make_sleep(days=None, users=None):
+def make_sleep(days=None, users=None, target=False):
     """ Make RF sleep dataset split on either days or users """
     class SleepDataset(SleepBase):
         invertible = False
@@ -1067,276 +718,100 @@ def make_sleep(days=None, users=None):
                 days, users,
                 SleepDataset.num_classes,
                 SleepDataset.class_labels,
-                *args, **kwargs)
+                target, *args, **kwargs)
 
     return SleepDataset
 
 
-def make_ucihar(users=None):
+def make_ucihar(users=None, target=False):
     """ Make UCI HAR dataset split on users """
     class UciHarDataset(UciHarBase):
         def __init__(self, *args, **kwargs):
-            super().__init__(users, *args, **kwargs)
+            super().__init__(users, target, *args, **kwargs)
 
     return UciHarDataset
 
 
 # List of datasets
 datasets = {
-    "utdata_wrist": UTDataWrist,
-    "utdata_pocket": UTDataPocket,
-    "uwave_all": make_uwave(),
-    "uwave_days_first": make_uwave(days=[1, 2, 3]),
-    "uwave_days_second": make_uwave(days=[5, 6, 7]),
-    # Note: in the paper, call these "participants" not "users"
-    "uwave_users_first": make_uwave(users=[1, 2, 3, 4]),
-    "uwave_users_second": make_uwave(users=[5, 6, 7, 8]),
-    # From user X to user Y
-    "uwave_1": make_uwave(users=[1]),
-    "uwave_2": make_uwave(users=[2]),
-    "uwave_3": make_uwave(users=[3]),
-    "uwave_4": make_uwave(users=[4]),
-    "uwave_5": make_uwave(users=[5]),
-    "uwave_6": make_uwave(users=[6]),
-    "uwave_7": make_uwave(users=[7]),
-    "uwave_8": make_uwave(users=[8]),
+    "ucihar_t1": make_ucihar(users=[1], target=True),
+    "ucihar_t2": make_ucihar(users=[2], target=True),
+    "ucihar_t3": make_ucihar(users=[3], target=True),
+    "ucihar_t4": make_ucihar(users=[4], target=True),
+    "ucihar_t5": make_ucihar(users=[5], target=True),
+    "ucihar_t6": make_ucihar(users=[6], target=True),
+    "ucihar_t7": make_ucihar(users=[7], target=True),
+    "ucihar_t8": make_ucihar(users=[8], target=True),
+    "ucihar_t9": make_ucihar(users=[9], target=True),
+    "ucihar_t10": make_ucihar(users=[10], target=True),
+    "ucihar_t11": make_ucihar(users=[11], target=True),
+    "ucihar_t12": make_ucihar(users=[12], target=True),
+    "ucihar_t13": make_ucihar(users=[13], target=True),
+    "ucihar_t14": make_ucihar(users=[14], target=True),
+    "ucihar_t15": make_ucihar(users=[15], target=True),
+    "ucihar_t16": make_ucihar(users=[16], target=True),
+    "ucihar_t17": make_ucihar(users=[17], target=True),
+    "ucihar_t18": make_ucihar(users=[18], target=True),
+    "ucihar_t19": make_ucihar(users=[19], target=True),
+    "ucihar_t20": make_ucihar(users=[20], target=True),
+    "ucihar_t21": make_ucihar(users=[21], target=True),
+    "ucihar_t22": make_ucihar(users=[22], target=True),
+    "ucihar_t23": make_ucihar(users=[23], target=True),
+    "ucihar_t24": make_ucihar(users=[24], target=True),
+    "ucihar_t25": make_ucihar(users=[25], target=True),
+    "ucihar_t26": make_ucihar(users=[26], target=True),
+    "ucihar_t27": make_ucihar(users=[27], target=True),
+    "ucihar_t28": make_ucihar(users=[28], target=True),
+    "ucihar_t29": make_ucihar(users=[29], target=True),
+    "ucihar_t30": make_ucihar(users=[30], target=True),
 
-    "sleep_all": make_sleep(),
-    # Split users randomly since if first/second half then there's a large
-    # difference in amount of data
-    # import random; a = list(range(0, 26)); random.shuffle(a)
-    # First and second: a[:13], a[13:]
-    "sleep_users_first": make_sleep(users=[21, 15, 25, 19, 8, 23, 4, 12, 10, 13, 0, 9, 3]),
-    "sleep_users_second": make_sleep(users=[17, 16, 6, 2, 20, 18, 1, 24, 22, 7, 5, 11, 14]),
-
-    # The users of the original train/test sets
-    "ucihar_train": make_ucihar(users=[1, 3, 5, 6, 7, 8, 11, 14, 15, 16, 17, 19, 21, 22, 23, 25, 26, 27, 28, 29, 30]),
-    "ucihar_test": make_ucihar(users=[2, 4, 9, 10, 12, 13, 18, 20, 24]),
-    # Split the users in half
-    "ucihar_first": make_ucihar(users=[17, 6, 22, 9, 19, 20, 14, 15, 16, 10, 26, 23, 7, 4, 24]),
-    "ucihar_second": make_ucihar(users=[11, 3, 1, 30, 13, 28, 12, 21, 27, 25, 18, 5, 8, 29, 2]),
-    # From user X to user Y
     "ucihar_1": make_ucihar(users=[1]),
-    "ucihar_2": make_ucihar(users=[2]),
-    "ucihar_3": make_ucihar(users=[3]),
-    "ucihar_4": make_ucihar(users=[4]),
-    "ucihar_5": make_ucihar(users=[5]),
-    "ucihar_6": make_ucihar(users=[6]),
-    "ucihar_7": make_ucihar(users=[7]),
-    "ucihar_8": make_ucihar(users=[8]),
-    "ucihar_9": make_ucihar(users=[9]),
-    "ucihar_10": make_ucihar(users=[10]),
-    "ucihar_11": make_ucihar(users=[11]),
-    "ucihar_12": make_ucihar(users=[12]),
-    "ucihar_13": make_ucihar(users=[13]),
-    "ucihar_14": make_ucihar(users=[14]),
-    "ucihar_15": make_ucihar(users=[15]),
-    "ucihar_16": make_ucihar(users=[16]),
-    "ucihar_17": make_ucihar(users=[17]),
-    "ucihar_18": make_ucihar(users=[18]),
-    "ucihar_19": make_ucihar(users=[19]),
-    "ucihar_20": make_ucihar(users=[20]),
-    "ucihar_21": make_ucihar(users=[21]),
-    "ucihar_22": make_ucihar(users=[22]),
-    "ucihar_23": make_ucihar(users=[23]),
-    "ucihar_24": make_ucihar(users=[24]),
-    "ucihar_25": make_ucihar(users=[25]),
-    "ucihar_26": make_ucihar(users=[26]),
-    "ucihar_27": make_ucihar(users=[27]),
-    "ucihar_28": make_ucihar(users=[28]),
-    "ucihar_29": make_ucihar(users=[29]),
-    "ucihar_30": make_ucihar(users=[30]),
+    "ucihar_1,2": make_ucihar(users=[1, 2]),
+    "ucihar_1,2,3": make_ucihar(users=[1, 2, 3]),
 
+    "uwave_t1": make_uwave(users=[1], target=True),
+    "uwave_t2": make_uwave(users=[2], target=True),
+    "uwave_t3": make_uwave(users=[3], target=True),
+    "uwave_t4": make_uwave(users=[4], target=True),
+    "uwave_t5": make_uwave(users=[5], target=True),
+    "uwave_t6": make_uwave(users=[6], target=True),
+    "uwave_t7": make_uwave(users=[7], target=True),
+    "uwave_t8": make_uwave(users=[8], target=True),
 
-    # "positive_slope": make_trivial_negpos("positive_slope"),
-    # "positive_slope_low": make_trivial_negpos("positive_slope_low"),
-    # "positive_slope_noise": make_trivial_negpos("positive_slope_noise"),
-    # "positive_sine": make_trivial_negpos("positive_sine"),
-    # "positive_sine_low": make_trivial_negpos("positive_sine_low"),
-    # "positive_sine_noise": make_trivial_negpos("positive_sine_noise"),
-    # "freq_low": make_trivial_lowhigh("freq_low"),
-    # "freq_high": make_trivial_lowhigh("freq_high"),
-    # "freq_low_amp_noise": make_trivial_lowhigh("freq_low_amp_noise"),
-    # "freq_high_amp_noise": make_trivial_lowhigh("freq_high_amp_noise"),
-    # "freq_low_freq_noise": make_trivial_lowhigh("freq_low_freq_noise"),
-    # "freq_high_freq_noise": make_trivial_lowhigh("freq_high_freq_noise"),
-    # "freq_low_freqamp_noise": make_trivial_lowhigh("freq_low_freqamp_noise"),
-    # "freq_high_freqamp_noise": make_trivial_lowhigh("freq_high_freqamp_noise"),
-    # "freqshift_low": make_trivial_lowhigh("freqshift_low"),
-    # "freqshift_high": make_trivial_lowhigh("freqshift_high"),
-    # "freqscale_low": make_trivial_lowhigh("freqscale_low"),
-    # "freqscale_high": make_trivial_lowhigh("freqscale_high"),
-    # "line1low": make_trivial_negpos_invertible("line1low"),
-    # "line1high": make_trivial_negpos_invertible("line1high"),
-    # "line2low": make_trivial_negpos_invertible("line2low"),
-    # "line2high": make_trivial_negpos_invertible("line2high"),
-    # "sine1low": make_trivial_negpos_invertible("sine1low"),
-    # "sine1high": make_trivial_negpos_invertible("sine1high"),
-    # "sine2low": make_trivial_negpos_invertible("sine2low"),
-    # "sine2high": make_trivial_negpos_invertible("sine2high"),
-    # "sine3low": make_trivial_negpos_invertible("sine3low"),
-    # "sine3high": make_trivial_negpos_invertible("sine3high"),
-    # "sine4low": make_trivial_negpos_invertible("sine4low"),
-    # "sine4high": make_trivial_negpos_invertible("sine4high"),
+    "uwave_1": make_uwave(users=[1]),
+    "uwave_1,2": make_uwave(users=[1, 2]),
+    "uwave_1,2,3": make_uwave(users=[1, 2, 3]),
 
-    # "lineslope1low": make_trivial_negpos_invertible("lineslope1low"),
-    # "lineslope1high": make_trivial_negpos_invertible("lineslope1high"),
-    # "lineslope2low": make_trivial_negpos_invertible("lineslope2low"),
-    # "lineslope2high": make_trivial_negpos_invertible("lineslope2high"),
-    # "sineslope1low": make_trivial_negpos_invertible("sineslope1low"),
-    # "sineslope1high": make_trivial_negpos_invertible("sineslope1high"),
-    # "sineslope2low": make_trivial_negpos_invertible("sineslope2low"),
-    # "sineslope2high": make_trivial_negpos_invertible("sineslope2high"),
-    # "sineslope3low": make_trivial_negpos_invertible("sineslope3low"),
-    # "sineslope3high": make_trivial_negpos_invertible("sineslope3high"),
-    # "sineslope4low": make_trivial_negpos_invertible("sineslope4low"),
-    # "sineslope4high": make_trivial_negpos_invertible("sineslope4high"),
+    "sleep_t0": make_sleep(users=[0], target=True),
+    "sleep_t1": make_sleep(users=[1], target=True),
+    "sleep_t2": make_sleep(users=[2], target=True),
+    "sleep_t3": make_sleep(users=[3], target=True),
+    "sleep_t4": make_sleep(users=[4], target=True),
+    "sleep_t5": make_sleep(users=[5], target=True),
+    "sleep_t6": make_sleep(users=[6], target=True),
+    "sleep_t7": make_sleep(users=[7], target=True),
+    "sleep_t8": make_sleep(users=[8], target=True),
+    "sleep_t9": make_sleep(users=[9], target=True),
+    "sleep_t10": make_sleep(users=[10], target=True),
+    "sleep_t11": make_sleep(users=[11], target=True),
+    "sleep_t12": make_sleep(users=[12], target=True),
+    "sleep_t13": make_sleep(users=[13], target=True),
+    "sleep_t14": make_sleep(users=[14], target=True),
+    "sleep_t15": make_sleep(users=[15], target=True),
+    "sleep_t16": make_sleep(users=[16], target=True),
+    "sleep_t17": make_sleep(users=[17], target=True),
+    "sleep_t18": make_sleep(users=[18], target=True),
+    "sleep_t19": make_sleep(users=[19], target=True),
+    "sleep_t20": make_sleep(users=[20], target=True),
+    "sleep_t21": make_sleep(users=[21], target=True),
+    "sleep_t22": make_sleep(users=[22], target=True),
+    "sleep_t23": make_sleep(users=[23], target=True),
+    "sleep_t24": make_sleep(users=[24], target=True),
+    "sleep_t25": make_sleep(users=[25], target=True),
 
-    # "freqshift_a": make_trivial_negpos("freqshift_a"),
-    # "freqshift_b0": make_trivial_negpos("freqshift_b0"),
-    # "freqshift_b1": make_trivial_negpos("freqshift_b1"),
-    # "freqshift_b2": make_trivial_negpos("freqshift_b2"),
-    # "freqshift_b3": make_trivial_negpos("freqshift_b3"),
-    # "freqshift_b4": make_trivial_negpos("freqshift_b4"),
-    # "freqshift_b5": make_trivial_negpos("freqshift_b5"),
-    "freqshift_phase_a": make_trivial_negpos("freqshift_phase_a"),
-    "freqshift_phase_b0": make_trivial_negpos("freqshift_phase_b0"),
-    "freqshift_phase_b1": make_trivial_negpos("freqshift_phase_b1"),
-    "freqshift_phase_b2": make_trivial_negpos("freqshift_phase_b2"),
-    "freqshift_phase_b3": make_trivial_negpos("freqshift_phase_b3"),
-    "freqshift_phase_b4": make_trivial_negpos("freqshift_phase_b4"),
-    "freqshift_phase_b5": make_trivial_negpos("freqshift_phase_b5"),
-    "freqshift_phase_b6": make_trivial_negpos("freqshift_phase_b6"),
-    "freqshift_phase_b7": make_trivial_negpos("freqshift_phase_b7"),
-    "freqshift_phase_b8": make_trivial_negpos("freqshift_phase_b8"),
-    "freqshift_phase_b9": make_trivial_negpos("freqshift_phase_b9"),
-    "freqshift_phase_b10": make_trivial_negpos("freqshift_phase_b10"),
-
-    # "freqscale_a": make_trivial_negpos("freqscale_a"),
-    # "freqscale_b0": make_trivial_negpos("freqscale_b0"),
-    # "freqscale_b1": make_trivial_negpos("freqscale_b1"),
-    # "freqscale_b2": make_trivial_negpos("freqscale_b2"),
-    # "freqscale_b3": make_trivial_negpos("freqscale_b3"),
-    # "freqscale_b4": make_trivial_negpos("freqscale_b4"),
-    # "freqscale_b5": make_trivial_negpos("freqscale_b5"),
-    "freqscale_phase_a": make_trivial_negpos("freqscale_phase_a"),
-    "freqscale_phase_b0": make_trivial_negpos("freqscale_phase_b0"),
-    "freqscale_phase_b1": make_trivial_negpos("freqscale_phase_b1"),
-    "freqscale_phase_b2": make_trivial_negpos("freqscale_phase_b2"),
-    "freqscale_phase_b3": make_trivial_negpos("freqscale_phase_b3"),
-    "freqscale_phase_b4": make_trivial_negpos("freqscale_phase_b4"),
-    "freqscale_phase_b5": make_trivial_negpos("freqscale_phase_b5"),
-    "freqscale_phase_b6": make_trivial_negpos("freqscale_phase_b6"),
-    "freqscale_phase_b7": make_trivial_negpos("freqscale_phase_b7"),
-    "freqscale_phase_b8": make_trivial_negpos("freqscale_phase_b8"),
-    "freqscale_phase_b9": make_trivial_negpos("freqscale_phase_b9"),
-    "freqscale_phase_b10": make_trivial_negpos("freqscale_phase_b10"),
-
-    "freqscaleshift_phase_a": make_trivial_negpos("freqscaleshift_phase_a"),
-    "freqscaleshift_phase_b0": make_trivial_negpos("freqscaleshift_phase_b0"),
-    "freqscaleshift_phase_b1": make_trivial_negpos("freqscaleshift_phase_b1"),
-    "freqscaleshift_phase_b2": make_trivial_negpos("freqscaleshift_phase_b2"),
-    "freqscaleshift_phase_b3": make_trivial_negpos("freqscaleshift_phase_b3"),
-    "freqscaleshift_phase_b4": make_trivial_negpos("freqscaleshift_phase_b4"),
-    "freqscaleshift_phase_b5": make_trivial_negpos("freqscaleshift_phase_b5"),
-    "freqscaleshift_phase_b6": make_trivial_negpos("freqscaleshift_phase_b6"),
-    "freqscaleshift_phase_b7": make_trivial_negpos("freqscaleshift_phase_b7"),
-    "freqscaleshift_phase_b8": make_trivial_negpos("freqscaleshift_phase_b8"),
-    "freqscaleshift_phase_b9": make_trivial_negpos("freqscaleshift_phase_b9"),
-    "freqscaleshift_phase_b10": make_trivial_negpos("freqscaleshift_phase_b10"),
-
-    # "jumpmean_a": make_trivial_negpos("jumpmean_a"),
-    # "jumpmean_b0": make_trivial_negpos("jumpmean_b0"),
-    # "jumpmean_b1": make_trivial_negpos("jumpmean_b1"),
-    # "jumpmean_b2": make_trivial_negpos("jumpmean_b2"),
-    # "jumpmean_b3": make_trivial_negpos("jumpmean_b3"),
-    # "jumpmean_b4": make_trivial_negpos("jumpmean_b4"),
-    # "jumpmean_b5": make_trivial_negpos("jumpmean_b5"),
-    # "jumpmean_phase_a": make_trivial_negpos("jumpmean_phase_a"),
-    # "jumpmean_phase_b0": make_trivial_negpos("jumpmean_phase_b0"),
-    # "jumpmean_phase_b1": make_trivial_negpos("jumpmean_phase_b1"),
-    # "jumpmean_phase_b2": make_trivial_negpos("jumpmean_phase_b2"),
-    # "jumpmean_phase_b3": make_trivial_negpos("jumpmean_phase_b3"),
-    # "jumpmean_phase_b4": make_trivial_negpos("jumpmean_phase_b4"),
-    # "jumpmean_phase_b5": make_trivial_negpos("jumpmean_phase_b5"),
-
-    # "rotate_phase_a": make_trivial2d("rotate_phase_a"),
-    # "rotate_phase_b0": make_trivial2d("rotate_phase_b0"),
-    # "rotate_phase_b1": make_trivial2d("rotate_phase_b1"),
-    # "rotate_phase_b2": make_trivial2d("rotate_phase_b2"),
-    # "rotate_phase_b3": make_trivial2d("rotate_phase_b3"),
-    # "rotate_phase_b4": make_trivial2d("rotate_phase_b4"),
-    # "rotate_phase_b5": make_trivial2d("rotate_phase_b5"),
-    # "rotate_phase_b6": make_trivial2d("rotate_phase_b6"),
-    # "rotate_phase_b7": make_trivial2d("rotate_phase_b7"),
-    # "rotate_phase_b8": make_trivial2d("rotate_phase_b8"),
-    # "rotate_phase_b9": make_trivial2d("rotate_phase_b9"),
-    # "rotate_phase_b10": make_trivial2d("rotate_phase_b10"),
-
-    "rotate2_phase_a": make_trivial2d("rotate2_phase_a"),
-    "rotate2_phase_b0": make_trivial2d("rotate2_phase_b0"),
-    "rotate2_phase_b1": make_trivial2d("rotate2_phase_b1"),
-    "rotate2_phase_b2": make_trivial2d("rotate2_phase_b2"),
-    "rotate2_phase_b3": make_trivial2d("rotate2_phase_b3"),
-    "rotate2_phase_b4": make_trivial2d("rotate2_phase_b4"),
-    "rotate2_phase_b5": make_trivial2d("rotate2_phase_b5"),
-    "rotate2_phase_b6": make_trivial2d("rotate2_phase_b6"),
-    "rotate2_phase_b7": make_trivial2d("rotate2_phase_b7"),
-    "rotate2_phase_b8": make_trivial2d("rotate2_phase_b8"),
-    "rotate2_phase_b9": make_trivial2d("rotate2_phase_b9"),
-    "rotate2_phase_b10": make_trivial2d("rotate2_phase_b10"),
-
-    # "rotate2_noise_a": make_trivial2d("rotate2_noise_a"),
-    # "rotate2_noise_b0": make_trivial2d("rotate2_noise_b0"),
-    # "rotate2_noise_b1": make_trivial2d("rotate2_noise_b1"),
-    # "rotate2_noise_b2": make_trivial2d("rotate2_noise_b2"),
-    # "rotate2_noise_b3": make_trivial2d("rotate2_noise_b3"),
-    # "rotate2_noise_b4": make_trivial2d("rotate2_noise_b4"),
-    # "rotate2_noise_b5": make_trivial2d("rotate2_noise_b5"),
-    # "rotate2_noise_b6": make_trivial2d("rotate2_noise_b6"),
-    # "rotate2_noise_b7": make_trivial2d("rotate2_noise_b7"),
-    # "rotate2_noise_b8": make_trivial2d("rotate2_noise_b8"),
-    # "rotate2_noise_b9": make_trivial2d("rotate2_noise_b9"),
-    # "rotate2_noise_b10": make_trivial2d("rotate2_noise_b10"),
-
-    "freqshiftrotate_phase_a": make_trivial2d("freqshiftrotate_phase_a"),
-    "freqshiftrotate_phase_b0": make_trivial2d("freqshiftrotate_phase_b0"),
-    "freqshiftrotate_phase_b1": make_trivial2d("freqshiftrotate_phase_b1"),
-    "freqshiftrotate_phase_b2": make_trivial2d("freqshiftrotate_phase_b2"),
-    "freqshiftrotate_phase_b3": make_trivial2d("freqshiftrotate_phase_b3"),
-    "freqshiftrotate_phase_b4": make_trivial2d("freqshiftrotate_phase_b4"),
-    "freqshiftrotate_phase_b5": make_trivial2d("freqshiftrotate_phase_b5"),
-    "freqshiftrotate_phase_b6": make_trivial2d("freqshiftrotate_phase_b6"),
-    "freqshiftrotate_phase_b7": make_trivial2d("freqshiftrotate_phase_b7"),
-    "freqshiftrotate_phase_b8": make_trivial2d("freqshiftrotate_phase_b8"),
-    "freqshiftrotate_phase_b9": make_trivial2d("freqshiftrotate_phase_b9"),
-    "freqshiftrotate_phase_b10": make_trivial2d("freqshiftrotate_phase_b10"),
-
-    "freqscalerotate_phase_a": make_trivial2d("freqscalerotate_phase_a"),
-    "freqscalerotate_phase_b0": make_trivial2d("freqscalerotate_phase_b0"),
-    "freqscalerotate_phase_b1": make_trivial2d("freqscalerotate_phase_b1"),
-    "freqscalerotate_phase_b2": make_trivial2d("freqscalerotate_phase_b2"),
-    "freqscalerotate_phase_b3": make_trivial2d("freqscalerotate_phase_b3"),
-    "freqscalerotate_phase_b4": make_trivial2d("freqscalerotate_phase_b4"),
-    "freqscalerotate_phase_b5": make_trivial2d("freqscalerotate_phase_b5"),
-    "freqscalerotate_phase_b6": make_trivial2d("freqscalerotate_phase_b6"),
-    "freqscalerotate_phase_b7": make_trivial2d("freqscalerotate_phase_b7"),
-    "freqscalerotate_phase_b8": make_trivial2d("freqscalerotate_phase_b8"),
-    "freqscalerotate_phase_b9": make_trivial2d("freqscalerotate_phase_b9"),
-    "freqscalerotate_phase_b10": make_trivial2d("freqscalerotate_phase_b10"),
-
-    "freqscaleshiftrotate_phase_a": make_trivial2d("freqscaleshiftrotate_phase_a"),
-    "freqscaleshiftrotate_phase_b0": make_trivial2d("freqscaleshiftrotate_phase_b0"),
-    "freqscaleshiftrotate_phase_b1": make_trivial2d("freqscaleshiftrotate_phase_b1"),
-    "freqscaleshiftrotate_phase_b2": make_trivial2d("freqscaleshiftrotate_phase_b2"),
-    "freqscaleshiftrotate_phase_b3": make_trivial2d("freqscaleshiftrotate_phase_b3"),
-    "freqscaleshiftrotate_phase_b4": make_trivial2d("freqscaleshiftrotate_phase_b4"),
-    "freqscaleshiftrotate_phase_b5": make_trivial2d("freqscaleshiftrotate_phase_b5"),
-    "freqscaleshiftrotate_phase_b6": make_trivial2d("freqscaleshiftrotate_phase_b6"),
-    "freqscaleshiftrotate_phase_b7": make_trivial2d("freqscaleshiftrotate_phase_b7"),
-    "freqscaleshiftrotate_phase_b8": make_trivial2d("freqscaleshiftrotate_phase_b8"),
-    "freqscaleshiftrotate_phase_b9": make_trivial2d("freqscaleshiftrotate_phase_b9"),
-    "freqscaleshiftrotate_phase_b10": make_trivial2d("freqscaleshiftrotate_phase_b10"),
+    "sleep_0": make_sleep(users=[0]),
+    "sleep_0,1": make_sleep(users=[0, 1]),
+    "sleep_0,1,2": make_sleep(users=[0, 1, 2]),
 }
 
 
@@ -1372,18 +847,18 @@ def names():
 
 
 def main(argv):
-    sd, td = load_da("utdata_wrist", "utdata_pocket")
+    sd, td = load_da("ucihar_1", "ucihar_t2")
 
     print("Source")
-    print(sd.train_data, sd.train_labels)
-    print(sd.train_data.shape, sd.train_labels.shape)
-    print(sd.test_data, sd.test_labels)
-    print(sd.test_data.shape, sd.test_labels.shape)
+    print(sd.train_data, sd.train_labels, sd.train_domain)
+    print(sd.train_data.shape, sd.train_labels.shape, sd.train_domain.shape)
+    print(sd.test_data, sd.test_labels, sd.test_domain)
+    print(sd.test_data.shape, sd.test_labels.shape, sd.test_domain.shape)
     print("Target")
-    print(td.train_data, td.train_labels)
-    print(td.train_data.shape, td.train_labels.shape)
-    print(td.test_data, td.test_labels)
-    print(td.test_data.shape, td.test_labels.shape)
+    print(td.train_data, td.train_labels, td.train_domain)
+    print(td.train_data.shape, td.train_labels.shape, td.train_domain.shape)
+    print(td.test_data, td.test_labels, td.test_domain)
+    print(td.test_data.shape, td.test_labels.shape, td.test_domain.shape)
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ from datasets import calc_normalization, apply_normalization
 # Hack to import from ../pool.py
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from pool import run_job_pool
-from tfrecord import write_tfrecord, tfrecord_filename
+from tfrecord import write_tfrecord, tfrecord_filename_simple
 
 FLAGS = flags.FLAGS
 
@@ -43,10 +43,10 @@ flags.DEFINE_boolean("parallel", True, "Run multiple in parallel")
 flags.DEFINE_integer("jobs", 0, "Parallel jobs (if parallel=True), 0 = # of CPU cores")
 
 
-def write(filename, x, y):
-    if x is not None and y is not None:
+def write(filename, x, y, domain):
+    if x is not None and y is not None and domain is not None:
         if not os.path.exists(filename):
-            write_tfrecord(filename, x, y)
+            write_tfrecord(filename, x, y, domain)
         else:
             print("Skipping:", filename, "(already exists)")
     else:
@@ -67,13 +67,14 @@ def to_numpy(value):
     return value
 
 
-def valid_split(data, labels, seed=None, validation_size=1000):
+def valid_split(data, labels, domain, seed=None, validation_size=1000):
     """ Split training data into train/valid as is commonly done, taking 1000
     random (labeled, even if target domain) samples for a validation set """
     assert len(data) == len(labels), "len(data) != len(labels)"
     p = shuffle_together_calc(len(data), seed=seed)
     data = to_numpy(data)[p]
     labels = to_numpy(labels)[p]
+    domain = to_numpy(domain)[p]
 
     # If data to small then 1000 examples is too much, so shrink validation size
     # to max of 20%
@@ -84,19 +85,22 @@ def valid_split(data, labels, seed=None, validation_size=1000):
 
     valid_data = data[:validation_size]
     valid_labels = labels[:validation_size]
+    valid_domain = domain[:validation_size]
     train_data = data[validation_size:]
     train_labels = labels[validation_size:]
+    train_domain = domain[validation_size:]
 
-    return valid_data, valid_labels, train_data, train_labels
+    return valid_data, valid_labels, valid_domain, \
+        train_data, train_labels, train_domain
 
 
 def save_one(source, target, dataset_name, dataset, seed,
         already_normalized=False):
     """ Save single dataset """
-    valid_data, valid_labels, \
-        train_data, train_labels = \
+    valid_data, valid_labels, valid_domain, \
+        train_data, train_labels, train_domain = \
         valid_split(dataset.train_data, dataset.train_labels,
-            seed=seed)
+            dataset.train_domain, seed=seed)
 
     # Calculate normalization only on the training data
     if FLAGS.normalize != "none" and not already_normalized:
@@ -110,12 +114,12 @@ def save_one(source, target, dataset_name, dataset, seed,
         test_data = dataset.test_data
 
     # Saving
-    write(tfrecord_filename(source, target, dataset_name, "train"),
-        train_data, train_labels)
-    write(tfrecord_filename(source, target, dataset_name, "valid"),
-        valid_data, valid_labels)
-    write(tfrecord_filename(source, target, dataset_name, "test"),
-        test_data, dataset.test_labels)
+    write(tfrecord_filename_simple(dataset_name, "train"),
+        train_data, train_labels, train_domain)
+    write(tfrecord_filename_simple(dataset_name, "valid"),
+        valid_data, valid_labels, valid_domain)
+    write(tfrecord_filename_simple(dataset_name, "test"),
+        test_data, dataset.test_labels, dataset.test_domain)
 
 
 def save_adaptation(source, target, seed=0):
@@ -141,376 +145,9 @@ def save_adaptation(source, target, seed=0):
 def main(argv):
     # Only list one direction since the other direction uses the same data
     adaptation_problems = [
-        ("utdata_wrist", None),
-        ("utdata_pocket", None),
-        ("utdata_wrist", "utdata_pocket"),
-
-        ("uwave_days_first", None),
-        ("uwave_days_second", None),
-        ("uwave_days_first", "uwave_days_second"),
-        ("uwave_users_first", None),
-        ("uwave_users_second", None),
-        ("uwave_users_first", "uwave_users_second"),
-        ("uwave_1", None),
-        ("uwave_2", None),
-        ("uwave_1", "uwave_2"),
-        ("uwave_3", None),
-        ("uwave_4", None),
-        ("uwave_3", "uwave_4"),
-        ("uwave_5", None),
-        ("uwave_6", None),
-        ("uwave_5", "uwave_6"),
-        ("uwave_7", None),
-        ("uwave_8", None),
-        ("uwave_7", "uwave_8"),
-
-        ("sleep_users_first", None),
-        ("sleep_users_second", None),
-        ("sleep_users_first", "sleep_users_second"),
-
-        ("ucihar_first", None),
-        ("ucihar_second", None),
-        ("ucihar_first", "ucihar_second"),
-        ("ucihar_train", None),
-        ("ucihar_test", None),
-        ("ucihar_train", "ucihar_test"),
-        # Adjacent pairs, otherwise there's tons
-        ("ucihar_1", None),
-        ("ucihar_2", None),
-        ("ucihar_1", "ucihar_2"),
-        ("ucihar_3", None),
-        ("ucihar_4", None),
-        ("ucihar_3", "ucihar_4"),
-        ("ucihar_5", None),
-        ("ucihar_6", None),
-        ("ucihar_5", "ucihar_6"),
-        ("ucihar_7", None),
-        ("ucihar_8", None),
-        ("ucihar_7", "ucihar_8"),
-        ("ucihar_9", None),
-        ("ucihar_10", None),
-        ("ucihar_9", "ucihar_10"),
-        ("ucihar_11", None),
-        ("ucihar_12", None),
-        ("ucihar_11", "ucihar_12"),
-        ("ucihar_13", None),
-        ("ucihar_14", None),
-        ("ucihar_13", "ucihar_14"),
-        ("ucihar_15", None),
-        ("ucihar_16", None),
-        ("ucihar_15", "ucihar_16"),
-        ("ucihar_17", None),
-        ("ucihar_18", None),
-        ("ucihar_17", "ucihar_18"),
-        ("ucihar_19", None),
-        ("ucihar_20", None),
-        ("ucihar_19", "ucihar_20"),
-        ("ucihar_21", None),
-        ("ucihar_22", None),
-        ("ucihar_21", "ucihar_22"),
-        ("ucihar_23", None),
-        ("ucihar_24", None),
-        ("ucihar_23", "ucihar_24"),
-        ("ucihar_25", None),
-        ("ucihar_26", None),
-        ("ucihar_25", "ucihar_26"),
-        ("ucihar_27", None),
-        ("ucihar_28", None),
-        ("ucihar_27", "ucihar_28"),
-        ("ucihar_29", None),
-        ("ucihar_30", None),
-        ("ucihar_29", "ucihar_30"),
-
-        # ("positive_slope", "positive_slope_low"),
-        # ("positive_slope", "positive_slope_noise"),
-        # ("positive_sine", "positive_sine_low"),
-        # ("positive_sine", "positive_sine_noise"),
-
-        # ("freq_low", "freq_high"),
-        # ("freq_low", "freq_low_amp_noise"),
-        # ("freq_low", "freq_low_freq_noise"),
-        # ("freq_low", "freq_low_freqamp_noise"),
-        # ("freq_high", "freq_high_amp_noise"),
-        # ("freq_high", "freq_high_freq_noise"),
-        # ("freq_high", "freq_high_freqamp_noise"),
-        # ("freq_low", "freq_high_freqamp_noise"),
-        # ("freq_high", "freq_low_freqamp_noise"),
-
-        # ("freqshift_low", "freqshift_high"),
-        # ("freqscale_low", "freqscale_high"),
-
-        # ("line1low", "line1high"),
-        # ("line2low", "line2high"),
-        # ("sine1low", "sine1high"),
-        # ("sine2low", "sine2high"),
-        # ("sine3low", "sine3high"),
-        # ("sine4low", "sine4high"),
-
-        # ("lineslope1low", "lineslope1high"),
-        # ("lineslope2low", "lineslope2high"),
-        # ("sineslope1low", "sineslope1high"),
-        # ("sineslope2low", "sineslope2high"),
-        # ("sineslope3low", "sineslope3high"),
-        # ("sineslope4low", "sineslope4high"),
-
-        # ("freqshift_b0", None),
-        # ("freqshift_b1", None),
-        # ("freqshift_b2", None),
-        # ("freqshift_b3", None),
-        # ("freqshift_b4", None),
-        # ("freqshift_b5", None),
-        # ("freqshift_a", "freqshift_b0"),
-        # ("freqshift_a", "freqshift_b1"),
-        # ("freqshift_a", "freqshift_b2"),
-        # ("freqshift_a", "freqshift_b3"),
-        # ("freqshift_a", "freqshift_b4"),
-        # ("freqshift_a", "freqshift_b5"),
-
-        ("freqshift_phase_b0", None),
-        ("freqshift_phase_b1", None),
-        ("freqshift_phase_b2", None),
-        ("freqshift_phase_b3", None),
-        ("freqshift_phase_b4", None),
-        ("freqshift_phase_b5", None),
-        ("freqshift_phase_b6", None),
-        ("freqshift_phase_b7", None),
-        ("freqshift_phase_b8", None),
-        ("freqshift_phase_b9", None),
-        ("freqshift_phase_b10", None),
-        ("freqshift_phase_a", "freqshift_phase_b0"),
-        ("freqshift_phase_a", "freqshift_phase_b1"),
-        ("freqshift_phase_a", "freqshift_phase_b2"),
-        ("freqshift_phase_a", "freqshift_phase_b3"),
-        ("freqshift_phase_a", "freqshift_phase_b4"),
-        ("freqshift_phase_a", "freqshift_phase_b5"),
-        ("freqshift_phase_a", "freqshift_phase_b6"),
-        ("freqshift_phase_a", "freqshift_phase_b7"),
-        ("freqshift_phase_a", "freqshift_phase_b8"),
-        ("freqshift_phase_a", "freqshift_phase_b9"),
-        ("freqshift_phase_a", "freqshift_phase_b10"),
-
-        # ("freqscale_b0", None),
-        # ("freqscale_b1", None),
-        # ("freqscale_b2", None),
-        # ("freqscale_b3", None),
-        # ("freqscale_b4", None),
-        # ("freqscale_b5", None),
-        # ("freqscale_a", "freqscale_b0"),
-        # ("freqscale_a", "freqscale_b1"),
-        # ("freqscale_a", "freqscale_b2"),
-        # ("freqscale_a", "freqscale_b3"),
-        # ("freqscale_a", "freqscale_b4"),
-        # ("freqscale_a", "freqscale_b5"),
-
-        ("freqscale_phase_b0", None),
-        ("freqscale_phase_b1", None),
-        ("freqscale_phase_b2", None),
-        ("freqscale_phase_b3", None),
-        ("freqscale_phase_b4", None),
-        ("freqscale_phase_b5", None),
-        ("freqscale_phase_b6", None),
-        ("freqscale_phase_b7", None),
-        ("freqscale_phase_b8", None),
-        ("freqscale_phase_b9", None),
-        ("freqscale_phase_b10", None),
-        ("freqscale_phase_a", "freqscale_phase_b0"),
-        ("freqscale_phase_a", "freqscale_phase_b1"),
-        ("freqscale_phase_a", "freqscale_phase_b2"),
-        ("freqscale_phase_a", "freqscale_phase_b3"),
-        ("freqscale_phase_a", "freqscale_phase_b4"),
-        ("freqscale_phase_a", "freqscale_phase_b5"),
-        ("freqscale_phase_a", "freqscale_phase_b6"),
-        ("freqscale_phase_a", "freqscale_phase_b7"),
-        ("freqscale_phase_a", "freqscale_phase_b8"),
-        ("freqscale_phase_a", "freqscale_phase_b9"),
-        ("freqscale_phase_a", "freqscale_phase_b10"),
-
-        ("freqscaleshift_phase_b0", None),
-        ("freqscaleshift_phase_b1", None),
-        ("freqscaleshift_phase_b2", None),
-        ("freqscaleshift_phase_b3", None),
-        ("freqscaleshift_phase_b4", None),
-        ("freqscaleshift_phase_b5", None),
-        ("freqscaleshift_phase_b6", None),
-        ("freqscaleshift_phase_b7", None),
-        ("freqscaleshift_phase_b8", None),
-        ("freqscaleshift_phase_b9", None),
-        ("freqscaleshift_phase_b10", None),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b0"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b1"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b2"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b3"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b4"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b5"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b6"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b7"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b8"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b9"),
-        ("freqscaleshift_phase_a", "freqscaleshift_phase_b10"),
-
-        # ("jumpmean_b0", None),
-        # ("jumpmean_b1", None),
-        # ("jumpmean_b2", None),
-        # ("jumpmean_b3", None),
-        # ("jumpmean_b4", None),
-        # ("jumpmean_b5", None),
-        # ("jumpmean_a", "jumpmean_b0"),
-        # ("jumpmean_a", "jumpmean_b1"),
-        # ("jumpmean_a", "jumpmean_b2"),
-        # ("jumpmean_a", "jumpmean_b3"),
-        # ("jumpmean_a", "jumpmean_b4"),
-        # ("jumpmean_a", "jumpmean_b5"),
-
-        # ("jumpmean_phase_b0", None),
-        # ("jumpmean_phase_b1", None),
-        # ("jumpmean_phase_b2", None),
-        # ("jumpmean_phase_b3", None),
-        # ("jumpmean_phase_b4", None),
-        # ("jumpmean_phase_b5", None),
-        # ("jumpmean_phase_a", "jumpmean_phase_b0"),
-        # ("jumpmean_phase_a", "jumpmean_phase_b1"),
-        # ("jumpmean_phase_a", "jumpmean_phase_b2"),
-        # ("jumpmean_phase_a", "jumpmean_phase_b3"),
-        # ("jumpmean_phase_a", "jumpmean_phase_b4"),
-        # ("jumpmean_phase_a", "jumpmean_phase_b5"),
-
-        # ("rotate_phase_b0", None),
-        # ("rotate_phase_b1", None),
-        # ("rotate_phase_b2", None),
-        # ("rotate_phase_b3", None),
-        # ("rotate_phase_b4", None),
-        # ("rotate_phase_b5", None),
-        # ("rotate_phase_b6", None),
-        # ("rotate_phase_b7", None),
-        # ("rotate_phase_b8", None),
-        # ("rotate_phase_b9", None),
-        # ("rotate_phase_b10", None),
-        # ("rotate_phase_a", "rotate_phase_b0"),
-        # ("rotate_phase_a", "rotate_phase_b1"),
-        # ("rotate_phase_a", "rotate_phase_b2"),
-        # ("rotate_phase_a", "rotate_phase_b3"),
-        # ("rotate_phase_a", "rotate_phase_b4"),
-        # ("rotate_phase_a", "rotate_phase_b5"),
-        # ("rotate_phase_a", "rotate_phase_b6"),
-        # ("rotate_phase_a", "rotate_phase_b7"),
-        # ("rotate_phase_a", "rotate_phase_b8"),
-        # ("rotate_phase_a", "rotate_phase_b9"),
-        # ("rotate_phase_a", "rotate_phase_b10"),
-
-        ("rotate2_phase_b0", None),
-        ("rotate2_phase_b1", None),
-        ("rotate2_phase_b2", None),
-        ("rotate2_phase_b3", None),
-        ("rotate2_phase_b4", None),
-        ("rotate2_phase_b5", None),
-        ("rotate2_phase_b6", None),
-        ("rotate2_phase_b7", None),
-        ("rotate2_phase_b8", None),
-        ("rotate2_phase_b9", None),
-        ("rotate2_phase_b10", None),
-        ("rotate2_phase_a", "rotate2_phase_b0"),
-        ("rotate2_phase_a", "rotate2_phase_b1"),
-        ("rotate2_phase_a", "rotate2_phase_b2"),
-        ("rotate2_phase_a", "rotate2_phase_b3"),
-        ("rotate2_phase_a", "rotate2_phase_b4"),
-        ("rotate2_phase_a", "rotate2_phase_b5"),
-        ("rotate2_phase_a", "rotate2_phase_b6"),
-        ("rotate2_phase_a", "rotate2_phase_b7"),
-        ("rotate2_phase_a", "rotate2_phase_b8"),
-        ("rotate2_phase_a", "rotate2_phase_b9"),
-        ("rotate2_phase_a", "rotate2_phase_b10"),
-
-        # ("rotate2_noise_b0", None),
-        # ("rotate2_noise_b1", None),
-        # ("rotate2_noise_b2", None),
-        # ("rotate2_noise_b3", None),
-        # ("rotate2_noise_b4", None),
-        # ("rotate2_noise_b5", None),
-        # ("rotate2_noise_b6", None),
-        # ("rotate2_noise_b7", None),
-        # ("rotate2_noise_b8", None),
-        # ("rotate2_noise_b9", None),
-        # ("rotate2_noise_b10", None),
-        # ("rotate2_noise_a", "rotate2_noise_b0"),
-        # ("rotate2_noise_a", "rotate2_noise_b1"),
-        # ("rotate2_noise_a", "rotate2_noise_b2"),
-        # ("rotate2_noise_a", "rotate2_noise_b3"),
-        # ("rotate2_noise_a", "rotate2_noise_b4"),
-        # ("rotate2_noise_a", "rotate2_noise_b5"),
-        # ("rotate2_noise_a", "rotate2_noise_b6"),
-        # ("rotate2_noise_a", "rotate2_noise_b7"),
-        # ("rotate2_noise_a", "rotate2_noise_b8"),
-        # ("rotate2_noise_a", "rotate2_noise_b9"),
-        # ("rotate2_noise_a", "rotate2_noise_b10"),
-
-        ("freqshiftrotate_phase_b0", None),
-        ("freqshiftrotate_phase_b1", None),
-        ("freqshiftrotate_phase_b2", None),
-        ("freqshiftrotate_phase_b3", None),
-        ("freqshiftrotate_phase_b4", None),
-        ("freqshiftrotate_phase_b5", None),
-        ("freqshiftrotate_phase_b6", None),
-        ("freqshiftrotate_phase_b7", None),
-        ("freqshiftrotate_phase_b8", None),
-        ("freqshiftrotate_phase_b9", None),
-        ("freqshiftrotate_phase_b10", None),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b0"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b1"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b2"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b3"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b4"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b5"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b6"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b7"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b8"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b9"),
-        ("freqshiftrotate_phase_a", "freqshiftrotate_phase_b10"),
-
-        ("freqscalerotate_phase_b0", None),
-        ("freqscalerotate_phase_b1", None),
-        ("freqscalerotate_phase_b2", None),
-        ("freqscalerotate_phase_b3", None),
-        ("freqscalerotate_phase_b4", None),
-        ("freqscalerotate_phase_b5", None),
-        ("freqscalerotate_phase_b6", None),
-        ("freqscalerotate_phase_b7", None),
-        ("freqscalerotate_phase_b8", None),
-        ("freqscalerotate_phase_b9", None),
-        ("freqscalerotate_phase_b10", None),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b0"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b1"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b2"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b3"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b4"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b5"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b6"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b7"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b8"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b9"),
-        ("freqscalerotate_phase_a", "freqscalerotate_phase_b10"),
-
-        ("freqscaleshiftrotate_phase_b0", None),
-        ("freqscaleshiftrotate_phase_b1", None),
-        ("freqscaleshiftrotate_phase_b2", None),
-        ("freqscaleshiftrotate_phase_b3", None),
-        ("freqscaleshiftrotate_phase_b4", None),
-        ("freqscaleshiftrotate_phase_b5", None),
-        ("freqscaleshiftrotate_phase_b6", None),
-        ("freqscaleshiftrotate_phase_b7", None),
-        ("freqscaleshiftrotate_phase_b8", None),
-        ("freqscaleshiftrotate_phase_b9", None),
-        ("freqscaleshiftrotate_phase_b10", None),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b0"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b1"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b2"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b3"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b4"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b5"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b6"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b7"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b8"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b9"),
-        ("freqscaleshiftrotate_phase_a", "freqscaleshiftrotate_phase_b10"),
+        ("ucihar_1,2,3", "ucihar_t4"),
+        ("uwave_1,2,3", "uwave_t4"),
+        ("sleep_0,1,2", "sleep_t3"),
     ]
 
     # Save tfrecord files for each of the adaptation problems

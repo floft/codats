@@ -28,7 +28,7 @@ from absl import app
 from absl import flags
 
 from datasets import datasets, inversions
-from datasets.tfrecord import tfrecord_filename
+from datasets.tfrecord import tfrecord_filename_simple
 
 FLAGS = flags.FLAGS
 
@@ -118,6 +118,7 @@ class Dataset:
         feature_description = {
             'x': tf.io.FixedLenFeature([], tf.string),
             'y': tf.io.FixedLenFeature([], tf.string),
+            'domain': tf.io.FixedLenFeature([], tf.string),
         }
 
         def _parse_example_function(example_proto):
@@ -134,6 +135,7 @@ class Dataset:
 
             x = tf.io.parse_tensor(parsed["x"], tf.float32)
             y = tf.io.parse_tensor(parsed["y"], tf.float32)
+            domain = tf.io.parse_tensor(parsed["domain"], tf.float32)
 
             # Trim to certain time series length (note single example, not batch)
             # shape before: [time_steps, features]
@@ -147,7 +149,7 @@ class Dataset:
                 x = tf.slice(x, [0, 0],
                     [tf.shape(x)[0], tf.minimum(tf.shape(x)[1], FLAGS.feature_subset)])
 
-            return x, y
+            return x, y, domain
 
         # Interleave the tfrecord files
         files = tf.data.Dataset.from_tensor_slices(filenames)
@@ -236,14 +238,13 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
         fn = os.path.join("datasets", filename)
         return [fn] if os.path.exists(fn) else []
 
-    names = (source_name, target_name)
-    source_train_filenames = _path(tfrecord_filename(*names, source_name, "train"))
-    source_valid_filenames = _path(tfrecord_filename(*names, source_name, "valid"))
-    source_test_filenames = _path(tfrecord_filename(*names, source_name, "test"))
+    source_train_filenames = _path(tfrecord_filename_simple(source_name, "train"))
+    source_valid_filenames = _path(tfrecord_filename_simple(source_name, "valid"))
+    source_test_filenames = _path(tfrecord_filename_simple(source_name, "test"))
     if target_name is not None:
-        target_train_filenames = _path(tfrecord_filename(*names, target_name, "train"))
-        target_valid_filenames = _path(tfrecord_filename(*names, target_name, "valid"))
-        target_test_filenames = _path(tfrecord_filename(*names, target_name, "test"))
+        target_train_filenames = _path(tfrecord_filename_simple(target_name, "train"))
+        target_valid_filenames = _path(tfrecord_filename_simple(target_name, "valid"))
+        target_test_filenames = _path(tfrecord_filename_simple(target_name, "test"))
 
     # By default use validation data as the "test" data, unless test=True
     if not test:
