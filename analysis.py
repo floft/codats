@@ -22,7 +22,7 @@ flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
 nice_method_names = {
     "none": "Lower Bound",  # (no adaptation)
     "upper": "Upper Bound",  # (train on target)
-    "dann": "CoDATS + DANN-Shu",
+    "dann_shu": "CoDATS + DANN-Shu",
     "dann_grl": "CoDATS + DANN-GRL",
     "cyclegan": "CoDATS + CycleGAN",
     "cyclegan_dann": "CoDATS + CycleGAN + DANN",

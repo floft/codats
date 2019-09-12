@@ -35,7 +35,7 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("vrada" "rdann" "cycada" "random" "dann" "deepjdot" "dann_grl" "none" "upper")  # slowest to fastest for shortest time
+methods=("vrada" "rdann" "cycada" "random" "dann_shu" "deepjdot" "dann_grl" "none" "upper")  # slowest to fastest for shortest time
 debugnums=(1 2 3)
 sources=("ucihar_1" "ucihar_2" "ucihar_3" "ucihar_4" "ucihar_5" "ucihar_6" "ucihar_7" "ucihar_8" "ucihar_9" "ucihar_10" "ucihar_11" "ucihar_12" "uwave_1" "uwave_2" "uwave_3" "uwave_4" "uwave_5" "uwave_6" "uwave_7" "uwave_8" "utdata_wrist"  "utdata_pocket")
 targets=("ucihar_2" "ucihar_1" "ucihar_4" "ucihar_3" "ucihar_6" "ucihar_5" "ucihar_8" "ucihar_7" "ucihar_10" "ucihar_9" "ucihar_12" "ucihar_11" "uwave_2" "uwave_1" "uwave_4" "uwave_3" "uwave_6" "uwave_5" "uwave_8" "uwave_7" "utdata_pocket" "utdata_wrist")

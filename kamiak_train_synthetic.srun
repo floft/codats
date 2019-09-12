@@ -34,7 +34,7 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-methods=("vrada" "rdann" "cycada" "random" "dann" "deepjdot" "dann_grl" "none" "upper")  # slowest to fastest for shortest time
+methods=("vrada" "rdann" "cycada" "random" "dann_shu" "deepjdot" "dann_grl" "none" "upper")  # slowest to fastest for shortest time
 debugnums=(1 2 3)
 sources=(
     "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"  "freqshift_phase_a"

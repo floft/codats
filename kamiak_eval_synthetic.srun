@@ -34,8 +34,7 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-# methods=("none" "dann" "deepjdot" "cycada" "rdann" "vrada" "upper")
-methods=("none" "upper" "dann" "deepjdot" "random" "dann_grl" "cycada" "rdann" "vrada")
+methods=("none" "upper" "dann_shu" "deepjdot" "random" "dann_grl" "cycada" "rdann" "vrada")
 #variants=("best" "last")
 variants=("best")
 sources=(

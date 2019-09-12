@@ -35,7 +35,7 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("vrada" "rdann" "cycada" "random" "dann" "deepjdot" "dann_grl" "none" "upper")
+methods=("vrada" "rdann" "cycada" "random" "dann_shu" "deepjdot" "dann_grl" "none" "upper")
 #variants=("best" "last")
 variants=("best")
 sources=("ucihar_1" "uwave_1" "utdata_wrist")

@@ -27,7 +27,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("dann_loss", "gan", ["gan", "lsgan", "wgan"], "When using adversarial adaptation, which loss to use")
@@ -76,7 +76,7 @@ def get_directory_names():
         "cyclegan_dann": "-cyclegan_dann",
         "forecast": "-forecast",
         "cycada": "-cycada",
-        "dann": "-dann",  # TODO rename dann_shu eventually
+        "dann_shu": "-dann_shu",
         "dann_grl": "-dann_grl",
         "deepjdot": "-deepjdot",
         "rdann": "-rdann",  # same as DANN but use with --model=rdann
@@ -781,11 +781,11 @@ def main(argv):
         os.makedirs(log_dir)
 
     # We adapt for any method other than "none", "cyclegan", or "forecast"
-    adapt = FLAGS.method in ["cycada", "dann", "dann_grl", "pseudo",
+    adapt = FLAGS.method in ["cycada", "dann_shu", "dann_grl", "pseudo",
         "instance", "cyclegan_dann", "rdann", "vrada"]
 
     assert not (adapt and not FLAGS.task), \
-        "If adapting (e.g. method=dann), must not pass --notask"
+        "If adapting (e.g. method=dann_grl), must not pass --notask"
 
     # For adaptation, we'll be concatenating together half source and half target
     # data, so to keep the batch_size about the same, we'll cut it in half

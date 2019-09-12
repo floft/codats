@@ -85,7 +85,7 @@ def main(argv):
 
     if FLAGS.latex:
         methods = [
-            "none", "random", "rdann", "vrada", "dann_grl", "dann", "cycada",
+            "none", "random", "rdann", "vrada", "dann_grl", "dann_shu", "cycada",
             "deepjdot", "upper",
         ]
         for method in methods:
