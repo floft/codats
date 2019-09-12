@@ -27,6 +27,7 @@ import tensorflow as tf
 
 from absl import app
 from absl import flags
+from sklearn.model_selection import train_test_split
 
 import datasets
 
@@ -68,30 +69,22 @@ def to_numpy(value):
 
 
 def valid_split(data, labels, domain, seed=None, validation_size=1000):
-    """ Split training data into train/valid as is commonly done, taking 1000
-    random (labeled, even if target domain) samples for a validation set """
-    assert len(data) == len(labels), "len(data) != len(labels)"
-    p = shuffle_together_calc(len(data), seed=seed)
-    data = to_numpy(data)[p]
-    labels = to_numpy(labels)[p]
-    domain = to_numpy(domain)[p]
+    """ (Stratified) split training data into train/valid as is commonly done,
+    taking 1000 random (stratified) (labeled, even if target domain) samples for
+    a validation set """
+    percentage_size = int(0.2*len(data))
+    if percentage_size > validation_size:
+        test_size = validation_size
+    else:
+        print("Warning: using smaller validation set size", percentage_size)
+        test_size = 0.2  # 20% maximum
 
-    # If data to small then 1000 examples is too much, so shrink validation size
-    # to max of 20%
-    orig_valid_size = validation_size
-    validation_size = min(validation_size, int(0.2*len(data)))
-    if orig_valid_size != validation_size:
-        print("Warning: using smaller validation set size:", validation_size)
+    x_train, x_valid, y_train, y_valid, domain_train, domain_valid = \
+        train_test_split(data, labels, domain, test_size=test_size,
+            stratify=labels, random_state=seed)
 
-    valid_data = data[:validation_size]
-    valid_labels = labels[:validation_size]
-    valid_domain = domain[:validation_size]
-    train_data = data[validation_size:]
-    train_labels = labels[validation_size:]
-    train_domain = domain[validation_size:]
-
-    return valid_data, valid_labels, valid_domain, \
-        train_data, train_labels, train_domain
+    return x_valid, y_valid, domain_valid, \
+        x_train, y_train, domain_train
 
 
 def save_one(source, target, dataset_name, dataset, seed,
