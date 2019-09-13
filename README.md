@@ -1,13 +1,11 @@
-# CoDATS: A Convolutional Deep Domain Adaptation Method for Time Series Sensor Data
+# Multi-Source Time Series Domain Adaptation
 
-The code for our paper, performing domain adaptation on time series sensor
-datasets. Note: below we have both synthetic and real datasets, but in the paper
-we only include the results on the real datasets.
+(add details later)
 
 Steps:
 
 - Generate synthetic datasets (*datasets/generate_trivial_datasets.py*)
-- Convert to .tfrecord files for TensorFlow (*datasets/generate_tfrecords.py*)
+- Convert to .tfrecord files for TensorFlow (*datasets/generate_tfrecords.py --jobs=4*)
 - Optionally view the datasets, look at class balance, etc. (*datasets/{view_datasets,class_balance}.py*)
 - Train models (*main.py* or *kamiak_train_\*.srun*)
 - Evaluate models (*main_eval.py* or *kamiak_eval_\*.srun*)

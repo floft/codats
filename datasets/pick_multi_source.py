@@ -45,7 +45,7 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
 
     # Output strings - ignore duplicates in datasets.py by indexing by name
     for_tfrecords = []
-    for_datasets = {}
+    for_datasets = []
     pairs = []
 
     # We'll generate multi-source options for each target user
@@ -78,16 +78,18 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
             source = "\"" + dataset_name + "_n" + str(n) + "_" + ",".join(source_users) + "\""
             target = "\"" + dataset_name + "_t" + str(target_user) + "\""
 
-            for_tfrecords.append("(" + source + ", " + target + "),")
-            for_datasets[source] = source + ": make_" + dataset_name \
-                + "(users=[" + ",".join(source_users) + "]),"
-            for_datasets[target] = target + ": make_" + dataset_name \
-                + "(users=[" + str(target_user) + "], target=True),"
-            pairs.append((source, target))
+            #for_tfrecords.append("(" + source + ", " + target + "),")
+            # Since these don't depend on the pairing anymore, just output
+            # once for each. This will reduce the time to generate the datasets
+            # since even if it already exists, it still loads it first.
+            for_tfrecords.append("(" + source + ", None),")
+            for_tfrecords.append("(" + target + ", None),")
 
-    # We only used the dictionary for removing duplicates, now convert
-    # back to a list
-    for_datasets = list(for_datasets.values())
+            for_datasets.append(source + ": make_" + dataset_name
+                + "(users=[" + ",".join(source_users) + "]),")
+            for_datasets.append(target + ": make_" + dataset_name
+                + "(users=[" + str(target_user) + "], target=True),")
+            pairs.append((source, target))
 
     return for_datasets, for_tfrecords, pairs
 
@@ -124,8 +126,9 @@ if __name__ == "__main__":
             for_tfrecords += curr_tfrecords
             pairs += curr_pairs
 
-    # Remove dataset duplicates (still could be duplicates due to target)
+    # Remove duplicates (still could be duplicates due to target)
     for_datasets = list(set(for_datasets))
+    for_tfrecords = list(set(for_tfrecords))
 
     # Sort
     for_datasets.sort()
