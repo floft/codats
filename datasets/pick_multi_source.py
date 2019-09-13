@@ -65,6 +65,10 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
                 assert n <= len(others), "cannot choose n larger than len(users)-1"
                 source_users = others[:n]
 
+                # Sort so if we ever use the same subset, we don't have to
+                # regenerate the files. Also easier to read.
+                source_users.sort()
+
                 if tuple(source_users) not in already_used_target:
                     already_used_target[tuple(source_users)] = None
                     break
