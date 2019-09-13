@@ -47,7 +47,7 @@ flags.DEFINE_integer("feature_subset", 0, "For testing RNN vs. CNN handling vary
 
 class Dataset:
     """ Load datasets from tfrecord files """
-    def __init__(self, num_classes, class_labels,
+    def __init__(self, num_classes, class_labels, num_domains,
             train_filenames, test_filenames, invert_name=None,
             train_batch=None, eval_batch=None,
             shuffle_buffer=None, prefetch_buffer=None,
@@ -70,6 +70,7 @@ class Dataset:
         self.invert_name = invert_name  # either None or source_name
         self.num_classes = num_classes
         self.class_labels = class_labels
+        self.num_domains = num_domains
         self.train_batch = train_batch
         self.eval_batch = eval_batch
         self.shuffle_buffer = shuffle_buffer
@@ -224,6 +225,7 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
     # Get dataset information
     source_num_classes = datasets.datasets[source_name].num_classes
     source_class_labels = datasets.datasets[source_name].class_labels
+    num_domains = datasets.datasets[source_name].num_domains
     if target_name is not None:
         target_num_classes = datasets.datasets[target_name].num_classes
         target_class_labels = datasets.datasets[target_name].class_labels
@@ -276,11 +278,11 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
 
     # Create all the train, test, evaluation, ... tf.data.Dataset objects within
     # a Dataset() class that stores them
-    source_dataset = Dataset(source_num_classes, source_class_labels,
+    source_dataset = Dataset(source_num_classes, source_class_labels, num_domains,
         source_train_filenames, source_test_filenames, invert_name,
         *args, **kwargs)
     if target_name is not None:
-        target_dataset = Dataset(target_num_classes, target_class_labels,
+        target_dataset = Dataset(target_num_classes, target_class_labels, num_domains,
             target_train_filenames, target_test_filenames, invert_name,
             *args, **kwargs)
     else:

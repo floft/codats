@@ -244,21 +244,22 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
 
     # Information about domains
     num_classes = source_dataset.num_classes
+    num_domains = source_dataset.num_domains
 
     # Build our model
     # Note: {global,num}_step are for training, so it doesn't matter what
     # we set them to here
     global_step = 1
     num_steps = 1
-    model = DomainAdaptationModel(num_classes, model_name,
+    model = DomainAdaptationModel(num_classes, num_domains, model_name,
         global_step, num_steps)
 
     # For mapping, we need to know the source and target sizes
     # Note: first dimension is batch size, so drop that
-    source_first_x, _ = next(iter(source_dataset.train))
+    source_first_x, _, _ = next(iter(source_dataset.train))
     source_x_shape = source_first_x.shape[1:]
     if target_dataset is not None:
-        target_first_x, _ = next(iter(target_dataset.train))
+        target_first_x, _, _ = next(iter(target_dataset.train))
         target_x_shape = target_first_x.shape[1:]
 
     if method_name in ["cyclegan", "cycada", "cyclegan_dann"]:

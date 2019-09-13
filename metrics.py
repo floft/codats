@@ -62,6 +62,7 @@ class Metrics:
         self.writer = tf.summary.create_file_writer(log_dir)
         self.source_dataset = source_dataset
         self.num_classes = source_dataset.num_classes
+        self.num_domains = source_dataset.num_domains
         self.datasets = ["training", "validation"]
         self.task_loss = task_loss if task_loss is not None else lambda y_true, y_pred, training: 0
         self.domain_loss = domain_loss if domain_loss is not None else lambda y_true, y_pred: 0
@@ -85,7 +86,7 @@ class Metrics:
         for domain in self.domains:
             for dataset in self.datasets:
                 n = "accuracy_domain/%s/%s"%(domain, dataset)
-                self.batch_metrics[dataset][n] = tf.keras.metrics.BinaryAccuracy(name=n)
+                self.batch_metrics[dataset][n] = tf.keras.metrics.CategoricalAccuracy(name=n)
 
                 for name in self.classifiers:
                     n = "accuracy_%s/%s/%s"%(name, domain, dataset)
@@ -177,6 +178,9 @@ class Metrics:
         task_y_true, task_y_pred, domain_y_true, domain_y_pred, \
             _, _, _ = results
 
+        # Since we are now using sparse
+        domain_y_true = tf.one_hot(tf.cast(domain_y_true, tf.int32), self.num_domains)
+
         domain_names = [
             "accuracy_domain/%s/%s",
         ]
@@ -191,6 +195,9 @@ class Metrics:
             "precision_%s/%s/%s",
             "recall_%s/%s/%s",
         ]
+
+        # Since we are now using sparse
+        task_y_true = tf.one_hot(tf.cast(task_y_true, tf.int32), self.num_classes)
 
         for n in task_names:
             name = n%(classifier, domain, dataset)
@@ -220,6 +227,9 @@ class Metrics:
         task_y_true, task_y_pred, _, _, _, _, _ = results
         batch_size = tf.shape(task_y_true)[0]
 
+        # Since we are now using sparse
+        task_y_true = tf.one_hot(tf.cast(task_y_true, tf.int32), self.num_classes)
+
         # If only predicting a single class (using softmax), then look for the
         # max value
         # e.g. [0.2 0.2 0.4 0.2] -> [0 0 1 0]
@@ -239,7 +249,7 @@ class Metrics:
             class_name = self.source_dataset.int_to_label(i)
 
             # Get ith column (all groundtruth/predictions for ith class)
-            y_true = tf.slice(task_y_true, [0, i], [batch_size, 1])
+            y_true = tf.slice(task_y_true, [0, i], [batch_size, 1])  # if not sparse
             y_pred = tf.slice(per_class_predictions, [0, i], [batch_size, 1])
 
             # For single-class prediction, we want to first isolate which
@@ -308,14 +318,14 @@ class Metrics:
         if data_a is not None:
             func = self._run_single_batch_target_a if target else self._run_single_batch_task_a
 
-            for x, task_y_true in data_a:
-                func(x, task_y_true, model, mapping_model, dataset)
+            for x, task_y_true, domain_y_true in data_a:
+                func(x, task_y_true, domain_y_true, model, mapping_model, dataset)
 
         if self.target_domain and data_b is not None:
             func = self._run_single_batch_target_b if target else self._run_single_batch_task_b
 
-            for x, task_y_true in data_b:
-                func(x, task_y_true, model, mapping_model, dataset)
+            for x, task_y_true, domain_y_true in data_b:
+                func(x, task_y_true, domain_y_true, model, mapping_model, dataset)
 
     def _run_batch(self, model, mapping_model, data_a, data_b, dataset, target):
         """ Run a single batch of A/B data through the model -- data_a and data_b
@@ -328,7 +338,7 @@ class Metrics:
             func = self._run_single_batch_target_b if target else self._run_single_batch_task_b
             func(*data_b, model, mapping_model, dataset)
 
-    def _run_single_batch(self, x, task_y_true, model, mapping_model,
+    def _run_single_batch(self, x, task_y_true, domain_y_true, model, mapping_model,
             dataset_name, domain_name, target):
         """
         Run a batch of data through the model. Call after_batch() afterwards:
@@ -365,12 +375,6 @@ class Metrics:
         if model is not None:
             # Evaluate model on data
             task_y_pred, domain_y_pred, _ = model(x, target=target, training=False, domain=domain_name)
-
-            # Match the number of examples; source = 0, target = 1
-            if domain_name == "source":
-                domain_y_true = tf.zeros_like(domain_y_pred)
-            else:
-                domain_y_true = tf.ones_like(domain_y_pred)
 
             # Calculate losses
             task_l = self.task_loss(task_y_true, task_y_pred, training=False)

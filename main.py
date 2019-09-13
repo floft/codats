@@ -30,8 +30,6 @@ flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
-flags.DEFINE_enum("dann_loss", "gan", ["gan", "lsgan", "wgan"], "When using adversarial adaptation, which loss to use")
-flags.DEFINE_boolean("dann_bidirectional", True, "Compute adversarial loss bidirectionally for DANN (as used in Shu et al.)")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
 flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
 flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
@@ -53,7 +51,6 @@ flags.DEFINE_integer("log_val_steps", 4000, "Log validation information every so
 flags.DEFINE_integer("log_plots_steps", 4000, "Log plots every so many steps")
 flags.DEFINE_boolean("use_alt_weight", False, "Use alternate weighting for target classifier")
 flags.DEFINE_boolean("use_domain_confidence", True, "Use domain classifier for confidence instead of task classifier")
-flags.DEFINE_boolean("domain_invariant", True, "Train feature extractor to be domain-invariant")
 flags.DEFINE_boolean("compile_metrics", True, "Compile metrics loop with tf.function for subsequent speed (disable if std::terminate)")
 flags.DEFINE_boolean("test", False, "Use real test set for evaluation rather than validation set")
 flags.DEFINE_boolean("subdir", True, "Save models/logs in subdirectory of prefix")
@@ -79,7 +76,7 @@ def get_directory_names():
         "dann_shu": "-dann_shu",
         "dann_grl": "-dann_grl",
         "deepjdot": "-deepjdot",
-        "rdann": "-rdann",  # same as DANN but use with --model=rdann
+        "rdann": "-rdann",  # same as DANN-GRL but use with --model=rdann
         "vrada": "-vrada",  # use with "vrada" model
         "pseudo": "-pseudo",
         "instance": "-instance",
@@ -121,24 +118,23 @@ def get_directory_names():
 def train_step_grl(data_a, data_b, model, opt, d_opt,
         task_loss, domain_loss):
     """ Compiled DANN (with GRL) training step that we call many times """
-    x_a, y_a = data_a
-    x_b, y_b = data_b
+    x_a, y_a, domain_a = data_a
+    x_b, y_b, domain_b = data_b
 
     # Concatenate for adaptation - concatenate source labels with all-zero
     # labels for target since we can't use the target labels during
     # unsupervised domain adaptation
     x = tf.concat((x_a, x_b), axis=0)
     task_y_true = tf.concat((y_a, tf.zeros_like(y_b)), axis=0)
+    domain_y_true = tf.concat((domain_a, domain_b), axis=0)
 
-    half_batch_size = tf.shape(x)[0] / 2
-    source_domain = tf.zeros([half_batch_size, 1])
-    target_domain = tf.ones([half_batch_size, 1])
-    domain_y_true = tf.concat((source_domain, target_domain), axis=0)
-
-    with tf.GradientTape() as tape, tf.GradientTape() as d_tape:
-        task_y_pred, domain_y_pred, _ = model(x, training=True, domain="both")
+    with tf.GradientTape(persistent=True) as tape:
+        task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain="both")
         d_loss = domain_loss(domain_y_true, domain_y_pred)
         loss = task_loss(task_y_true, task_y_pred, training=True) + d_loss
+
+        if FLAGS.method == "vrada":
+            vrnn_loss = compute_vrnn_loss(fe_output[1], x)
 
         # TODO
         # https://www.tensorflow.org/beta/guide/keras/overview#configure_the_layers
@@ -150,10 +146,15 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
         # d_loss += regularization
 
     grad = tape.gradient(loss, model.trainable_variables_task_domain)
-    opt.apply_gradients(zip(grad, model.trainable_variables_task_domain))
+    if FLAGS.method == "vrada":
+        v_grad = tape.gradient(vrnn_loss, model.feature_extractor.trainable_variables)
+    d_grad = tape.gradient(d_loss, model.domain_classifier.trainable_variables)
+    del tape
 
+    opt.apply_gradients(zip(grad, model.trainable_variables_task_domain))
+    if FLAGS.method == "vrada":  # use d_opt since different updates than above?
+        d_opt.apply_gradients(zip(v_grad, model.feature_extractor.trainable_variables))
     # Update discriminator again
-    d_grad = d_tape.gradient(d_loss, model.domain_classifier.trainable_variables)
     d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
 
 
@@ -188,15 +189,15 @@ def compute_vrnn_loss(vrnn_state, x, epsilon=1e-9):
 
 @tf.function
 def train_step_gan(data_a, data_b, model, opt, d_opt,
-        task_loss, domain_loss, grl_schedule, global_step,
+        task_loss, domain_loss, grl_schedule, global_step, num_domains,
         epsilon=1e-8):
     """ Compiled multi-step (GAN-like, see Shu et al. VADA paper) adaptation
     training step that we call many times
 
     Feed through separately so we get different batch normalizations for each
     domain. Also optimize in a GAN-like manner rather than with GRL."""
-    x_a, y_a = data_a
-    x_b, _ = data_b
+    x_a, y_a, domain_a = data_a
+    x_b, _, domain_b = data_b
 
     # The VADA "replacing gradient reversal" (note D(f(x)) = probability of
     # being target) with non-saturating GAN-style training
@@ -216,42 +217,16 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
         #    than D weights)
         # d_loss_true: update discriminator
         #  - min_D step (train D to be correct, update D weights)
-        if FLAGS.dann_loss == "wgan":
-            # Non-bidirectional means we just want the target features to look
-            # like the source features. With bidirectional, we want the target
-            # to look like the source and the source to look like the target
-            # (i.e. discriminator confused in both directions, hopefully on
-            # average 0.5 probability of either domain?).
-            d_loss_fool = tf.reduce_mean(domain_y_pred_b)
-            if FLAGS.dann_bidirectional:
-                d_loss_fool += -tf.reduce_mean(domain_y_pred_a)
-            d_loss_true = tf.reduce_mean(domain_y_pred_a) - \
-                tf.reduce_mean(domain_y_pred_b)
-
-            # if FLAGS.dann_loss == "wgan-gp":
-            #     model.set_learning_phase(False)  # Don't update BN stats
-            #     # TODO fe_a or fe_b if RNN is tuple, so take first?
-            #     gp = wgan_gradient_penalty(fe_a, fe_b, model.domain_classifier)
-            #     d_loss_true += 10*gp
-        elif FLAGS.dann_loss == "lsgan":
-            # TODO do these exactly cancel out?
-            d_loss_fool = tf.reduce_mean(tf.math.squared_difference(domain_y_pred_b, 0))
-            if FLAGS.dann_bidirectional:
-                d_loss_fool += tf.reduce_mean(tf.math.squared_difference(domain_y_pred_a, 1))
-            d_loss_true = \
-                tf.reduce_mean(tf.math.squared_difference(domain_y_pred_a, 0)) \
-                + tf.reduce_mean(tf.math.squared_difference(domain_y_pred_b, 1))
-        elif FLAGS.dann_loss == "gan":
-            # Correct domain labels
-            # Source domain = 0, target domain = 1
-            domain_y_true_a = tf.zeros_like(domain_y_pred_a)
-            domain_y_true_b = tf.ones_like(domain_y_pred_b)
-
-            d_loss_fool = domain_loss(domain_y_true_a, domain_y_pred_b)
-            if FLAGS.dann_bidirectional:
-                d_loss_fool += domain_loss(domain_y_true_b, domain_y_pred_a)
-            d_loss_true = domain_loss(domain_y_true_a, domain_y_pred_a) \
-                + domain_loss(domain_y_true_b, domain_y_pred_b)
+        assert num_domains == 2, \
+            "How can you do Shu et al. loss by label flipping if there's more " \
+            "than 2 domains? Probably use GRL instead."
+        # TODO maybe pick one domain, e.g. 0 or target num_domains-1? We just
+        # want it to be domain-invariant, don't really care which domain it
+        # thinks it is maybe?
+        d_loss_fool = domain_loss(domain_a, domain_y_pred_b) \
+            + domain_loss(domain_b, domain_y_pred_a)
+        d_loss_true = domain_loss(domain_a, domain_y_pred_a) \
+            + domain_loss(domain_b, domain_y_pred_b)
 
         # Weight by same schedule as GRL to make this more equivalent
         d_loss_fool *= grl_schedule(global_step)
@@ -263,8 +238,7 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
                 compute_vrnn_loss(vrnn_state_b, x_b)
 
     t_grad = tape.gradient(t_loss, model.trainable_variables_task)
-    if FLAGS.domain_invariant:
-        f_grad = tape.gradient(d_loss_fool, model.feature_extractor.trainable_variables)
+    f_grad = tape.gradient(d_loss_fool, model.feature_extractor.trainable_variables)
     if FLAGS.method == "vrada":
         v_grad = tape.gradient(vrnn_loss, model.feature_extractor.trainable_variables)
     d_grad = tape.gradient(d_loss_true, model.domain_classifier.trainable_variables)
@@ -273,16 +247,10 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     # Use opt (not d_opt) for updating FE in both cases, so Adam keeps track of
     # the updates to the FE weights
     opt.apply_gradients(zip(t_grad, model.trainable_variables_task))
-    if FLAGS.domain_invariant:
-        opt.apply_gradients(zip(f_grad, model.feature_extractor.trainable_variables))
+    opt.apply_gradients(zip(f_grad, model.feature_extractor.trainable_variables))
     if FLAGS.method == "vrada":  # use d_opt since different updates than above?
         d_opt.apply_gradients(zip(v_grad, model.feature_extractor.trainable_variables))
     d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
-
-    # WGAN weight clipping
-    if FLAGS.dann_loss == "wgan":
-        for weight in model.domain_classifier.trainable_variables:
-            weight.assign(tf.clip_by_value(weight, -0.01, 0.01))
 
     # TODO for inference, use the exponential moving average of the batch norm
     # statistics on the *target* data -- above will mix them probably.
@@ -290,11 +258,13 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     # TODO for inference use exponential moving average of *weights* (see VADA)
 
     # For instance weighting, we need to calculate the weights to use
+    # TODO add the below to GRL version
     if FLAGS.method == "instance":
         # Get "confidence" from domain (probability it's target data)
         # classifier or task classifier (softmax probability of the
         # prediction / max value)
         if FLAGS.use_domain_confidence:
+            # TODO redo since now we need softmax not sigmoid
             weights = tf.sigmoid(domain_y_pred_a)
 
             # Alternative weighting, like Algorithm 23 of Daume's ML book
@@ -307,9 +277,7 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
                 weights = 1/((1-weights)+epsilon) - 1
                 weights = tf.clip_by_value(weights, 0, 100)
         else:
-            # TODO this is *really* bad which probably indicates it has to
-            # do with how I'm weighting in both this case and in pseudo-
-            # labeling rather than domain vs. task confidence.
+            # TODO this is performs poorly?
             weights = tf.reduce_max(task_y_pred_a, axis=1)
 
         return weights
@@ -357,8 +325,8 @@ def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
 
     Based on: https://github.com/bbdamodaran/deepJDOT/blob/master/Deepjdot.py
     """
-    x_a, y_a = data_a
-    x_b, _ = data_b
+    x_a, y_a, _ = data_a
+    x_b, _, _ = data_b
 
     with tf.GradientTape() as tape:
         task_y_pred_a, _, x_a_embedding = model(x_a, training=True, domain="source")
@@ -396,7 +364,7 @@ def train_step_deepjdot(data_a, data_b, model, opt, d_opt,
 def train_step_none(data_a, data_b, model, opt, d_opt,
         task_loss, domain_loss):
     """ Compiled no adaptation training step that we call many times """
-    x_a, y_a = data_a
+    x_a, y_a, _ = data_a
 
     with tf.GradientTape() as tape:
         task_y_pred, _, _ = model(x_a, training=True, domain="source")
@@ -412,7 +380,7 @@ def train_step_random(data_a, data_b, model, opt, d_opt,
         task_loss, domain_loss):
     """ Re-init every so often, and by random chance we'll probably get some
     models that work well on the target data """
-    x_a, y_a = data_a
+    x_a, y_a, _ = data_a
 
     tf.print("Re-initialized")
     for weight in model.trainable_variables_task:
@@ -436,6 +404,7 @@ def pseudo_label_domain(x, model, epsilon=1e-8):
 
     # The domain classifier output is logits, so we need to pass through sigmoid
     # to get a probability before using as a weight.
+    # TODO make work with softmax, probability of target is last domain #
     domain_prob_target = tf.sigmoid(domain_y_pred)
     domain_prob_source = 1 - domain_prob_target
 
@@ -472,7 +441,7 @@ def pseudo_label_task(x, model, epsilon=1e-8):
 @tf.function
 def train_step_target(data_b, weights, model, opt, weighted_task_loss):
     """ Compiled train step for pseudo-labeled target data """
-    x, task_y_pseudo = data_b
+    x, task_y_pseudo, _ = data_b
 
     # Run data through model and compute loss
     with tf.GradientTape() as tape:
@@ -543,8 +512,8 @@ def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=No
 
     For CyCADA, set semantic_consistency=True and pass in classification model
     (includes both source and target models?)."""
-    x_a, y_a = data_a
-    x_b, _ = data_b
+    x_a, y_a, _ = data_a
+    x_b, _, _ = data_b
 
     with tf.GradientTape(persistent=True) as tape:
         gen_AtoB, gen_AtoBtoA, disc_Areal, disc_Bfake = mapping_model(x_a, "target", training=True)
@@ -694,8 +663,8 @@ def train_step_cyclegan(data_a, data_b, mapping_model, opt, loss, invert_name=No
 @tf.function
 def train_step_forecast(data_a, data_b, model, opt, loss, invert_name=None):
     """ Train mapping with forecasting loss """
-    x_a, y_a = data_a
-    x_b, _ = data_b
+    x_a, y_a, _ = data_a
+    x_b, _, _ = data_b
 
     with tf.GradientTape(persistent=True) as tape:
         # Split data so we have a bit of data at the end of each time window
@@ -791,7 +760,7 @@ def main(argv):
     # data, so to keep the batch_size about the same, we'll cut it in half
     train_batch = FLAGS.train_batch
 
-    use_grl = FLAGS.method == "dann_grl"
+    use_grl = FLAGS.method in ["dann_grl", "vrada", "rdann"]
     if adapt and use_grl:
         train_batch = train_batch // 2
 
@@ -824,6 +793,7 @@ def main(argv):
 
     # Information about domains
     num_classes = source_dataset.num_classes
+    num_domains = source_dataset.num_domains
 
     # Loss functions
     task_loss = models.make_task_loss(adapt and use_grl)
@@ -836,8 +806,8 @@ def main(argv):
 
     # Build the (mapping and/or task) models
     if FLAGS.task:
-        model = models.DomainAdaptationModel(num_classes, FLAGS.model,
-            global_step, FLAGS.steps, use_grl=use_grl)
+        model = models.DomainAdaptationModel(num_classes, num_domains,
+            FLAGS.model, global_step, FLAGS.steps, use_grl=use_grl)
     else:
         model = None
 
@@ -848,10 +818,10 @@ def main(argv):
 
     # For mapping, we need to know the source and target sizes
     # Note: first dimension is batch size, so drop that
-    source_first_x, _ = next(iter(source_dataset.train))
+    source_first_x, _, _ = next(iter(source_dataset.train))
     source_x_shape = source_first_x.shape[1:]
     if target_dataset is not None:
-        target_first_x, _ = next(iter(target_dataset.train))
+        target_first_x, _, _ = next(iter(target_dataset.train))
         target_x_shape = target_first_x.shape[1:]
 
     if FLAGS.method in ["cyclegan", "cycada", "cyclegan_dann"]:
@@ -865,7 +835,7 @@ def main(argv):
     if FLAGS.method == "random":
         # Don't have momentum when reinitializing all the time
         optimizer = tf.keras.optimizers.SGD
-    elif FLAGS.cyclegan_loss == "wgan" or FLAGS.dann_loss == "wgan":
+    elif FLAGS.cyclegan_loss == "wgan":
         optimizer = tf.keras.optimizers.RMSprop
     else:
         optimizer = tf.keras.optimizers.Adam
@@ -976,7 +946,8 @@ def main(argv):
             elif adapt and use_grl:
                 train_step_grl(*step_args)
             elif adapt:
-                instance_weights = train_step_gan(*step_args, grl_schedule, global_step)
+                instance_weights = train_step_gan(*step_args, grl_schedule,
+                    global_step, num_domains)
             else:
                 train_step_none(*step_args)
 

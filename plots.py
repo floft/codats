@@ -35,10 +35,10 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
     as well.
     """
     plots = []
-    x_a, y_a = data_a
+    x_a, y_a, domain_a = data_a
 
     if data_b is not None:
-        x_b, y_b = data_b
+        x_b, y_b, domain_b = data_b
 
     #
     # TSNE and PCA
@@ -52,8 +52,10 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
         # Source then target
         combined_x = tf.concat((emb_x_a, emb_x_b), axis=0)
         combined_labels = tf.concat((emb_y_a, emb_y_b), axis=0)
-        source_domain = tf.zeros([tf.shape(emb_x_a)[0], 1], dtype=tf.int32)
-        target_domain = tf.ones([tf.shape(emb_x_b)[0], 1], dtype=tf.int32)
+        # source_domain = tf.zeros([tf.shape(emb_x_a)[0], 1], dtype=tf.int32)
+        # target_domain = tf.ones([tf.shape(emb_x_b)[0], 1], dtype=tf.int32)
+        source_domain = tf.expand_dims(domain_a)
+        target_domain = tf.expand_dims(domain_b)
         combined_domain = tf.concat((source_domain, target_domain), axis=0)
 
         # Run through model's feature extractor
@@ -225,24 +227,26 @@ def plot_embedding(x, y, d, title=None, filename=None):
     if np.isnan(x).any() or np.isinf(x).any():
         return None
 
-    # XKCD colors: https://matplotlib.org/users/colors.html
-    colors = {
-        0: 'xkcd:orange',  # source
-        1: 'xkcd:darkgreen',  # target
-    }
-
-    domain = {
-        0: 'S',
-        1: 'T',
-    }
-
     # Plot colors numbers
     fig = plt.figure(figsize=(10, 10))
     plt.subplot(111)
     for i in range(x.shape[0]):
+        # source or target - default to target
+        # XKCD colors: https://matplotlib.org/users/colors.html
+        text = "T_"
+        color = "xkcd:darkgreen"
+
+        # if source
+        domain = d[i].numpy()
+        if domain != 0:
+            text = "S"+str(domain) + "_"
+            color = "xkcd:orange"
+
+        # label number
+        text += str(y[i].numpy())
+
         # plot colored number
-        plt.text(x[i, 0], x[i, 1], domain[d[i].numpy()]+str(y[i].numpy()),
-                 color=colors[d[i].numpy()],
+        plt.text(x[i, 0], x[i, 1], text, color=color,
                  fontdict={'weight': 'bold', 'size': 9})
 
     plt.xticks([]), plt.yticks([])

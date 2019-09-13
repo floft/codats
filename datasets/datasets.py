@@ -696,6 +696,10 @@ def make_uwave(days=None, users=None, target=False):
         num_classes = 8
         class_labels = list(range(num_classes))
 
+        # If source domain, number is source domains + 1 for target
+        # Set here to make it static
+        num_domains = len(users or days)+1 if not target else None
+
         def __init__(self, *args, **kwargs):
             super().__init__(
                 days, users,
@@ -713,6 +717,10 @@ def make_sleep(days=None, users=None, target=False):
         num_classes = 6
         class_labels = ["Awake", "N1", "N2", "N3", "Light N2", "REM"]
 
+        # If source domain, number is source domains + 1 for target
+        # Set here to make it static
+        num_domains = len(users or days)+1 if not target else None
+
         def __init__(self, *args, **kwargs):
             super().__init__(
                 days, users,
@@ -726,6 +734,10 @@ def make_sleep(days=None, users=None, target=False):
 def make_ucihar(users=None, target=False):
     """ Make UCI HAR dataset split on users """
     class UciHarDataset(UciHarBase):
+        # If source domain, number is source domains + 1 for target
+        # Set here to make it static
+        num_domains = len(users)+1 if not target else None
+
         def __init__(self, *args, **kwargs):
             super().__init__(users, target, *args, **kwargs)
 
