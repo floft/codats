@@ -5,5 +5,5 @@
 modelFolder="kamiak-models"
 logFolder="kamiak-logs"
 remotessh="kamiak"  # in your .ssh/config file
-remotedir="/data/vcea/garrett.wilson/time-series-adaptation/"
-localdir="/home/garrett/Documents/Github/time-series-adaptation/"
+remotedir="/data/vcea/garrett.wilson/multi-source-adaptation/"
+localdir="/home/garrett/Documents/Github/multi-source-adaptation/"

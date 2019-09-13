@@ -825,7 +825,7 @@ class DomainAdaptationModel(tf.keras.Model):
             ...
     """
     def __init__(self, num_classes, num_domains, model_name, global_step,
-            num_steps, use_grl=False, **kwargs):
+            num_steps, use_grl=False, sleep_generalize=False, **kwargs):
         super().__init__(**kwargs)
         if use_grl:
             grl_schedule = DannGrlSchedule(num_steps)
@@ -868,6 +868,13 @@ class DomainAdaptationModel(tf.keras.Model):
         self.task_classifier = task
         self.domain_classifier = domain
 
+        # For sleep generalization method
+        self.sleep_generalize = sleep_generalize
+
+        if sleep_generalize:
+            self.concat = tf.keras.layers.Concatenate(axis=1)
+            self.stop_gradient = StopGradient()
+
         # Target classifier (if used) will be the same as the task classifier
         # but will be trained on pseudo-labeled data. Then, call
         # model(..., target=True) to use this classifier rather than the task
@@ -906,13 +913,22 @@ class DomainAdaptationModel(tf.keras.Model):
         else:
             fe_output = fe
 
-        domain_output = self.domain_classifier(fe_output, domain=domain, **kwargs)
-
         # If desired, use the target classifier rather than the task classifier
         if target:
             task = self.target_classifier(fe_output, domain=domain, **kwargs)
         else:
             task = self.task_classifier(fe_output, domain=domain, **kwargs)
+
+        # If doing the algorithm from the sleep paper, then for generalization
+        # we also concatenate the task classifier's output when fed to the
+        # domain classifier.
+        if self.sleep_generalize:
+            task_stop_gradient = self.stop_gradient(task)
+            domain_input = self.concat([fe_output, task_stop_gradient])
+        else:
+            domain_input = fe_output
+
+        domain_output = self.domain_classifier(domain_input, domain=domain, **kwargs)
 
         return task, domain_output, fe
 

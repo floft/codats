@@ -24,10 +24,19 @@ from datasets import inversions
 
 FLAGS = flags.FLAGS
 
+methods = [
+    # Domain adaptation
+    "none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada",
+    "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada",
+
+    # Domain generalization
+    "dann_grl_dg", "sleep_dg",
+]
+
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"], "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("method", None, methods, "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
 flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
@@ -75,6 +84,8 @@ def get_directory_names():
         "cycada": "-cycada",
         "dann_shu": "-dann_shu",
         "dann_grl": "-dann_grl",
+        "dann_grl_dg": "-dann_grl_dg",
+        "sleep_dg": "-sleep_dg",
         "deepjdot": "-deepjdot",
         "rdann": "-rdann",  # same as DANN-GRL but use with --model=rdann
         "vrada": "-vrada",  # use with "vrada" model
@@ -116,17 +127,22 @@ def get_directory_names():
 
 @tf.function
 def train_step_grl(data_a, data_b, model, opt, d_opt,
-        task_loss, domain_loss):
+        task_loss, domain_loss, generalize):
     """ Compiled DANN (with GRL) training step that we call many times """
     x_a, y_a, domain_a = data_a
     x_b, y_b, domain_b = data_b
 
-    # Concatenate for adaptation - concatenate source labels with all-zero
-    # labels for target since we can't use the target labels during
-    # unsupervised domain adaptation
-    x = tf.concat((x_a, x_b), axis=0)
-    task_y_true = tf.concat((y_a, tf.zeros_like(y_b)), axis=0)
-    domain_y_true = tf.concat((domain_a, domain_b), axis=0)
+    if generalize:
+        x = x_a
+        task_y_true = y_a
+        domain_y_true = domain_a
+    else:
+        # Concatenate for adaptation - concatenate source labels with all-zero
+        # labels for target since we can't use the target labels during
+        # unsupervised domain adaptation
+        x = tf.concat((x_a, x_b), axis=0)
+        task_y_true = tf.concat((y_a, tf.zeros_like(y_b)), axis=0)
+        domain_y_true = tf.concat((domain_a, domain_b), axis=0)
 
     with tf.GradientTape(persistent=True) as tape:
         task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain="both")
@@ -752,15 +768,17 @@ def main(argv):
     # We adapt for any method other than "none", "cyclegan", or "forecast"
     adapt = FLAGS.method in ["cycada", "dann_shu", "dann_grl", "pseudo",
         "instance", "cyclegan_dann", "rdann", "vrada"]
+    generalize = FLAGS.method in ["dann_grl_dg", "sleep_dg"]
+    sleep_generalize = FLAGS.method in ["sleep_dg"]
 
-    assert not (adapt and not FLAGS.task), \
-        "If adapting (e.g. method=dann_grl), must not pass --notask"
+    assert not ((adapt or generalize) and not FLAGS.task), \
+        "If adapting/generalizing (e.g. method=dann_grl), must not pass --notask"
 
     # For adaptation, we'll be concatenating together half source and half target
     # data, so to keep the batch_size about the same, we'll cut it in half
     train_batch = FLAGS.train_batch
 
-    use_grl = FLAGS.method in ["dann_grl", "vrada", "rdann"]
+    use_grl = FLAGS.method in ["dann_grl", "dann_grl_dg", "sleep_dg", "vrada", "rdann"]
     if adapt and use_grl:
         train_batch = train_batch // 2
 
@@ -807,7 +825,8 @@ def main(argv):
     # Build the (mapping and/or task) models
     if FLAGS.task:
         model = models.DomainAdaptationModel(num_classes, num_domains,
-            FLAGS.model, global_step, FLAGS.steps, use_grl=use_grl)
+            FLAGS.model, global_step, FLAGS.steps, use_grl=use_grl,
+            sleep_generalize=sleep_generalize)
     else:
         model = None
 
@@ -943,9 +962,10 @@ def main(argv):
 
                 # Train FE / task classifier
                 train_step_none(*step_args)
-            elif adapt and use_grl:
-                train_step_grl(*step_args)
-            elif adapt:
+            elif (adapt or generalize) and use_grl:
+                train_step_grl(*step_args, generalize)
+            elif adapt or generalize:
+                assert not generalize, "TODO only DANN-GRL generalization versions implemented so far"
                 instance_weights = train_step_gan(*step_args, grl_schedule,
                     global_step, num_domains)
             else:
