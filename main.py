@@ -136,6 +136,7 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
         x = x_a
         task_y_true = y_a
         domain_y_true = domain_a
+        domain = "source"
     else:
         # Concatenate for adaptation - concatenate source labels with all-zero
         # labels for target since we can't use the target labels during
@@ -143,9 +144,10 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
         x = tf.concat((x_a, x_b), axis=0)
         task_y_true = tf.concat((y_a, tf.zeros_like(y_b)), axis=0)
         domain_y_true = tf.concat((domain_a, domain_b), axis=0)
+        domain = "both"
 
     with tf.GradientTape(persistent=True) as tape:
-        task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain="both")
+        task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain=domain)
         d_loss = domain_loss(domain_y_true, domain_y_pred)
         loss = task_loss(task_y_true, task_y_pred, training=True) + d_loss
 
@@ -815,7 +817,7 @@ def main(argv):
 
     # Loss functions
     task_loss = models.make_task_loss(adapt and use_grl)
-    domain_loss = models.make_domain_loss(adapt)
+    domain_loss = models.make_domain_loss(adapt or generalize)
     weighted_task_loss = models.make_weighted_loss()
     mapping_loss = models.make_mapping_loss()
 

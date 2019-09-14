@@ -48,15 +48,13 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
         emb_x_b = x_b[:FLAGS.max_plot_embedding]
         emb_y_a = y_a[:FLAGS.max_plot_embedding]
         emb_y_b = y_b[:FLAGS.max_plot_embedding]
+        emb_d_a = domain_a[:FLAGS.max_plot_embedding]
+        emb_d_b = domain_b[:FLAGS.max_plot_embedding]
 
         # Source then target
         combined_x = tf.concat((emb_x_a, emb_x_b), axis=0)
         combined_labels = tf.concat((emb_y_a, emb_y_b), axis=0)
-        # source_domain = tf.zeros([tf.shape(emb_x_a)[0], 1], dtype=tf.int32)
-        # target_domain = tf.ones([tf.shape(emb_x_b)[0], 1], dtype=tf.int32)
-        source_domain = tf.expand_dims(domain_a)
-        target_domain = tf.expand_dims(domain_b)
-        combined_domain = tf.concat((source_domain, target_domain), axis=0)
+        combined_domain = tf.concat((emb_d_a, emb_d_b), axis=0)
 
         # Run through model's feature extractor
         embedding = model.feature_extractor(combined_x, training=False, domain="both")
@@ -74,9 +72,9 @@ def generate_plots(data_a, data_b, model, mapping_model, adapt, first_time,
         else:
             title = "No Adaptation"
 
-        tsne_plot = plot_embedding(tsne, tf.argmax(combined_labels, axis=1),
+        tsne_plot = plot_embedding(tsne, tf.squeeze(combined_labels),
             tf.squeeze(combined_domain), title=title + " - t-SNE")
-        pca_plot = plot_embedding(pca, tf.argmax(combined_labels, axis=1),
+        pca_plot = plot_embedding(pca, tf.squeeze(combined_labels),
             tf.squeeze(combined_domain), title=title + " - PCA")
 
         if tsne_plot is not None:
@@ -237,13 +235,13 @@ def plot_embedding(x, y, d, title=None, filename=None):
         color = "xkcd:darkgreen"
 
         # if source
-        domain = d[i].numpy()
+        domain = int(d[i].numpy())
         if domain != 0:
             text = "S"+str(domain) + "_"
             color = "xkcd:orange"
 
         # label number
-        text += str(y[i].numpy())
+        text += str(int(y[i].numpy()))
 
         # plot colored number
         plt.text(x[i, 0], x[i, 1], text, color=color,
