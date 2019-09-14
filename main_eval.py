@@ -27,11 +27,10 @@ from models import DomainAdaptationModel
 from metrics import Metrics
 from checkpoints import CheckpointManager
 from gpu_memory import set_gpu_memory
+from main import methods  # array list of method names
 
 
 FLAGS = flags.FLAGS
-
-methods = ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"]
 
 # Same as in main.py
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
