@@ -71,8 +71,11 @@ if [[ $method == "upper" ]]; then
     method="none"
     source="$target"
     target=""
-    additional_args+=("--best_source" "--notrain_on_source_valid")
+    #additional_args+=("--best_source" "--notrain_on_source_valid")
 fi
+
+# For DG vs. DA always pass these for being more fair.
+additional_args+=("--best_source" "--notrain_on_source_valid")
 
 # Training / model options
 steps=30000
