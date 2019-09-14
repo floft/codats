@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-674
+#SBATCH --array=0-1124
 
 # My computer
 #gpumem=4500
@@ -35,7 +35,7 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("dann_grl" "dann_grl_dg" "sleep_dg")
+methods=("dann_grl" "dann_grl_dg" "sleep_dg" "none" "upper")
 #variants=("best" "last")
 variants=("best")
 # number of adaptation problems = 225
@@ -76,8 +76,11 @@ if [[ $method == "upper" ]]; then
     method="none"
     source="$target"
     target=""
-    additional_args+=("--best_source")
+    #additional_args+=("--best_source")
 fi
+
+# For DG vs. DA always pass these for being more fair.
+additional_args+=("--best_source")
 
 # Model
 if [[ $method == "vrada" || $method == "rdann" ]]; then
@@ -105,4 +108,3 @@ module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
     --match="${source}-${target}-${model}-${method}-[0-9]*" \
     "${additional_args[@]}" "$@" || handle_error; } | \
     tee -a "$out"
-# --eval_batch=2048
