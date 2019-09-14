@@ -815,6 +815,12 @@ def main(argv):
     num_classes = source_dataset.num_classes
     num_domains = source_dataset.num_domains
 
+    # If num_domains = None, then we're passing a "target" dataset as the source
+    # for the upper bound, so we really only have one domain
+    # (also in metrics.py)
+    if num_domains is None:
+        num_domains = 1
+
     # Loss functions
     task_loss = models.make_task_loss(adapt and use_grl)
     domain_loss = models.make_domain_loss(adapt or generalize)

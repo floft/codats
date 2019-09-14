@@ -63,6 +63,13 @@ class Metrics:
         self.source_dataset = source_dataset
         self.num_classes = source_dataset.num_classes
         self.num_domains = source_dataset.num_domains
+
+        # If num_domains = None, then we're passing a "target" dataset as the source
+        # for the upper bound, so we really only have one domain
+        # (also in main.py)
+        if self.num_domains is None:
+            self.num_domains = 1
+
         self.datasets = ["training", "validation"]
         self.task_loss = task_loss if task_loss is not None else lambda y_true, y_pred, training: 0
         self.domain_loss = domain_loss if domain_loss is not None else lambda y_true, y_pred: 0
