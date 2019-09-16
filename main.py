@@ -817,7 +817,7 @@ def main(argv):
 
     # If num_domains = None, then we're passing a "target" dataset as the source
     # for the upper bound, so we really only have one domain
-    # (also in metrics.py)
+    # (also in metrics.py, main_eval.py)
     if num_domains is None:
         num_domains = 1
 

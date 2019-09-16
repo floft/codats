@@ -27,10 +27,19 @@ from models import DomainAdaptationModel
 from metrics import Metrics
 from checkpoints import CheckpointManager
 from gpu_memory import set_gpu_memory
-from main import methods  # array list of method names
 
 
 FLAGS = flags.FLAGS
+
+# Copy from main.py
+methods = [
+    # Domain adaptation
+    "none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada",
+    "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada",
+
+    # Domain generalization
+    "dann_grl_dg", "sleep_dg",
+]
 
 # Same as in main.py
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
@@ -244,6 +253,12 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
     # Information about domains
     num_classes = source_dataset.num_classes
     num_domains = source_dataset.num_domains
+
+    # If num_domains = None, then we're passing a "target" dataset as the source
+    # for the upper bound, so we really only have one domain
+    # (also in main.py, metrics.py)
+    if num_domains is None:
+        num_domains = 1
 
     # Build our model
     # Note: {global,num}_step are for training, so it doesn't matter what

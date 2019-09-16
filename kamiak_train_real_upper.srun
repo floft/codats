@@ -1,0 +1,119 @@
+#!/bin/bash
+#SBATCH --job-name=train_real
+#SBATCH --output=slurm_logs/train_%A_%a.out
+#SBATCH --error=slurm_logs/train_%A_%a.err
+#SBATCH --cpus-per-task=3
+#SBATCH --gres=gpu:1
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=20G
+#SBATCH --array=0-44
+
+#
+# Upper bound separate since there's a lot of duplicates if we were to run it
+# in kamiak_train_real.srun since for upper bounds the multiple combinations
+# of source domains (or number of them) doesn't affect the result. Thus, just
+# run three of each.
+#
+
+# My computer
+#gpumem=4500
+# SBATCH --partition=cook
+# SBATCH --cpus-per-task=4
+# SBATCH --gres=gpu:0
+# SBATCH --mem=10G
+# Kamiak
+gpumem=0
+# SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+# SBATCH --cpus-per-task=3
+# SBATCH --gres=gpu:1
+# SBATCH --mem=20G
+
+. kamiak_config.sh
+
+# Errors
+handle_terminate() { echo "Exiting"; exit 1; }
+handle_error() { echo "Error occured -- exiting"; exit 1; }
+trap "handle_terminate" SIGTERM SIGINT
+
+# Get suffix, i.e. files stored in kamiak-{models,logs}-suffix
+suffix=$1; shift
+[[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
+
+# Adapt in both directions, then do upper bound
+model=fcn
+methods=("upper")
+debugnums=(1 2 3)
+# number of adaptation problems = 15
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("ucihar_t1" "ucihar_t2" "ucihar_t3" "ucihar_t4" "ucihar_t5" "uwave_t1" "uwave_t2" "uwave_t3" "uwave_t4" "uwave_t5" "sleep_t0" "sleep_t1" "sleep_t2" "sleep_t3" "sleep_t4")
+
+# Make sure we're using the right number
+correct_min=0
+correct_max=$(( ${#methods[@]} * ${#debugnums[@]} * ${#sources[@]} - 1))
+[[ ${#sources[@]} == ${#targets[@]} ]] || \
+    { echo "source/target sizes should match"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
+    { echo "array min should be $correct_min"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
+    { echo "array max should be $correct_max"; handle_error; }
+
+# Indexing: https://stackoverflow.com/a/34363187
+index=$SLURM_ARRAY_TASK_ID
+index1max=${#sources[@]}
+index2max=${#debugnums[@]}
+index3=$((index / (index1max * index2max)))
+index=$((index - index3 * index1max * index2max))
+index2=$((index / index1max))
+index1=$((index % index1max))
+
+method="${methods[$index3]}"
+debugnum="${debugnums[$index2]}"
+source="${sources[$index1]}"
+target="${targets[$index1]}"
+
+# Upper bound is actually "none" but without a target domain and with other args
+additional_args=()
+if [[ $method == "upper" ]]; then
+    method="none"
+    source="$target"
+    target=""
+    #additional_args+=("--best_source" "--notrain_on_source_valid")
+fi
+
+# For DG vs. DA always pass these for being more fair.
+additional_args+=("--best_source" "--notrain_on_source_valid")
+
+# Training / model options
+steps=30000
+lr=0.0001
+model=fcn
+batch=64
+
+if [[ $method == "vrada" || $method == "rdann" ]]; then
+    model="$method"
+elif [[ $method == "random" ]]; then
+    additional_args+=("--log_val_steps=100")
+fi
+
+# Pretraining - VRADA requires its custom reconstruction loss
+if [[ $method == "vrada" || $method == "rdann" || $method == "random" ]]; then
+    pretraining=0
+else
+    pretraining=1000
+fi
+
+echo "$suffix #$SLURM_ARRAY_TASK_ID"
+echo "Method: $method"
+echo "DebugNum: $debugnum"
+echo "Other args: $@"
+echo "$source --> $target"
+
+cd "$remotedir"
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
+python3 main.py \
+    --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
+    --model="$model" --steps="$steps" --train_batch=$batch --pretrain_steps=$pretraining --lr="$lr" \
+    --method="$method" --source="$source" --target="$target" --debugnum="$debugnum" \
+    --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error

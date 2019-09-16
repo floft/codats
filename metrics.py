@@ -66,7 +66,7 @@ class Metrics:
 
         # If num_domains = None, then we're passing a "target" dataset as the source
         # for the upper bound, so we really only have one domain
-        # (also in main.py)
+        # (also in main.py, main_eval.py)
         if self.num_domains is None:
             self.num_domains = 1
 
