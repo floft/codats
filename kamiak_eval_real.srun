@@ -82,6 +82,9 @@ fi
 # For DG vs. DA always pass these for being more fair.
 additional_args+=("--best_source")
 
+# OOM errors
+additional_args+=("--eval_batch=1024")
+
 # Model
 if [[ $method == "vrada" || $method == "rdann" ]]; then
     model="$method"

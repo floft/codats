@@ -260,13 +260,16 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
     if num_domains is None:
         num_domains = 1
 
+    # Changes model
+    sleep_generalize = method_name in ["sleep_dg"]
+
     # Build our model
     # Note: {global,num}_step are for training, so it doesn't matter what
     # we set them to here
     global_step = 1
     num_steps = 1
     model = DomainAdaptationModel(num_classes, num_domains, model_name,
-        global_step, num_steps)
+        global_step, num_steps, sleep_generalize=sleep_generalize)
 
     # For mapping, we need to know the source and target sizes
     # Note: first dimension is batch size, so drop that
