@@ -17,6 +17,8 @@ from scipy import stats
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
+flags.DEFINE_boolean("similarity", False, "Similarity on x axis rather than number of source domains")
+flags.DEFINE_string("similarity_filename", "similarity.txt", "File containing similarity")
 
 
 # Use nice names for the plot
@@ -39,6 +41,30 @@ nice_method_names = {
     "vrada": "VRADA",
     "random": "Many Reinit",
 }
+
+
+def get_similarity():
+    """ Returns dictionary indexed by target then source and lists the
+    train mean +/- stdev then test mean +/- stdev similarity """
+    similarity = {}
+
+    with open(FLAGS.similarity_filename) as f:
+        for line in f:
+            parts = line.split(";")
+            assert len(parts) == 10
+            _, _, source, target, _, _, \
+                distance_train_mean, distance_train_std, \
+                distance_test_mean, distance_test_std = parts
+
+            if target not in similarity:
+                similarity[target] = {}
+
+            similarity[target][source] = (
+                distance_train_mean, distance_train_std,
+                distance_test_mean, distance_test_std
+            )
+
+    return similarity
 
 
 def get_tuning_files(dir_name, prefix):
@@ -306,13 +332,19 @@ def pretty_source_target_names(source, target):
 
 
 def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
-        legend_separate=True, prefix="multisource", suffix="pdf",
-        xaxis="Number of source domains"):
+        legend_separate=True, suffix="pdf"):
     """ Generate plots of target accuracy vs. number of source domains """
     ms_results = {}
 
     files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
     results = all_stats(files)
+
+    if FLAGS.similarity:
+        prefix = "similarity"
+        similarity = get_similarity()
+    else:
+        prefix = "multisource"
+        similarity = None
 
     for result in results:
         params = result["parameters"]
@@ -324,6 +356,20 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
         dataset_name = target
         mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
         std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
+
+        if FLAGS.similarity:
+            # The raw values, not pretty versions
+            if params["target"] in similarity and \
+                    params["source"] in similarity[params["target"]]:
+                result_similarity = similarity[params["target"]][params["source"]]
+
+                # Use the mean training value
+                result_similarity = result_similarity[0]
+            else:
+                print("Warning: skipping", params["source"], "to", params["target"])
+                continue
+        else:
+            result_similarity = 0.0
 
         # For upper bound, we set the source to the target
         if method == "upper":
@@ -338,7 +384,7 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
             ms_results[dataset_name][method] = {}
         if n not in ms_results[dataset_name][method]:
             ms_results[dataset_name][method][n] = []
-        ms_results[dataset_name][method][n].append((n, mean, std))
+        ms_results[dataset_name][method][n].append((n, result_similarity, mean, std))
 
     # Recompute mean/stdev for those that have multiple entries
     # Get rid of the n-specific dictionary
@@ -351,14 +397,17 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
                     ms_values = np.array(ms_values, dtype=np.float32)
                     # All the 0th elements should be the same n
                     # Then recompute the mean/stdev from the accuracy values in 1th column
-                    new_values.append((int(ms_values[0, 0]), ms_values[:, 1].mean(), ms_values[:, 1].std(ddof=0)))
+                    new_values.append((int(ms_values[0, 0]), float(ms_values[0, 1]), ms_values[:, 2].mean(), ms_values[:, 2].std(ddof=0)))
                 else:
                     # Leave as is if there's only one
                     assert new_values == [], "upper bound has multiple runs?"
                     new_values = ms_values
 
-            # Sort on n
-            new_values.sort(key=lambda x: x[0])
+            # Sort on n or similarity
+            if FLAGS.similarity:
+                new_values.sort(key=lambda x: x[1])
+            else:
+                new_values.sort(key=lambda x: x[0])
 
             ms_results[dataset][method] = new_values
 
@@ -381,14 +430,24 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
 
         for i in range(len(data)):
             method_data = np.array(data[i])
-            x = method_data[:, 0] + jitter[i]
-            y = method_data[:, 1]*100
-            std = method_data[:, 2]*100
+
+            if FLAGS.similarity:
+                x = method_data[:, 1]  # don't jitter since x means something
+            else:
+                x = method_data[:, 0] + jitter[i]
+
+            y = method_data[:, 2]*100
+            std = method_data[:, 3]*100
             method_name = nice_method_names[methods[i]]
             plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+"--", alpha=0.8)
 
         if show_title:
             plt.title("Adaptation and Generalization Methods on "+dataset_name)
+
+        if FLAGS.similarity:
+            xaxis = "Feature-level Wasserstein distance between source(s) and target"
+        else:
+            xaxis = "Number of source domains"
 
         ax.set_xlabel(xaxis)
         ax.set_ylabel("Target Domain Accuracy (%)")
