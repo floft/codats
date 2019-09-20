@@ -77,14 +77,16 @@ class CheckpointManager:
 
     def restore_latest(self):
         """ Restore the checkpoint from the latest one """
-        self.checkpoint.restore(self.latest_manager.latest_checkpoint)
+        self.checkpoint.restore(self.latest_manager.latest_checkpoint).expect_partial()
 
     def restore_best(self, target=False):
         """ Restore the checkpoint from the best one """
+        # Note: using expect_partial() so we don't get warnings about loading
+        # only some of the weights
         if target and self.target:
-            self.checkpoint.restore(self.best_target_manager.latest_checkpoint)
+            self.checkpoint.restore(self.best_target_manager.latest_checkpoint).expect_partial()
         else:
-            self.checkpoint.restore(self.best_manager.latest_checkpoint)
+            self.checkpoint.restore(self.best_manager.latest_checkpoint).expect_partial()
 
     def latest_step(self):
         """ Return the step number from the latest checkpoint. Returns None if
