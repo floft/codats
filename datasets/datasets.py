@@ -217,6 +217,85 @@ class Dataset:
             stratify=y, random_state=random_state)
         return x_train, y_train, x_test, y_test, domain_train, domain_test
 
+    def get_file_in_archive(self, archive, filename):
+        """ Read one file out of the already-open zip/rar file """
+        with archive.open(filename) as fp:
+            contents = fp.read()
+        return contents
+
+    def create_windows_x(self, x, window_size, overlap):
+        """
+        Concatenate along dim-1 to meet the desired window_size. We'll skip any
+        windows that reach beyond the end. Only process x (saves memory).
+
+        Two options (examples for window_size=5):
+            Overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
+                label of example 4; and window 1 will be 1,2,3,4,5 and the label of
+                example 5
+            No overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
+                label of example 4; and window 1 will be 5,6,7,8,9 and the label of
+                example 9
+        """
+        x = np.expand_dims(x, axis=1)
+
+        # No work required if the window size is 1, only part required is
+        # the above expand dims
+        if window_size == 1:
+            return x
+
+        windows_x = []
+        i = 0
+
+        while i < len(x)-window_size:
+            window_x = np.expand_dims(np.concatenate(x[i:i+window_size], axis=0), axis=0)
+            windows_x.append(window_x)
+
+            # Where to start the next window
+            if overlap:
+                i += 1
+            else:
+                i += window_size
+
+        return np.vstack(windows_x)
+
+    def create_windows_y(self, y, window_size, overlap):
+        """
+        Concatenate along dim-1 to meet the desired window_size. We'll skip any
+        windows that reach beyond the end. Only process y (saves memory).
+
+        Two options (examples for window_size=5):
+            Overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
+                label of example 4; and window 1 will be 1,2,3,4,5 and the label of
+                example 5
+            No overlap - e.g. window 0 will be a list of examples 0,1,2,3,4 and the
+                label of example 4; and window 1 will be 5,6,7,8,9 and the label of
+                example 9
+        """
+        # No work required if the window size is 1
+        if window_size == 1:
+            return y
+
+        windows_y = []
+        i = 0
+
+        while i < len(y)-window_size:
+            window_y = y[i+window_size-1]
+            windows_y.append(window_y)
+
+            # Where to start the next window
+            if overlap:
+                i += 1
+            else:
+                i += window_size
+
+        return np.hstack(windows_y)
+
+    def create_windows(self, x, y, window_size, overlap):
+        """ Split time-series data into windows """
+        x = self.create_windows_x(x, window_size, overlap)
+        y = self.create_windows_y(y, window_size, overlap)
+        return x, y
+
     def label_to_int(self, label_name):
         """ e.g. Bathe to 0 """
         return self.class_labels.index(label_name)
@@ -270,12 +349,6 @@ class uWaveBase(Dataset):
         (dataset_fp,) = self.download_dataset(["uWaveGestureLibrary.zip"],
             "https://zhen-wang.appspot.com/rice/files/uwave")
         return dataset_fp
-
-    def get_file_in_archive(self, archive, filename):
-        """ Read one file out of the already-open zip/rar file """
-        with archive.open(filename) as fp:
-            contents = fp.read()
-        return contents
 
     def parse_example(self, filename, content):
         """ Load file containing a single example """
@@ -452,12 +525,6 @@ class SleepBase(Dataset):
             "https://zhen-wang.appspot.com/rice/files/uwave")
         return dataset_fp
 
-    def get_file_in_archive(self, archive, filename):
-        """ Read one file out of the already-open zip/rar file """
-        with archive.open(filename) as fp:
-            contents = fp.read()
-        return contents
-
     def process_examples(self, filename, fp):
         d = np.load(fp, allow_pickle=True).item()
         day = int(filename.replace(".npy", ""))
@@ -581,12 +648,6 @@ class UciHarBase(Dataset):
             "https://archive.ics.uci.edu/ml/machine-learning-databases/00240")
         return dataset_fp
 
-    def get_file_in_archive(self, archive, filename):
-        """ Read one file out of the already-open zip/rar file """
-        with archive.open(filename) as fp:
-            contents = fp.read()
-        return contents
-
     def get_feature(self, content):
         """
         Read the space-separated, example on each line file
@@ -688,6 +749,135 @@ class UciHarBase(Dataset):
         return super().process(data, labels)
 
 
+class UciHHarBase(Dataset):
+    """
+    Loads Heterogeneity Human Activity Recognition (HHAR) dataset
+    http://archive.ics.uci.edu/ml/datasets/Heterogeneity+Activity+Recognition
+    """
+    invertible = False
+    feature_names = [
+        "acc_x", "acc_y", "acc_z",
+        "gyro_x", "gyro_y", "gyro_z",
+    ]
+    num_classes = 6
+    class_labels = [
+        "bike", "sit", "stand", "walk", "stairsup", "stairsdown",
+    ]  # we throw out "null"
+    window_size = 128  # to be relatively similar to HAR
+    window_overlap = False
+
+    def __init__(self, users, target, *args, **kwargs):
+        self.users = users
+        self.domains = calc_domains(users, target)
+        super().__init__(UciHHarBase.num_classes, UciHHarBase.class_labels,
+            UciHHarBase.window_size, UciHHarBase.window_overlap,
+            UciHHarBase.feature_names, *args, **kwargs)
+
+    def download(self):
+        (dataset_fp,) = self.download_dataset(["Activity%20recognition%20exp.zip"],
+            "https://archive.ics.uci.edu/ml/machine-learning-databases/00344/")
+        return dataset_fp
+
+    def read_file(self, content):
+        """ Read the CSV file """
+        lines = content.decode("utf-8").strip().split("\n")
+        data_x = []
+        data_label = []
+        data_subject = []
+        users = ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+
+        for line in lines:
+            index, arrival, creation, x, y, z, user, \
+                model, device, label = line.strip().split(",")
+
+            # Skip the header (can't determine user if invalid)
+            if index == "Index":
+                continue
+
+            user = users.index(user)  # letter --> number
+
+            # Skip users we don't care about and data without a label
+            if user in self.users and label != "null":
+                #index = int(index)
+                #arrival = float(arrival)
+                #creation = float(creation)
+                x = float(x)
+                y = float(y)
+                z = float(z)
+                label = self.class_labels.index(label)  # name --> number
+
+                data_x.append((x, y, z))
+                data_label.append(label)
+                data_subject.append(user)
+
+        data_x = np.array(data_x, dtype=np.float32)
+        data_label = np.array(data_label, dtype=np.float32)
+        data_subject = np.array(data_subject, dtype=np.float32)
+
+        return data_x, data_label, data_subject
+
+    def get_data(self, archive, name):
+        # In their paper, looks like they only did either accelerometer or
+        # gyroscope, not aligning them by the creation timestamp. For them the
+        # accelerometer data worked better, so we'll just use that for now.
+        return self.read_file(self.get_file_in_archive(archive,
+                "Activity recognition exp/"+name+"_accelerometer.csv"))
+
+    def load_file(self, filename):
+        """ Load ZIP file containing all the .txt files """
+        with zipfile.ZipFile(filename, "r") as archive:
+            # For now just use phone data since the positions may differ too much
+            all_data, all_labels, all_subjects = self.get_data(archive, "Phones")
+
+            # phone_data, phone_labels, phone_subjects = self.get_data(archive, "Phone")
+            # watch_data, watch_labels, watch_subjects = self.get_data(archive, "Watch")
+
+        # all_data = np.vstack([phone_data, watch_data]).astype(np.float32)
+        # all_labels = np.hstack([phone_labels, watch_labels]).astype(np.float32)
+        # all_subjects = np.hstack([phone_subjects, watch_subjects]).astype(np.float32)
+
+        # Otherwise, select based on the desired users
+        data = []
+        labels = []
+        domains = []
+
+        for user in self.users:
+            # Load this user's data
+            selection = all_subjects == user
+            current_data = all_data[selection]
+            current_labels = all_labels[selection]
+            assert len(current_labels) > 0, "Error: no data for user "+str(user)
+
+            # Split into windows
+            current_data, current_labels = self.create_windows(current_data,
+                current_labels, self.window_size, self.window_overlap)
+
+            # Save
+            data.append(current_data)
+            labels.append(current_labels)
+
+            domain_index = self.users.index(user)
+            domains.append([self.domains[domain_index]]*len(current_labels))
+
+        x = np.vstack(data).astype(np.float32)
+        y = np.hstack(labels).astype(np.float32)
+        domains = np.hstack(domains).astype(np.float32)
+
+        # print("Selected data:", self.users)
+        # print(x.shape, y.shape, domains.shape)
+
+        return x, y, domains
+
+    def load(self):
+        dataset_fp = self.download()
+        x, y, domain = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
+            self.train_test_split(x, y, domain)
+
+        return train_data, train_labels, train_domain, \
+            test_data, test_labels, test_domain
+
+
 def make_uwave(days=None, users=None, target=False):
     """ Make uWave dataset split on either days or users """
     class uWaveGestures(uWaveBase):
@@ -741,6 +931,19 @@ def make_ucihar(users=None, target=False):
             super().__init__(users, target, *args, **kwargs)
 
     return UciHarDataset
+
+
+def make_ucihhar(users=None, target=False):
+    """ Make UCI HHAR dataset split on users """
+    class UciHHarDataset(UciHHarBase):
+        # If source domain, number is source domains + 1 for target
+        # Set here to make it static
+        num_domains = len(users)+1 if not target else None
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(users, target, *args, **kwargs)
+
+    return UciHHarDataset
 
 
 # List of datasets, target separate from (multi-)source ones since the target
@@ -900,6 +1103,74 @@ datasets = {
     "ucihar_t3": make_ucihar(users=[3], target=True),
     "ucihar_t4": make_ucihar(users=[4], target=True),
     "ucihar_t5": make_ucihar(users=[5], target=True),
+    "ucihhar_n1_0": make_ucihhar(users=[0]),
+    "ucihhar_n1_1": make_ucihhar(users=[1]),
+    "ucihhar_n1_2": make_ucihhar(users=[2]),
+    "ucihhar_n1_3": make_ucihhar(users=[3]),
+    "ucihhar_n1_4": make_ucihhar(users=[4]),
+    "ucihhar_n1_5": make_ucihhar(users=[5]),
+    "ucihhar_n1_6": make_ucihhar(users=[6]),
+    "ucihhar_n2_0,3": make_ucihhar(users=[0,3]),
+    "ucihhar_n2_0,5": make_ucihhar(users=[0,5]),
+    "ucihhar_n2_0,8": make_ucihhar(users=[0,8]),
+    "ucihhar_n2_1,4": make_ucihhar(users=[1,4]),
+    "ucihhar_n2_2,3": make_ucihhar(users=[2,3]),
+    "ucihhar_n2_3,5": make_ucihhar(users=[3,5]),
+    "ucihhar_n2_3,6": make_ucihhar(users=[3,6]),
+    "ucihhar_n2_4,5": make_ucihhar(users=[4,5]),
+    "ucihhar_n2_4,6": make_ucihhar(users=[4,6]),
+    "ucihhar_n2_4,8": make_ucihhar(users=[4,8]),
+    "ucihhar_n2_5,6": make_ucihhar(users=[5,6]),
+    "ucihhar_n2_6,8": make_ucihhar(users=[6,8]),
+    "ucihhar_n3_0,1,4": make_ucihhar(users=[0,1,4]),
+    "ucihhar_n3_0,2,3": make_ucihhar(users=[0,2,3]),
+    "ucihhar_n3_0,4,5": make_ucihhar(users=[0,4,5]),
+    "ucihhar_n3_0,4,8": make_ucihhar(users=[0,4,8]),
+    "ucihhar_n3_0,7,8": make_ucihhar(users=[0,7,8]),
+    "ucihhar_n3_1,5,6": make_ucihhar(users=[1,5,6]),
+    "ucihhar_n3_3,4,6": make_ucihhar(users=[3,4,6]),
+    "ucihhar_n3_3,4,8": make_ucihhar(users=[3,4,8]),
+    "ucihhar_n3_3,5,8": make_ucihhar(users=[3,5,8]),
+    "ucihhar_n3_3,6,8": make_ucihhar(users=[3,6,8]),
+    "ucihhar_n3_4,5,7": make_ucihhar(users=[4,5,7]),
+    "ucihhar_n3_4,6,7": make_ucihhar(users=[4,6,7]),
+    "ucihhar_n3_5,6,7": make_ucihhar(users=[5,6,7]),
+    "ucihhar_n3_6,7,8": make_ucihhar(users=[6,7,8]),
+    "ucihhar_n4_0,1,2,3": make_ucihhar(users=[0,1,2,3]),
+    "ucihhar_n4_0,1,4,8": make_ucihhar(users=[0,1,4,8]),
+    "ucihhar_n4_0,1,7,8": make_ucihhar(users=[0,1,7,8]),
+    "ucihhar_n4_0,2,3,8": make_ucihhar(users=[0,2,3,8]),
+    "ucihhar_n4_0,4,5,6": make_ucihhar(users=[0,4,5,6]),
+    "ucihhar_n4_0,4,7,8": make_ucihhar(users=[0,4,7,8]),
+    "ucihhar_n4_1,2,5,6": make_ucihhar(users=[1,2,5,6]),
+    "ucihhar_n4_1,3,4,8": make_ucihhar(users=[1,3,4,8]),
+    "ucihhar_n4_1,3,5,8": make_ucihhar(users=[1,3,5,8]),
+    "ucihhar_n4_3,4,5,6": make_ucihhar(users=[3,4,5,6]),
+    "ucihhar_n4_3,4,6,8": make_ucihhar(users=[3,4,6,8]),
+    "ucihhar_n4_3,5,6,7": make_ucihhar(users=[3,5,6,7]),
+    "ucihhar_n4_3,6,7,8": make_ucihhar(users=[3,6,7,8]),
+    "ucihhar_n4_4,5,6,7": make_ucihhar(users=[4,5,6,7]),
+    "ucihhar_n4_4,5,7,8": make_ucihhar(users=[4,5,7,8]),
+    "ucihhar_n5_0,1,2,3,8": make_ucihhar(users=[0,1,2,3,8]),
+    "ucihhar_n5_0,1,2,7,8": make_ucihhar(users=[0,1,2,7,8]),
+    "ucihhar_n5_0,1,4,5,6": make_ucihhar(users=[0,1,4,5,6]),
+    "ucihhar_n5_0,1,4,5,8": make_ucihhar(users=[0,1,4,5,8]),
+    "ucihhar_n5_0,1,4,7,8": make_ucihhar(users=[0,1,4,7,8]),
+    "ucihhar_n5_0,2,3,5,8": make_ucihhar(users=[0,2,3,5,8]),
+    "ucihhar_n5_0,4,5,6,7": make_ucihhar(users=[0,4,5,6,7]),
+    "ucihhar_n5_1,2,5,6,8": make_ucihhar(users=[1,2,5,6,8]),
+    "ucihhar_n5_1,3,4,5,8": make_ucihhar(users=[1,3,4,5,8]),
+    "ucihhar_n5_1,3,5,7,8": make_ucihhar(users=[1,3,5,7,8]),
+    "ucihhar_n5_2,3,4,5,6": make_ucihhar(users=[2,3,4,5,6]),
+    "ucihhar_n5_2,3,4,6,8": make_ucihhar(users=[2,3,4,6,8]),
+    "ucihhar_n5_2,3,5,6,7": make_ucihhar(users=[2,3,5,6,7]),
+    "ucihhar_n5_3,4,5,7,8": make_ucihhar(users=[3,4,5,7,8]),
+    "ucihhar_n5_3,5,6,7,8": make_ucihhar(users=[3,5,6,7,8]),
+    "ucihhar_t0": make_ucihhar(users=[0], target=True),
+    "ucihhar_t1": make_ucihhar(users=[1], target=True),
+    "ucihhar_t2": make_ucihhar(users=[2], target=True),
+    "ucihhar_t3": make_ucihhar(users=[3], target=True),
+    "ucihhar_t4": make_ucihhar(users=[4], target=True),
     "uwave_n1_1": make_uwave(users=[1]),
     "uwave_n1_2": make_uwave(users=[2]),
     "uwave_n1_3": make_uwave(users=[3]),

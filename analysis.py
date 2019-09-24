@@ -320,6 +320,7 @@ def pretty_source_target_names(source, target):
     # Make it look good
     replacements = [
         ("ucihar_", "HAR "),
+        ("ucihhar_", "HHAR "),
         ("uwave_", "uWave "),
         ("utdata_wrist", "Wrist"),
         ("utdata_pocket", "Pocket"),
@@ -366,7 +367,9 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
                 # Use the mean training value
                 result_similarity = result_similarity[0]
             else:
-                print("Warning: skipping", params["source"], "to", params["target"])
+                print("Warning: skipping", params["source"], "to",
+                    params["target"], "if not target, then probably update",
+                    FLAGS.similarity_filename)
                 continue
         else:
             result_similarity = 0.0

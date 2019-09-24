@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-44
+#SBATCH --array=0-59
 
 #
 # Upper bound separate since there's a lot of duplicates if we were to run it
@@ -44,9 +44,9 @@ suffix=$1; shift
 model=fcn
 methods=("upper")
 debugnums=(1 2 3)
-# number of adaptation problems = 15
-sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
-targets=("ucihar_t1" "ucihar_t2" "ucihar_t3" "ucihar_t4" "ucihar_t5" "uwave_t1" "uwave_t2" "uwave_t3" "uwave_t4" "uwave_t5" "sleep_t0" "sleep_t1" "sleep_t2" "sleep_t3" "sleep_t4")
+# number of adaptation problems = 20
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("sleep_t0" "sleep_t1" "sleep_t2" "sleep_t3" "sleep_t4" "ucihar_t1" "ucihar_t2" "ucihar_t3" "ucihar_t4" "ucihar_t5" "ucihhar_t0" "ucihhar_t1" "ucihhar_t2" "ucihhar_t3" "ucihhar_t4" "uwave_t1" "uwave_t2" "uwave_t3" "uwave_t4" "uwave_t5")
 
 # Make sure we're using the right number
 correct_min=0

@@ -104,6 +104,7 @@ if __name__ == "__main__":
         "ucihar": one_to_n(30),
         "uwave": one_to_n(8),
         "sleep": zero_to_n(25),
+        "ucihhar": zero_to_n(8),
     }
 
     # Output strings
@@ -159,3 +160,13 @@ if __name__ == "__main__":
     print("# number of adaptation problems =", len(sources))
     print("sources=(", " ".join(sources), ")", sep="")
     print("targets=(", " ".join(targets), ")", sep="")
+    print()
+
+    print("For kamiak_{train,eval}_real_upper.srun:")
+    targets_unique = list(set(targets))
+    targets_unique.sort()
+    sources_blank = ["\"\""]*len(targets_unique)
+
+    print("# number of adaptation problems =", len(targets_unique))
+    print("sources=(", " ".join(sources_blank), ")", sep="")
+    print("targets=(", " ".join(targets_unique), ")", sep="")
