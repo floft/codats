@@ -54,6 +54,8 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
 
         # We want several random subsets of each so we can get mean +/- stdev
         for i in range(repeat):
+            skip = False
+
             # Select random source domains excluding target, keep shuffling until
             # we find a source set we haven't already used. The point of "repeat"
             # is to get *different* subsets. If it's the same, then there's not
@@ -79,8 +81,13 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
                         "n:"+str(n)+",",
                         "user:"+str(target_user)+",",
                         "repeat:"+str(i))
+                    skip = True
                     break
                 j += 1
+
+            # Skip if this "repeat" would be the same as a previous one
+            if skip:
+                continue
 
             source_users = [str(x) for x in source_users]
 
