@@ -73,8 +73,13 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
                     already_used_target[tuple(source_users)] = None
                     break
                 elif j > 1000:
-                    print("Infinite loop...")
-                    exit(1)
+                    print("Warning: couldn't pick different set of sources",
+                        "than previously used,",
+                        "dataset:"+dataset_name+",",
+                        "n:"+str(n)+",",
+                        "user:"+str(target_user)+",",
+                        "repeat:"+str(i))
+                    break
                 j += 1
 
             source_users = [str(x) for x in source_users]
@@ -103,8 +108,10 @@ if __name__ == "__main__":
     datasets = {
         "ucihar": one_to_n(30),
         "uwave": one_to_n(8),
-        "sleep": zero_to_n(25),
         "ucihhar": zero_to_n(8),
+        "ucihm": zero_to_n(5),
+
+        #"sleep": zero_to_n(25),
     }
 
     # Output strings

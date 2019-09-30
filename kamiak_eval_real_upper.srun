@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-19
+#SBATCH --array=0-14
 
 # My computer
 #gpumem=4500
@@ -38,9 +38,9 @@ model=fcn
 methods=("upper")
 #variants=("best" "last")
 variants=("best")
-# number of adaptation problems = 20
-sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
-targets=("sleep_t0" "sleep_t1" "sleep_t2" "sleep_t3" "sleep_t4" "ucihar_t1" "ucihar_t2" "ucihar_t3" "ucihar_t4" "ucihar_t5" "ucihhar_t0" "ucihhar_t1" "ucihhar_t2" "ucihhar_t3" "ucihhar_t4" "uwave_t1" "uwave_t2" "uwave_t3" "uwave_t4" "uwave_t5")
+# number of adaptation problems = 5
+sources=("" "" "" "" "")
+targets=("ucihm_t0" "ucihm_t1" "ucihm_t2" "ucihm_t3" "ucihm_t4")
 
 # Make sure we're using the right number
 correct_min=0

@@ -9,6 +9,7 @@ import re
 import io
 import zipfile
 import rarfile  # pip install rarfile
+import scipy.io
 import numpy as np
 import tensorflow as tf
 
@@ -878,6 +879,124 @@ class UciHHarBase(Dataset):
             test_data, test_labels, test_domain
 
 
+class UciHmBase(Dataset):
+    """
+    Loads sEMG for Basic Hand movements dataset
+    http://archive.ics.uci.edu/ml/datasets/sEMG+for+Basic+Hand+movements
+    """
+    invertible = False
+    feature_names = [
+        "ch1", "ch2",
+    ]
+    num_classes = 6
+    class_labels = [
+        "spher", "tip", "palm", "lat", "cyl", "hook",
+    ]
+    window_size = 500  # 500 Hz, so 1 second
+    window_overlap = False  # Note: using np.hsplit, so this has no effect
+
+    def __init__(self, users, target, *args, **kwargs):
+        self.users = users
+        self.domains = calc_domains(users, target)
+        super().__init__(UciHmBase.num_classes, UciHmBase.class_labels,
+            UciHmBase.window_size, UciHmBase.window_overlap,
+            UciHmBase.feature_names, *args, **kwargs)
+
+    def download(self):
+        (dataset_fp,) = self.download_dataset(["sEMG_Basic_Hand_movements_upatras.zip"],
+            "https://archive.ics.uci.edu/ml/machine-learning-databases/00313/")
+        return dataset_fp
+
+    def get_data(self, archive, filename):
+        """ Open .mat file in zip file, then load contents"""
+        with archive.open(filename) as fp:
+            mat = scipy.io.loadmat(fp)
+
+            data_x = []
+            data_label = []
+
+            for label_index, label in enumerate(self.class_labels):
+                # Concatenate the channels
+                data = []
+
+                for channel in self.feature_names:
+                    data.append(mat[label+"_"+channel])
+
+                # Reshape from (2, 30, 3000) to (30, 3000, 2) for 30 examples,
+                # 3000 time steps, and 2 features
+                data = np.array(data, dtype=np.float32).transpose([1, 2, 0])
+
+                # Split from 3000 or 2500 time steps into 6 or 5 non-overlapping
+                # windows of 500 samples. Duplicate the label 6 or 5 times,
+                # respectively.
+                assert data.shape[1] in [2500, 3000], "data.shape[1] should " \
+                    "be 2500 or 3000, but is "+str(data.shape[1])
+                num_windows = data.shape[1]//self.window_size
+                data_x += np.hsplit(data, num_windows)
+                data_label += [label_index]*len(data)*num_windows
+
+            data_x = np.vstack(data_x).astype(np.float32)
+            data_label = np.array(data_label, dtype=np.float32)
+
+            return data_x, data_label
+
+    def load_file(self, filename):
+        """
+        Load desired participants' data
+
+        Numbering:
+            0 - Database 1/female_1.mat
+            1 - Database 1/female_2.mat
+            2 - Database 1/female_3.mat
+            3 - Database 1/male_1.mat
+            4 - Database 1/male_2.mat
+            5 - Database 2/male_day_{1,2,3}.mat
+        """
+        data = []
+        labels = []
+        domains = []
+
+        with zipfile.ZipFile(filename, "r") as archive:
+            for user in self.users:
+                # Load this user's data
+                if user != 5:
+                    gender = "female" if user < 3 else "male"
+                    index = user+1 if user < 3 else user-2
+                    current_data, current_labels = self.get_data(archive,
+                        "Database 1/"+gender+"_"+str(index)+".mat")
+                else:
+                    data1, labels1 = self.get_data(archive, "Database 2/male_day_1.mat")
+                    data2, labels2 = self.get_data(archive, "Database 2/male_day_2.mat")
+                    data3, labels3 = self.get_data(archive, "Database 2/male_day_3.mat")
+                    current_data = np.vstack([data1, data2, data3]).astype(np.float32)
+                    current_labels = np.hstack([labels1, labels2, labels3]).astype(np.float32)
+
+                # Save
+                data.append(current_data)
+                labels.append(current_labels)
+
+                domain_index = self.users.index(user)
+                domains.append([self.domains[domain_index]]*len(current_labels))
+
+        x = np.vstack(data).astype(np.float32)
+        y = np.hstack(labels).astype(np.float32)
+        domains = np.hstack(domains).astype(np.float32)
+
+        # print("Selected data:", self.users)
+        # print(x.shape, y.shape, domains.shape)
+
+        return x, y, domains
+
+    def load(self):
+        dataset_fp = self.download()
+        x, y, domain = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
+            self.train_test_split(x, y, domain)
+
+        return train_data, train_labels, train_domain, \
+            test_data, test_labels, test_domain
+
+
 def make_uwave(days=None, users=None, target=False):
     """ Make uWave dataset split on either days or users """
     class uWaveGestures(uWaveBase):
@@ -946,88 +1065,23 @@ def make_ucihhar(users=None, target=False):
     return UciHHarDataset
 
 
+def make_ucihm(users=None, target=False):
+    """ Make UCI HM dataset split on users """
+    class UciHmDataset(UciHmBase):
+        # If source domain, number is source domains + 1 for target
+        # Set here to make it static
+        num_domains = len(users)+1 if not target else None
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(users, target, *args, **kwargs)
+
+    return UciHmDataset
+
+
 # List of datasets, target separate from (multi-)source ones since the target
 # always has domain=0 whereas the others have domain=1,2,... for each source
 # See pick_multi_source.py
 datasets = {
-    "sleep_n11_0,1,3,6,10,11,13,14,15,16,23": make_sleep(users=[0,1,3,6,10,11,13,14,15,16,23]),
-    "sleep_n11_0,1,3,6,10,12,13,15,16,24,25": make_sleep(users=[0,1,3,6,10,12,13,15,16,24,25]),
-    "sleep_n11_0,1,6,9,10,12,13,16,19,20,25": make_sleep(users=[0,1,6,9,10,12,13,16,19,20,25]),
-    "sleep_n11_0,2,4,10,12,13,14,15,16,20,24": make_sleep(users=[0,2,4,10,12,13,14,15,16,20,24]),
-    "sleep_n11_0,2,4,6,9,10,12,13,17,21,23": make_sleep(users=[0,2,4,6,9,10,12,13,17,21,23]),
-    "sleep_n11_0,2,6,8,10,14,17,18,21,22,24": make_sleep(users=[0,2,6,8,10,14,17,18,21,22,24]),
-    "sleep_n11_0,3,5,7,8,10,12,13,15,18,25": make_sleep(users=[0,3,5,7,8,10,12,13,15,18,25]),
-    "sleep_n11_0,4,6,7,10,12,13,14,15,20,25": make_sleep(users=[0,4,6,7,10,12,13,14,15,20,25]),
-    "sleep_n11_1,5,8,11,12,14,16,18,19,22,23": make_sleep(users=[1,5,8,11,12,14,16,18,19,22,23]),
-    "sleep_n11_1,6,9,11,14,15,16,22,23,24,25": make_sleep(users=[1,6,9,11,14,15,16,22,23,24,25]),
-    "sleep_n11_2,4,9,10,11,12,15,18,19,22,24": make_sleep(users=[2,4,9,10,11,12,15,18,19,22,24]),
-    "sleep_n11_2,7,8,10,11,12,17,19,22,23,25": make_sleep(users=[2,7,8,10,11,12,17,19,22,23,25]),
-    "sleep_n11_3,4,8,10,12,13,16,18,22,23,25": make_sleep(users=[3,4,8,10,12,13,16,18,22,23,25]),
-    "sleep_n11_5,6,7,9,12,13,14,16,18,19,23": make_sleep(users=[5,6,7,9,12,13,14,16,18,19,23]),
-    "sleep_n11_6,7,10,11,12,13,16,17,19,20,22": make_sleep(users=[6,7,10,11,12,13,16,17,19,20,22]),
-    "sleep_n16_0,1,2,3,5,6,8,10,12,13,15,16,18,21,24,25": make_sleep(users=[0,1,2,3,5,6,8,10,12,13,15,16,18,21,24,25]),
-    "sleep_n16_0,1,2,4,6,9,10,11,12,13,15,17,21,23,24,25": make_sleep(users=[0,1,2,4,6,9,10,11,12,13,15,17,21,23,24,25]),
-    "sleep_n16_0,1,2,6,9,10,12,13,14,16,17,19,20,22,23,25": make_sleep(users=[0,1,2,6,9,10,12,13,14,16,17,19,20,22,23,25]),
-    "sleep_n16_0,1,3,6,10,11,13,14,15,16,19,20,21,22,23,24": make_sleep(users=[0,1,3,6,10,11,13,14,15,16,19,20,21,22,23,24]),
-    "sleep_n16_0,2,3,4,6,8,9,10,12,14,17,18,20,21,22,24": make_sleep(users=[0,2,3,4,6,8,9,10,12,14,17,18,20,21,22,24]),
-    "sleep_n16_0,2,3,5,7,8,9,10,12,13,14,15,18,20,22,25": make_sleep(users=[0,2,3,5,7,8,9,10,12,13,14,15,18,20,22,25]),
-    "sleep_n16_0,2,4,5,7,10,11,12,13,14,15,16,17,19,20,24": make_sleep(users=[0,2,4,5,7,10,11,12,13,14,15,16,17,19,20,24]),
-    "sleep_n16_0,2,4,5,8,9,10,11,12,15,17,18,19,21,22,24": make_sleep(users=[0,2,4,5,8,9,10,11,12,15,17,18,19,21,22,24]),
-    "sleep_n16_0,2,7,8,9,10,11,12,15,16,17,19,22,23,24,25": make_sleep(users=[0,2,7,8,9,10,11,12,15,16,17,19,22,23,24,25]),
-    "sleep_n16_0,4,6,7,9,10,11,12,13,14,15,17,20,23,24,25": make_sleep(users=[0,4,6,7,9,10,11,12,13,14,15,17,20,23,24,25]),
-    "sleep_n16_1,3,5,7,8,11,12,13,14,16,18,19,20,22,23,24": make_sleep(users=[1,3,5,7,8,11,12,13,14,16,18,19,20,22,23,24]),
-    "sleep_n16_1,4,5,6,8,9,11,13,14,15,16,17,22,23,24,25": make_sleep(users=[1,4,5,6,8,9,11,13,14,15,16,17,22,23,24,25]),
-    "sleep_n16_1,5,6,7,9,10,12,13,14,16,18,19,20,22,23,24": make_sleep(users=[1,5,6,7,9,10,12,13,14,16,18,19,20,22,23,24]),
-    "sleep_n16_2,3,4,8,10,12,13,15,16,17,18,20,21,22,23,25": make_sleep(users=[2,3,4,8,10,12,13,15,16,17,18,20,21,22,23,25]),
-    "sleep_n16_2,6,7,10,11,12,13,14,15,16,17,18,19,20,22,23": make_sleep(users=[2,6,7,10,11,12,13,14,15,16,17,18,19,20,22,23]),
-    "sleep_n1_0": make_sleep(users=[0]),
-    "sleep_n1_1": make_sleep(users=[1]),
-    "sleep_n1_10": make_sleep(users=[10]),
-    "sleep_n1_13": make_sleep(users=[13]),
-    "sleep_n1_16": make_sleep(users=[16]),
-    "sleep_n1_17": make_sleep(users=[17]),
-    "sleep_n1_18": make_sleep(users=[18]),
-    "sleep_n1_2": make_sleep(users=[2]),
-    "sleep_n1_23": make_sleep(users=[23]),
-    "sleep_n1_25": make_sleep(users=[25]),
-    "sleep_n1_3": make_sleep(users=[3]),
-    "sleep_n1_4": make_sleep(users=[4]),
-    "sleep_n1_5": make_sleep(users=[5]),
-    "sleep_n21_0,1,2,3,5,6,7,8,9,10,11,12,13,15,16,17,18,20,21,24,25": make_sleep(users=[0,1,2,3,5,6,7,8,9,10,11,12,13,15,16,17,18,20,21,24,25]),
-    "sleep_n21_0,1,2,4,5,7,8,9,10,11,12,13,15,17,18,19,20,21,22,24,25": make_sleep(users=[0,1,2,4,5,7,8,9,10,11,12,13,15,17,18,19,20,21,22,24,25]),
-    "sleep_n21_0,1,2,4,6,8,9,10,11,12,13,14,15,16,17,20,21,22,23,24,25": make_sleep(users=[0,1,2,4,6,8,9,10,11,12,13,14,15,16,17,20,21,22,23,24,25]),
-    "sleep_n21_0,1,2,5,6,7,9,10,12,13,14,15,16,17,18,19,20,21,22,23,25": make_sleep(users=[0,1,2,5,6,7,9,10,12,13,14,15,16,17,18,19,20,21,22,23,25]),
-    "sleep_n21_0,1,3,5,6,7,8,9,10,11,12,13,14,16,18,19,20,21,22,23,24": make_sleep(users=[0,1,3,5,6,7,8,9,10,11,12,13,14,16,18,19,20,21,22,23,24]),
-    "sleep_n21_0,1,3,5,6,8,9,10,11,12,13,14,15,16,19,20,21,22,23,24,25": make_sleep(users=[0,1,3,5,6,8,9,10,11,12,13,14,15,16,19,20,21,22,23,24,25]),
-    "sleep_n21_0,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21,24": make_sleep(users=[0,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21,24]),
-    "sleep_n21_0,2,3,4,5,6,8,9,10,12,13,14,15,16,17,18,20,21,22,24,25": make_sleep(users=[0,2,3,4,5,6,8,9,10,12,13,14,15,16,17,18,20,21,22,24,25]),
-    "sleep_n21_0,2,3,5,6,7,8,9,10,12,13,14,15,16,17,18,19,20,21,22,25": make_sleep(users=[0,2,3,5,6,7,8,9,10,12,13,14,15,16,17,18,19,20,21,22,25]),
-    "sleep_n21_0,2,3,7,8,9,10,11,12,13,14,15,16,17,18,19,20,22,23,24,25": make_sleep(users=[0,2,3,7,8,9,10,11,12,13,14,15,16,17,18,19,20,22,23,24,25]),
-    "sleep_n21_0,4,5,6,7,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25": make_sleep(users=[0,4,5,6,7,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25]),
-    "sleep_n21_1,2,3,4,5,6,7,8,9,11,12,13,14,15,16,17,19,22,23,24,25": make_sleep(users=[1,2,3,4,5,6,7,8,9,11,12,13,14,15,16,17,19,22,23,24,25]),
-    "sleep_n21_1,3,4,5,7,8,10,11,12,13,14,16,17,18,19,20,21,22,23,24,25": make_sleep(users=[1,3,4,5,7,8,10,11,12,13,14,16,17,18,19,20,21,22,23,24,25]),
-    "sleep_n21_2,3,4,5,7,8,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25": make_sleep(users=[2,3,4,5,7,8,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25]),
-    "sleep_n21_2,3,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,22,23,24,25": make_sleep(users=[2,3,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,22,23,24,25]),
-    "sleep_n6_0,1,3,10,13,24": make_sleep(users=[0,1,3,10,13,24]),
-    "sleep_n6_0,2,4,13,17,23": make_sleep(users=[0,2,4,13,17,23]),
-    "sleep_n6_0,2,6,8,10,14": make_sleep(users=[0,2,6,8,10,14]),
-    "sleep_n6_0,6,10,12,14,25": make_sleep(users=[0,6,10,12,14,25]),
-    "sleep_n6_1,3,11,13,14,23": make_sleep(users=[1,3,11,13,14,23]),
-    "sleep_n6_1,5,8,12,16,19": make_sleep(users=[1,5,8,12,16,19]),
-    "sleep_n6_1,9,11,23,24,25": make_sleep(users=[1,9,11,23,24,25]),
-    "sleep_n6_10,12,13,14,15,20": make_sleep(users=[10,12,13,14,15,20]),
-    "sleep_n6_2,4,10,11,18,22": make_sleep(users=[2,4,10,11,18,22]),
-    "sleep_n6_3,4,8,12,13,25": make_sleep(users=[3,4,8,12,13,25]),
-    "sleep_n6_5,6,7,9,16,19": make_sleep(users=[5,6,7,9,16,19]),
-    "sleep_n6_5,8,13,15,18,25": make_sleep(users=[5,8,13,15,18,25]),
-    "sleep_n6_6,10,12,16,19,20": make_sleep(users=[6,10,12,16,19,20]),
-    "sleep_n6_7,10,13,17,19,20": make_sleep(users=[7,10,13,17,19,20]),
-    "sleep_n6_8,10,12,19,22,25": make_sleep(users=[8,10,12,19,22,25]),
-    "sleep_t0": make_sleep(users=[0], target=True),
-    "sleep_t1": make_sleep(users=[1], target=True),
-    "sleep_t2": make_sleep(users=[2], target=True),
-    "sleep_t3": make_sleep(users=[3], target=True),
-    "sleep_t4": make_sleep(users=[4], target=True),
     "ucihar_n13_1,2,4,6,7,9,10,12,15,21,22,23,27": make_ucihar(users=[1,2,4,6,7,9,10,12,15,21,22,23,27]),
     "ucihar_n13_1,4,5,6,8,11,13,15,17,18,20,24,26": make_ucihar(users=[1,4,5,6,8,11,13,15,17,18,20,24,26]),
     "ucihar_n13_1,4,5,7,8,11,12,16,18,22,23,26,28": make_ucihar(users=[1,4,5,7,8,11,12,16,18,22,23,26,28]),
@@ -1171,6 +1225,55 @@ datasets = {
     "ucihhar_t2": make_ucihhar(users=[2], target=True),
     "ucihhar_t3": make_ucihhar(users=[3], target=True),
     "ucihhar_t4": make_ucihhar(users=[4], target=True),
+    "ucihm_n1_0": make_ucihm(users=[0]),
+    "ucihm_n1_2": make_ucihm(users=[2]),
+    "ucihm_n1_3": make_ucihm(users=[3]),
+    "ucihm_n1_4": make_ucihm(users=[4]),
+    "ucihm_n1_5": make_ucihm(users=[5]),
+    "ucihm_n2_0,1": make_ucihm(users=[0,1]),
+    "ucihm_n2_0,3": make_ucihm(users=[0,3]),
+    "ucihm_n2_0,5": make_ucihm(users=[0,5]),
+    "ucihm_n2_1,4": make_ucihm(users=[1,4]),
+    "ucihm_n2_2,3": make_ucihm(users=[2,3]),
+    "ucihm_n2_2,4": make_ucihm(users=[2,4]),
+    "ucihm_n2_2,5": make_ucihm(users=[2,5]),
+    "ucihm_n2_3,4": make_ucihm(users=[3,4]),
+    "ucihm_n2_3,5": make_ucihm(users=[3,5]),
+    "ucihm_n2_4,5": make_ucihm(users=[4,5]),
+    "ucihm_n3_0,1,4": make_ucihm(users=[0,1,4]),
+    "ucihm_n3_0,1,5": make_ucihm(users=[0,1,5]),
+    "ucihm_n3_0,2,3": make_ucihm(users=[0,2,3]),
+    "ucihm_n3_0,2,4": make_ucihm(users=[0,2,4]),
+    "ucihm_n3_0,2,5": make_ucihm(users=[0,2,5]),
+    "ucihm_n3_0,3,5": make_ucihm(users=[0,3,5]),
+    "ucihm_n3_0,4,5": make_ucihm(users=[0,4,5]),
+    "ucihm_n3_1,2,4": make_ucihm(users=[1,2,4]),
+    "ucihm_n3_1,3,4": make_ucihm(users=[1,3,4]),
+    "ucihm_n3_1,3,5": make_ucihm(users=[1,3,5]),
+    "ucihm_n3_2,3,4": make_ucihm(users=[2,3,4]),
+    "ucihm_n3_2,3,5": make_ucihm(users=[2,3,5]),
+    "ucihm_n3_3,4,5": make_ucihm(users=[3,4,5]),
+    "ucihm_n4_0,1,2,4": make_ucihm(users=[0,1,2,4]),
+    "ucihm_n4_0,1,2,5": make_ucihm(users=[0,1,2,5]),
+    "ucihm_n4_0,1,3,4": make_ucihm(users=[0,1,3,4]),
+    "ucihm_n4_0,1,3,5": make_ucihm(users=[0,1,3,5]),
+    "ucihm_n4_0,2,3,4": make_ucihm(users=[0,2,3,4]),
+    "ucihm_n4_0,2,3,5": make_ucihm(users=[0,2,3,5]),
+    "ucihm_n4_0,3,4,5": make_ucihm(users=[0,3,4,5]),
+    "ucihm_n4_1,2,3,4": make_ucihm(users=[1,2,3,4]),
+    "ucihm_n4_1,2,4,5": make_ucihm(users=[1,2,4,5]),
+    "ucihm_n4_1,3,4,5": make_ucihm(users=[1,3,4,5]),
+    "ucihm_n4_2,3,4,5": make_ucihm(users=[2,3,4,5]),
+    "ucihm_n5_0,1,2,3,5": make_ucihm(users=[0,1,2,3,5]),
+    "ucihm_n5_0,1,2,4,5": make_ucihm(users=[0,1,2,4,5]),
+    "ucihm_n5_0,1,3,4,5": make_ucihm(users=[0,1,3,4,5]),
+    "ucihm_n5_0,2,3,4,5": make_ucihm(users=[0,2,3,4,5]),
+    "ucihm_n5_1,2,3,4,5": make_ucihm(users=[1,2,3,4,5]),
+    "ucihm_t0": make_ucihm(users=[0], target=True),
+    "ucihm_t1": make_ucihm(users=[1], target=True),
+    "ucihm_t2": make_ucihm(users=[2], target=True),
+    "ucihm_t3": make_ucihm(users=[3], target=True),
+    "ucihm_t4": make_ucihm(users=[4], target=True),
     "uwave_n1_1": make_uwave(users=[1]),
     "uwave_n1_2": make_uwave(users=[2]),
     "uwave_n1_3": make_uwave(users=[3]),
