@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-14
+#SBATCH --array=0-59
 
 #
 # Upper bound separate since there's a lot of duplicates if we were to run it
@@ -44,9 +44,9 @@ suffix=$1; shift
 model=fcn
 methods=("upper")
 debugnums=(1 2 3)
-# number of adaptation problems = 5
-sources=("" "" "" "" "")
-targets=("ucihm_t0" "ucihm_t1" "ucihm_t2" "ucihm_t3" "ucihm_t4")
+# number of adaptation problems = 20
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("ucihar_t1" "ucihar_t2" "ucihar_t3" "ucihar_t4" "ucihar_t5" "ucihhar_t0" "ucihhar_t1" "ucihhar_t2" "ucihhar_t3" "ucihhar_t4" "uwave_t1" "uwave_t2" "uwave_t3" "uwave_t4" "uwave_t5" "wisdm_t0" "wisdm_t1" "wisdm_t2" "wisdm_t3" "wisdm_t4")
 
 # Make sure we're using the right number
 correct_min=0
@@ -97,11 +97,12 @@ elif [[ $method == "random" ]]; then
 fi
 
 # Pretraining - VRADA requires its custom reconstruction loss
-if [[ $method == "vrada" || $method == "rdann" || $method == "random" ]]; then
-    pretraining=0
-else
-    pretraining=1000
-fi
+#if [[ $method == "vrada" || $method == "rdann" || $method == "random" ]]; then
+#    pretraining=0
+#else
+#    pretraining=1000
+#fi
+pretraining=0
 
 echo "$suffix #$SLURM_ARRAY_TASK_ID"
 echo "Method: $method"
