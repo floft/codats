@@ -25,12 +25,20 @@ from datasets import inversions
 FLAGS = flags.FLAGS
 
 methods = [
-    # Domain adaptation
-    "none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada",
-    "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada",
+    # No adaptation or training on target
+    "none",
+
+    # Not tested for multi-source, but may work
+    #"random", "cyclegan", "forecast", "cyclegan_dann", "cycada",
+    #"dann_shu", "deepjdot", "pseudo", "instance", "rdann", "vrada",
+
+    # Multi-source domain adaptation (works with it...)
+    "dann_grl", "dann_grl_gs",
+    #"dann_smooth", TODO
 
     # Domain generalization
     "dann_grl_dg", "sleep_dg",
+    #"aflac_dg", "ciddg_dg", TODO
 ]
 
 flags.DEFINE_enum("model", None, models.names(), "What model type to use")
@@ -85,7 +93,11 @@ def get_directory_names():
         "dann_shu": "-dann_shu",
         "dann_grl": "-dann_grl",
         "dann_grl_dg": "-dann_grl_dg",
+        "dann_grl_gs": "-dann_grl_gs",
+        "dann_smooth": "-dann_smooth",
         "sleep_dg": "-sleep_dg",
+        "aflac_dg": "-aflac_dg",
+        "ciddg_dg": "-ciddg_dg",
         "deepjdot": "-deepjdot",
         "rdann": "-rdann",  # same as DANN-GRL but use with --model=rdann
         "vrada": "-vrada",  # use with "vrada" model
@@ -143,8 +155,16 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
         # unsupervised domain adaptation
         x = tf.concat((x_a, x_b), axis=0)
         task_y_true = tf.concat((y_a, tf.zeros_like(y_b)), axis=0)
-        domain_y_true = tf.concat((domain_a, domain_b), axis=0)
         domain = "both"
+
+        if FLAGS.method == "dann_grl_gs":
+            # We want to ignore the source labels and group them all together.
+            # We can keep using the target as domain 0, but for the source,
+            # set them all to be domain 1 (instead of 1, 2, ..., n)
+            source_domain = tf.ones_like(domain_a)
+            domain_y_true = tf.concat((source_domain, domain_b), axis=0)
+        else:
+            domain_y_true = tf.concat((domain_a, domain_b), axis=0)
 
     with tf.GradientTape(persistent=True) as tape:
         task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain=domain)
@@ -769,8 +789,10 @@ def main(argv):
 
     # We adapt for any method other than "none", "cyclegan", or "forecast"
     adapt = FLAGS.method in ["cycada", "dann_shu", "dann_grl", "pseudo",
-        "instance", "cyclegan_dann", "rdann", "vrada"]
-    generalize = FLAGS.method in ["dann_grl_dg", "sleep_dg"]
+        "instance", "cyclegan_dann", "rdann", "vrada", "dann_grl_gs",
+        "dann_smooth"]
+    generalize = FLAGS.method in ["dann_grl_dg", "sleep_dg", "aflac_dg",
+        "ciddg_dg"]
     sleep_generalize = FLAGS.method in ["sleep_dg"]
 
     assert not ((adapt or generalize) and not FLAGS.task), \
@@ -780,7 +802,8 @@ def main(argv):
     # data, so to keep the batch_size about the same, we'll cut it in half
     train_batch = FLAGS.train_batch
 
-    use_grl = FLAGS.method in ["dann_grl", "dann_grl_dg", "sleep_dg", "vrada", "rdann"]
+    use_grl = FLAGS.method in ["dann_grl", "dann_grl_gs", "dann_smooth",
+        "dann_grl_dg", "sleep_dg", "aflac_dg", "ciddg_dg", "vrada", "rdann"]
     if adapt and use_grl:
         train_batch = train_batch // 2
 

@@ -33,12 +33,18 @@ FLAGS = flags.FLAGS
 
 # Copy from main.py
 methods = [
-    # Domain adaptation
-    "none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada",
-    "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada",
+    # No adaptation or training on target
+    "none",
+
+    # Not tested for multi-source, but may work
+    "random", "cyclegan", "forecast", "cyclegan_dann", "cycada",
+    "dann_shu", "deepjdot", "pseudo", "instance", "rdann", "vrada",
+
+    # Multi-source domain adaptation (works with it...)
+    "dann_grl", "dann_grl_gs", "dann_smooth",
 
     # Domain generalization
-    "dann_grl_dg", "sleep_dg",
+    "dann_grl_dg", "sleep_dg", "aflac_dg", "ciddg_dg",
 ]
 
 # Same as in main.py
