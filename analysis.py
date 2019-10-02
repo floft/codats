@@ -93,33 +93,6 @@ def beginning_match(match, line):
     return line[:len(match)] == match
 
 
-def smart_split(line):
-    """ If the source/target names have commas in them, we can't simply split
-    on commas, but we do know the format of the filenames so can match them
-    separately
-
-    TODO get rid of this and just use ; as the separator in main_eval.py
-    """
-    m = re.search(r"^([^/]+/[^-]*-[^-]*-[^-]*-[^-]*-[^-,]*),(.*)$", line)
-
-    # If none, no match, so just split on commas like normal
-    if m is None:
-        return line.split(",")
-    else:
-        filename = m.group(1)
-        rest = m.group(2)
-
-        # Remove the source from the rest since it may have commas in it
-        m = re.search(r"^[^/]+/([^-]*)-[^-]*-[^-]*-[^-]*-[^-,]*$", filename)
-        assert m is not None, "couldn't find source in: " + filename
-        source = m.group(1)
-
-        # Get rid of source name and ignore it when splitting
-        rest = rest.replace(source, "source").split(",")[1:]
-
-        return [filename, source] + rest
-
-
 def parse_file(filename):
     """
     Get all of the data from the file
@@ -163,7 +136,7 @@ def parse_file(filename):
                 in_traintest = False
                 in_averages = True
             elif len(line) > 0:
-                values = smart_split(line)
+                values = line.split(";")
 
                 # For example, if we ran evaluation before we had any models to
                 # evaluate, we'd get no data.
@@ -490,7 +463,7 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
 
 def main(argv):
     datasets = [
-        "test1",
+        "test2",
     ]
 
     for dataset in datasets:

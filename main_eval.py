@@ -117,9 +117,9 @@ def print_results(results):
     target_target_train = []
     target_target_test = []
 
-    print("Log Dir,Source,Target,Model,Method,"
-        "Train A,Test A,Train B,Test B,Target Train A,"
-        "Target Test A,Target Train B,Target Test B")
+    print("Log Dir;Source;Target;Model;Method;"
+        "Train A;Test A;Train B;Test B;Target Train A"
+        "Target Test A;Target Train B;Target Test B")
     for log_dir, source, target, model, method, \
             s_train, t_train, s_test, t_test, \
             target_s_train, target_s_test, target_t_train, target_t_test \
@@ -141,12 +141,12 @@ def print_results(results):
             if target_t_test is None:
                 target_t_test = 0
 
-            print(log_dir + "," + source + "," + target + ","
-                + model + "," + method + ","
-                + str(s_train) + "," + str(s_test) + ","
-                + str(t_train) + "," + str(t_test) + ","
-                + str(target_s_train) + "," + str(target_s_test) + ","
-                + str(target_t_train) + "," + str(target_t_test))
+            print(log_dir + ";" + source + ";" + target + ";"
+                + model + ";" + method + ";"
+                + str(s_train) + ";" + str(s_test) + ";"
+                + str(t_train) + ";" + str(t_test) + ";"
+                + str(target_s_train) + ";" + str(target_s_test) + ";"
+                + str(target_t_train) + ";" + str(target_t_test))
 
             # Task classifier
             source_train.append(s_train)
@@ -174,17 +174,17 @@ def print_results(results):
             and len(target_train) > 0 and len(target_test) > 0:
         print()
         print()
-        print("Dataset,Avg,Std")
+        print("Dataset;Avg;Std")
         # Task classifier
-        print("Train A," + str(source_train.mean()) + "," + str(source_train.std()))
-        print("Test A," + str(source_test.mean()) + "," + str(source_test.std()))
-        print("Train B," + str(target_train.mean()) + "," + str(target_train.std()))
-        print("Test B," + str(target_test.mean()) + "," + str(target_test.std()))
+        print("Train A;" + str(source_train.mean()) + ";" + str(source_train.std()))
+        print("Test A;" + str(source_test.mean()) + ";" + str(source_test.std()))
+        print("Train B;" + str(target_train.mean()) + ";" + str(target_train.std()))
+        print("Test B;" + str(target_test.mean()) + ";" + str(target_test.std()))
         # Target classifier
-        print("Target Train A," + str(target_source_train.mean()) + "," + str(target_source_train.std()))
-        print("Target Test A," + str(target_source_test.mean()) + "," + str(target_source_test.std()))
-        print("Target Train B," + str(target_target_train.mean()) + "," + str(target_target_train.std()))
-        print("Target Test B," + str(target_target_test.mean()) + "," + str(target_target_test.std()))
+        print("Target Train A;" + str(target_source_train.mean()) + ";" + str(target_source_train.std()))
+        print("Target Test A;" + str(target_source_test.mean()) + ";" + str(target_source_test.std()))
+        print("Target Train B;" + str(target_target_train.mean()) + ";" + str(target_target_train.std()))
+        print("Target Test B;" + str(target_target_test.mean()) + ";" + str(target_target_test.std()))
 
         print()
         print()
@@ -316,9 +316,9 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
             max_accuracy = checkpoint_manager.best_validation
 
     # Print which step we're loading the model for
-    print(log_dir + "," + source + "," + target + ","
-        + method_name + "," + model_name + ","
-        + str(max_accuracy_step) + "," + str(max_accuracy))
+    print(log_dir + ";" + source + ";" + target + ";"
+        + method_name + ";" + model_name + ";"
+        + str(max_accuracy_step) + ";" + str(max_accuracy))
 
     # If not found, give up
     if not checkpoint_manager.found:
@@ -392,7 +392,7 @@ def main(argv):
         commands.append((*model_params, gpumem, multi_gpu))
 
     # Also prints which models we load
-    print("Log Dir,Source,Target,Model,Method,Best Step,Accuracy at Step")
+    print("Log Dir;Source;Target;Model;Method;Best Step;Accuracy at Step")
     results = run_job_pool(process_model, commands, cores=jobs)
 
     # Print results, averages, etc.
