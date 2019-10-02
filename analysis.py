@@ -23,12 +23,20 @@ flags.DEFINE_string("similarity_filename", "similarity.txt", "File containing si
 
 # Use nice names for the plot
 nice_method_names = {
-    # For this multi-source method
-    "none": "No Adaptation",  # (no adaptation)
-    "upper": "Train on Only Target",  # (train on target)
-    "dann_grl": "CoDATS + DANN-GRL (MS-DA)",
-    "dann_grl_dg": "CoDATS + DANN-GRL (DG)",
-    "sleep_dg": "CoDATS + Sleep Method (DG)",
+    # No adaptation or training on target
+    "none": "None",  # (no adaptation)
+    "upper": "Target Only",  # (train on target)
+
+    # Multi-source domain adaptation
+    "dann_grl": "MS-DA-DANN",
+    "dann_grl_gs": "GS-DA",
+    "dann_smooth": "MS-DA-Smooth",
+
+    # Domain generalization
+    "dann_grl_dg": "DG-DANN",
+    "sleep_dg": "DG-Sleep",
+    "aflac_dg": "DG-AFLAC",
+    "ciddg_dg": "DG-CIDDG",
 
     #"none": "Lower Bound",  # (no adaptation)
     #"upper": "Upper Bound",  # (train on target)
@@ -321,6 +329,7 @@ def pretty_source_target_names(source, target):
     replacements = [
         ("ucihar_", "HAR "),
         ("ucihhar_", "HHAR "),
+        ("ucihm_", "HM "),
         ("uwave_", "uWave "),
         ("utdata_wrist", "Wrist"),
         ("utdata_pocket", "Pocket"),
@@ -401,10 +410,13 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
                     # All the 0th elements should be the same n
                     # Then recompute the mean/stdev from the accuracy values in 1th column
                     new_values.append((int(ms_values[0, 0]), float(ms_values[0, 1]), ms_values[:, 2].mean(), ms_values[:, 2].std(ddof=0)))
-                else:
+                elif len(ms_values) == 1:
                     # Leave as is if there's only one
-                    assert new_values == [], "upper bound has multiple runs?"
-                    new_values = ms_values
+                    #assert new_values == [], "upper bound has multiple runs?"
+                    ms_values = np.array(ms_values, dtype=np.float32)
+                    new_values.append((int(ms_values[0, 0]), float(ms_values[0, 1]), ms_values[0, 2], ms_values[0, 3]))
+                else:
+                    raise NotImplementedError("must be several or one run")
 
             # Sort on n or similarity
             if FLAGS.similarity:
@@ -470,10 +482,9 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
 
         if save_plot:
             plt.savefig(prefix+"_"+dataset_name+"."+suffix, bbox_inches='tight')
+            plt.close()
 
-    if save_plot:
-        plt.close()
-    else:
+    if not save_plot:
         plt.show()
 
 
