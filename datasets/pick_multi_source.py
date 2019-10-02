@@ -126,7 +126,7 @@ if __name__ == "__main__":
         "ucihar": one_to_n(30),
         "uwave": one_to_n(8),
         "ucihhar": zero_to_n(8),
-        "wisdm": zero_to_n(223),
+        "wisdm": zero_to_n(148),
 
         #"sleep": zero_to_n(25),
         #"ucihm": zero_to_n(5),
