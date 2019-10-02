@@ -43,6 +43,10 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
     # anyway.
     possible_target_users = users[:max_users]
 
+    # Keep track of unique indexes for all lists of source domains -- can't list
+    # domains in filename since too long
+    source_domain_uids = []
+
     # Output strings - ignore duplicates in datasets.py by indexing by name
     for_tfrecords = []
     for_datasets = []
@@ -90,8 +94,14 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
                 continue
 
             source_users = [str(x) for x in source_users]
+            source_users_str = ",".join(source_users)
 
-            source = "\"" + dataset_name + "_n" + str(n) + "_" + ",".join(source_users) + "\""
+            # Filenames get too long, so pick index instead of list of all sources
+            if source_users_str not in source_domain_uids:
+                source_domain_uids.append(source_users_str)
+            source_list_index = source_domain_uids.index(source_users_str)
+
+            source = "\"" + dataset_name + "_n" + str(n) + "_" + str(source_list_index) + "\""
             target = "\"" + dataset_name + "_t" + str(target_user) + "\""
 
             #for_tfrecords.append("(" + source + ", " + target + "),")
@@ -102,7 +112,7 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
             for_tfrecords.append("(" + target + ", None),")
 
             for_datasets.append(source + ": make_" + dataset_name
-                + "(users=[" + ",".join(source_users) + "]),")
+                + "(users=[" + source_users_str + "]),")
             for_datasets.append(target + ": make_" + dataset_name
                 + "(users=[" + str(target_user) + "], target=True),")
             pairs.append((source, target))
@@ -116,10 +126,11 @@ if __name__ == "__main__":
         "ucihar": one_to_n(30),
         "uwave": one_to_n(8),
         "ucihhar": zero_to_n(8),
-        "ucihm": zero_to_n(5),
-        "ucihm_full": zero_to_n(5),
+        "wisdm": zero_to_n(223),
 
         #"sleep": zero_to_n(25),
+        #"ucihm": zero_to_n(5),
+        #"ucihm_full": zero_to_n(5),
     }
 
     # Output strings
@@ -157,12 +168,12 @@ if __name__ == "__main__":
     # Print
     print("For generate_tfrecords.py:")
     for r in for_tfrecords:
-        print(r)
+        print("        "+r)
     print()
 
     print("For datasets.py:")
     for r in for_datasets:
-        print(r)
+        print("    "+r)
     print()
 
     print("For kamiak_{train,eval}_real.srun:")
