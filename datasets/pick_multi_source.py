@@ -117,6 +117,7 @@ if __name__ == "__main__":
         "uwave": one_to_n(8),
         "ucihhar": zero_to_n(8),
         "ucihm": zero_to_n(5),
+        "ucihm_full": zero_to_n(5),
 
         #"sleep": zero_to_n(25),
     }

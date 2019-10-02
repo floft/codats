@@ -297,6 +297,28 @@ class Dataset:
         y = self.create_windows_y(y, window_size, overlap)
         return x, y
 
+    def pad_to(self, data, desired_length):
+        """
+        Pad the number of time steps to the desired length
+
+        Accepts data in one of two formats:
+            - shape: (time_steps, features) -> (desired_length, features)
+            - shape: (batch_size, time_steps, features) ->
+                (batch_size, desired_length, features)
+        """
+        if len(data.shape) == 2:
+            current_length = data.shape[0]
+            assert current_length <= desired_length, "Cannot shrink size by padding"
+            return np.pad(data, [(0, desired_length - current_length), (0, 0)],
+                    mode="constant", constant_values=0)
+        elif len(data.shape) == 3:
+            current_length = data.shape[1]
+            assert current_length <= desired_length, "Cannot shrink size by padding"
+            return np.pad(data, [(0, 0), (0, desired_length - current_length), (0, 0)],
+                    mode="constant", constant_values=0)
+        else:
+            raise NotImplementedError("pad_to requires 2 or 3-dim data")
+
     def label_to_int(self, label_name):
         """ e.g. Bathe to 0 """
         return self.class_labels.index(label_name)
@@ -454,13 +476,6 @@ class uWaveBase(Dataset):
         domain = np.hstack(domain).astype(np.float32)
 
         return data, y, domain
-
-    def pad_to(self, data, desired_length):
-        """ Pad to the desired length """
-        current_length = data.shape[0]
-        assert current_length <= desired_length, "Cannot shrink size by padding"
-        return np.pad(data, [(0, desired_length - current_length), (0, 0)],
-                mode="constant", constant_values=0)
 
     def load(self):
         # Load data
@@ -895,7 +910,13 @@ class UciHmBase(Dataset):
     window_size = 500  # 500 Hz, so 1 second
     window_overlap = False  # Note: using np.hsplit, so this has no effect
 
-    def __init__(self, users, target, *args, **kwargs):
+    def __init__(self, users, target, split=True, pad=True, subsample=True,
+            *args, **kwargs):
+        self.split = split
+        # Only apply if split=False
+        self.pad = pad
+        self.subsample = subsample
+
         self.users = users
         self.domains = calc_domains(users, target)
         super().__init__(UciHmBase.num_classes, UciHmBase.class_labels,
@@ -929,10 +950,25 @@ class UciHmBase(Dataset):
                 # Split from 3000 or 2500 time steps into 6 or 5 non-overlapping
                 # windows of 500 samples. Duplicate the label 6 or 5 times,
                 # respectively.
-                assert data.shape[1] in [2500, 3000], "data.shape[1] should " \
-                    "be 2500 or 3000, but is "+str(data.shape[1])
-                num_windows = data.shape[1]//self.window_size
-                data_x += np.hsplit(data, num_windows)
+                if self.split:
+                    assert data.shape[1] in [2500, 3000], "data.shape[1] should " \
+                        "be 2500 or 3000, but is "+str(data.shape[1])
+                    num_windows = data.shape[1]//self.window_size
+                    data_x += np.hsplit(data, num_windows)
+                else:
+                    # Since we have to concatenate multiple domains, pad with
+                    # zeros to get them to all be the same number of time steps
+                    if self.pad:
+                        data = self.pad_to(data, 3000)
+
+                    # It's really slow with 3000 samples, and 500 Hz is probably
+                    # overkill, so subsample
+                    if self.subsample:
+                        data = data[:, ::6, :]  # 3000 -> 500, fewer samples
+
+                    data_x.append(data)
+                    num_windows = 1
+
                 data_label += [label_index]*len(data)*num_windows
 
             data_x = np.vstack(data_x).astype(np.float32)
@@ -1067,13 +1103,32 @@ def make_ucihhar(users=None, target=False):
 
 def make_ucihm(users=None, target=False):
     """ Make UCI HM dataset split on users """
+    # More examples but each is only 1 second
+    split = True
+
     class UciHmDataset(UciHmBase):
         # If source domain, number is source domains + 1 for target
         # Set here to make it static
         num_domains = len(users)+1 if not target else None
 
         def __init__(self, *args, **kwargs):
-            super().__init__(users, target, *args, **kwargs)
+            super().__init__(users, target, split, *args, **kwargs)
+
+    return UciHmDataset
+
+
+def make_ucihm_full(users=None, target=False):
+    """ Make UCI HM dataset split on users """
+    # Fewer examples, but each is the full hand motion
+    split = False
+
+    class UciHmDataset(UciHmBase):
+        # If source domain, number is source domains + 1 for target
+        # Set here to make it static
+        num_domains = len(users)+1 if not target else None
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(users, target, split, *args, **kwargs)
 
     return UciHmDataset
 
@@ -1225,6 +1280,55 @@ datasets = {
     "ucihhar_t2": make_ucihhar(users=[2], target=True),
     "ucihhar_t3": make_ucihhar(users=[3], target=True),
     "ucihhar_t4": make_ucihhar(users=[4], target=True),
+    "ucihm_full_n1_0": make_ucihm_full(users=[0]),
+    "ucihm_full_n1_2": make_ucihm_full(users=[2]),
+    "ucihm_full_n1_3": make_ucihm_full(users=[3]),
+    "ucihm_full_n1_4": make_ucihm_full(users=[4]),
+    "ucihm_full_n1_5": make_ucihm_full(users=[5]),
+    "ucihm_full_n2_0,1": make_ucihm_full(users=[0,1]),
+    "ucihm_full_n2_0,3": make_ucihm_full(users=[0,3]),
+    "ucihm_full_n2_0,5": make_ucihm_full(users=[0,5]),
+    "ucihm_full_n2_1,4": make_ucihm_full(users=[1,4]),
+    "ucihm_full_n2_2,3": make_ucihm_full(users=[2,3]),
+    "ucihm_full_n2_2,4": make_ucihm_full(users=[2,4]),
+    "ucihm_full_n2_2,5": make_ucihm_full(users=[2,5]),
+    "ucihm_full_n2_3,4": make_ucihm_full(users=[3,4]),
+    "ucihm_full_n2_3,5": make_ucihm_full(users=[3,5]),
+    "ucihm_full_n2_4,5": make_ucihm_full(users=[4,5]),
+    "ucihm_full_n3_0,1,4": make_ucihm_full(users=[0,1,4]),
+    "ucihm_full_n3_0,1,5": make_ucihm_full(users=[0,1,5]),
+    "ucihm_full_n3_0,2,3": make_ucihm_full(users=[0,2,3]),
+    "ucihm_full_n3_0,2,4": make_ucihm_full(users=[0,2,4]),
+    "ucihm_full_n3_0,2,5": make_ucihm_full(users=[0,2,5]),
+    "ucihm_full_n3_0,3,5": make_ucihm_full(users=[0,3,5]),
+    "ucihm_full_n3_0,4,5": make_ucihm_full(users=[0,4,5]),
+    "ucihm_full_n3_1,2,4": make_ucihm_full(users=[1,2,4]),
+    "ucihm_full_n3_1,3,4": make_ucihm_full(users=[1,3,4]),
+    "ucihm_full_n3_1,3,5": make_ucihm_full(users=[1,3,5]),
+    "ucihm_full_n3_2,3,4": make_ucihm_full(users=[2,3,4]),
+    "ucihm_full_n3_2,3,5": make_ucihm_full(users=[2,3,5]),
+    "ucihm_full_n3_3,4,5": make_ucihm_full(users=[3,4,5]),
+    "ucihm_full_n4_0,1,2,4": make_ucihm_full(users=[0,1,2,4]),
+    "ucihm_full_n4_0,1,2,5": make_ucihm_full(users=[0,1,2,5]),
+    "ucihm_full_n4_0,1,3,4": make_ucihm_full(users=[0,1,3,4]),
+    "ucihm_full_n4_0,1,3,5": make_ucihm_full(users=[0,1,3,5]),
+    "ucihm_full_n4_0,2,3,4": make_ucihm_full(users=[0,2,3,4]),
+    "ucihm_full_n4_0,2,3,5": make_ucihm_full(users=[0,2,3,5]),
+    "ucihm_full_n4_0,3,4,5": make_ucihm_full(users=[0,3,4,5]),
+    "ucihm_full_n4_1,2,3,4": make_ucihm_full(users=[1,2,3,4]),
+    "ucihm_full_n4_1,2,4,5": make_ucihm_full(users=[1,2,4,5]),
+    "ucihm_full_n4_1,3,4,5": make_ucihm_full(users=[1,3,4,5]),
+    "ucihm_full_n4_2,3,4,5": make_ucihm_full(users=[2,3,4,5]),
+    "ucihm_full_n5_0,1,2,3,5": make_ucihm_full(users=[0,1,2,3,5]),
+    "ucihm_full_n5_0,1,2,4,5": make_ucihm_full(users=[0,1,2,4,5]),
+    "ucihm_full_n5_0,1,3,4,5": make_ucihm_full(users=[0,1,3,4,5]),
+    "ucihm_full_n5_0,2,3,4,5": make_ucihm_full(users=[0,2,3,4,5]),
+    "ucihm_full_n5_1,2,3,4,5": make_ucihm_full(users=[1,2,3,4,5]),
+    "ucihm_full_t0": make_ucihm_full(users=[0], target=True),
+    "ucihm_full_t1": make_ucihm_full(users=[1], target=True),
+    "ucihm_full_t2": make_ucihm_full(users=[2], target=True),
+    "ucihm_full_t3": make_ucihm_full(users=[3], target=True),
+    "ucihm_full_t4": make_ucihm_full(users=[4], target=True),
     "ucihm_n1_0": make_ucihm(users=[0]),
     "ucihm_n1_2": make_ucihm(users=[2]),
     "ucihm_n1_3": make_ucihm(users=[3]),
