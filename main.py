@@ -33,8 +33,7 @@ methods = [
     #"dann_shu", "deepjdot", "pseudo", "instance", "rdann", "vrada",
 
     # Multi-source domain adaptation (works with it...)
-    "dann_grl", "dann_grl_gs",
-    #"dann_smooth", TODO
+    "dann_grl", "dann_grl_gs", "dann_smooth",
 
     # Domain generalization
     "dann_grl_dg", "sleep_dg",
@@ -139,7 +138,7 @@ def get_directory_names():
 
 @tf.function
 def train_step_grl(data_a, data_b, model, opt, d_opt,
-        task_loss, domain_loss, generalize):
+        task_loss, domain_loss, generalize, num_domains):
     """ Compiled DANN (with GRL) training step that we call many times """
     x_a, y_a, domain_a = data_a
     x_b, y_b, domain_b = data_b
@@ -167,9 +166,119 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
             domain_y_true = tf.concat((domain_a, domain_b), axis=0)
 
     with tf.GradientTape(persistent=True) as tape:
-        task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain=domain)
-        d_loss = domain_loss(domain_y_true, domain_y_pred)
-        loss = task_loss(task_y_true, task_y_pred, training=True) + d_loss
+        if FLAGS.method == "dann_smooth":
+            task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain=domain)
+
+            # Method of feeding everything through, then filtering.
+            assert isinstance(domain_y_pred, list), \
+                "domain output should be list if dann_smooth"
+
+            # MDAN losses - domain classifiers' losses weighted by task
+            # classifier's loss per domain
+            # https://github.com/KeiraZhao/MDAN/blob/master/model.py
+            # https://github.com/KeiraZhao/MDAN/blob/master/main_amazon.py
+            task_losses = []
+            domain_losses = []
+
+            for i in range(1, num_domains):
+                # Skip if in this batch there's no examples of this domain
+                domain_equals_i = tf.equal(domain_y_true, i)
+                # count = tf.reduce_sum(tf.cast(domain_equals_i, tf.float32))
+
+                # # TODO remove, slows down running I think
+                # if count == 0:
+                #     tf.print("Warning: no examples of domain", i, "in batch")
+
+                # For classification loss, we want to ignore the target labels,
+                # so same as above but without domain_y_true == 0
+                where_task = tf.where(domain_equals_i)
+                i_task_true = tf.gather(task_y_true, where_task)
+                i_task_pred = tf.gather(task_y_pred, where_task)
+
+                # Selection of domain i and domain 0 (target) for each domain
+                # classifier's output
+                where_domain = tf.where(
+                    tf.math.logical_or(tf.equal(domain_y_true, 0),
+                        tf.equal(domain_y_true, i)))
+                i_domain_true = tf.gather(domain_y_true, where_domain)
+                i_domain_pred = tf.gather(domain_y_pred[i-1], where_domain)
+
+                # training=False to make sure we don't do any further slicing
+                # that gets rid of the last half of the batch as we normally
+                # would to ignore target labels with GRL
+                task_losses.append(task_loss(i_task_true, i_task_pred, training=False))
+                domain_losses.append(domain_loss(i_domain_true, i_domain_pred))
+
+            # The defaults in their code?
+            #gamma = 10.0
+            #mu = 1e-2
+            # But, for now we'll use the DANN learning rate schedule and just
+            # set these to 1 for more direct comparison with DANN
+            gamma = 1
+            mu = 1
+
+            d_loss = None  # Don't update separately
+            loss = tf.math.log(tf.reduce_sum(
+                tf.exp(gamma*(task_losses+mu*domain_losses))))/gamma
+
+            # # MDAN losses - domain classifiers' losses weighted by task
+            # # classifier's loss per domain
+            # # https://github.com/KeiraZhao/MDAN/blob/master/model.py
+            # # https://github.com/KeiraZhao/MDAN/blob/master/main_amazon.py
+            # task_losses = []
+            # domain_losses = []
+
+            # # Ignore the domain-specific stuff we're not using
+            # domain = "source"
+
+            # for i in range(1, num_domains):
+            #     # Feed data from the source domain i and the target domain (i=0)
+            #     # through the model using the ith's domain classifier
+            #     where_domain = tf.squeeze(tf.where(
+            #         tf.math.logical_or(
+            #             tf.equal(domain_y_true, 0),  # Target data
+            #             tf.equal(domain_y_true, i))))  # source i data
+            #     i_domain_true = tf.gather(domain_y_true, where_domain)
+            #     i_x = tf.gather(x, where_domain)
+
+            #     # Run this domain's data through the model (assuming there is
+            #     # data from this domain). This is much faster than feeding in
+            #     # all the data then filtering (~0.45 vs.  seconds per iteration)
+            #     i_task_pred, i_domain_pred, _ = model(i_x, training=True,
+            #         domain=domain, domain_classifier=i-1)
+
+            #     # The true labels from only the source domain
+            #     where_task = tf.squeeze(tf.where(tf.equal(domain_y_true, i)))
+            #     i_task_true = tf.gather(task_y_true, where_task)
+
+            #     # The predicted labels from the source domain (i.e. we can't
+            #     # look at the true labels of the target domain, so throw out
+            #     # those predictions - since we had to run both through the model
+            #     # for the domain classifier loss)
+            #     where_task_valid = tf.squeeze(tf.where(tf.equal(i_domain_true, i)))
+            #     i_task_pred_valid = tf.gather(i_task_pred, where_task_valid)
+
+            #     # training=False to make sure we don't do any further slicing
+            #     # that gets rid of the last half of the batch as we normally
+            #     # would to ignore target labels with GRL
+            #     task_losses.append(task_loss(i_task_true, i_task_pred_valid, training=False))
+            #     domain_losses.append(domain_loss(i_domain_true, i_domain_pred))
+
+            # # The defaults in their code?
+            # #gamma = 10.0
+            # #mu = 1e-2
+            # # But, for now we'll use the DANN learning rate schedule and just
+            # # set these to 1 for more direct comparison with DANN
+            # gamma = 1
+            # mu = 1
+
+            # d_loss = None  # Don't update separately
+            # loss = tf.math.log(tf.reduce_sum(
+            #     tf.exp(gamma*(task_losses+mu*domain_losses))))/gamma
+        else:
+            task_y_pred, domain_y_pred, fe_output = model(x, training=True, domain=domain)
+            d_loss = domain_loss(domain_y_true, domain_y_pred)
+            loss = task_loss(task_y_true, task_y_pred, training=True) + d_loss
 
         if FLAGS.method == "vrada":
             vrnn_loss = compute_vrnn_loss(fe_output[1], x)
@@ -186,14 +295,16 @@ def train_step_grl(data_a, data_b, model, opt, d_opt,
     grad = tape.gradient(loss, model.trainable_variables_task_domain)
     if FLAGS.method == "vrada":
         v_grad = tape.gradient(vrnn_loss, model.feature_extractor.trainable_variables)
-    d_grad = tape.gradient(d_loss, model.domain_classifier.trainable_variables)
+    if d_loss is not None:
+        d_grad = tape.gradient(d_loss, model.trainable_variables_domain)
     del tape
 
     opt.apply_gradients(zip(grad, model.trainable_variables_task_domain))
     if FLAGS.method == "vrada":  # use d_opt since different updates than above?
         d_opt.apply_gradients(zip(v_grad, model.feature_extractor.trainable_variables))
     # Update discriminator again
-    d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
+    if d_loss is not None:
+        d_opt.apply_gradients(zip(d_grad, model.trainable_variables_domain))
 
 
 def compute_vrnn_loss(vrnn_state, x, epsilon=1e-9):
@@ -279,7 +390,7 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     f_grad = tape.gradient(d_loss_fool, model.feature_extractor.trainable_variables)
     if FLAGS.method == "vrada":
         v_grad = tape.gradient(vrnn_loss, model.feature_extractor.trainable_variables)
-    d_grad = tape.gradient(d_loss_true, model.domain_classifier.trainable_variables)
+    d_grad = tape.gradient(d_loss_true, model.trainable_variables_domain)
     del tape
 
     # Use opt (not d_opt) for updating FE in both cases, so Adam keeps track of
@@ -288,7 +399,7 @@ def train_step_gan(data_a, data_b, model, opt, d_opt,
     opt.apply_gradients(zip(f_grad, model.feature_extractor.trainable_variables))
     if FLAGS.method == "vrada":  # use d_opt since different updates than above?
         d_opt.apply_gradients(zip(v_grad, model.feature_extractor.trainable_variables))
-    d_opt.apply_gradients(zip(d_grad, model.domain_classifier.trainable_variables))
+    d_opt.apply_gradients(zip(d_grad, model.trainable_variables_domain))
 
     # TODO for inference, use the exponential moving average of the batch norm
     # statistics on the *target* data -- above will mix them probably.
@@ -793,7 +904,6 @@ def main(argv):
         "dann_smooth"]
     generalize = FLAGS.method in ["dann_grl_dg", "sleep_dg", "aflac_dg",
         "ciddg_dg"]
-    sleep_generalize = FLAGS.method in ["sleep_dg"]
 
     assert not ((adapt or generalize) and not FLAGS.task), \
         "If adapting/generalizing (e.g. method=dann_grl), must not pass --notask"
@@ -856,8 +966,7 @@ def main(argv):
     # Build the (mapping and/or task) models
     if FLAGS.task:
         model = models.DomainAdaptationModel(num_classes, num_domains,
-            FLAGS.model, global_step, FLAGS.steps, use_grl=use_grl,
-            sleep_generalize=sleep_generalize)
+            FLAGS.model, global_step, FLAGS.steps, use_grl=use_grl)
     else:
         model = None
 
@@ -994,7 +1103,7 @@ def main(argv):
                 # Train FE / task classifier
                 train_step_none(*step_args)
             elif (adapt or generalize) and use_grl:
-                train_step_grl(*step_args, generalize)
+                train_step_grl(*step_args, generalize, num_domains)
             elif adapt or generalize:
                 assert not generalize, "TODO only DANN-GRL generalization versions implemented so far"
                 instance_weights = train_step_gan(*step_args, grl_schedule,

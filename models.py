@@ -33,7 +33,8 @@ def flip_gradient(x, grl_lambda=1.0):
     grl_lambda = tf.cast(grl_lambda, dtype=tf.float32)
 
     def grad(dy):
-        return tf.negative(dy) * grl_lambda * tf.ones_like(x)
+        # the 0 is for grl_lambda, which doesn't have a gradient
+        return tf.negative(dy) * grl_lambda * tf.ones_like(x), 0
 
     return x, grad
 
@@ -342,7 +343,7 @@ class ReflectSamePadding(tf.keras.layers.Layer):
         return output_size, pad_before, pad_after
 
 
-def make_flat_model(num_classes, num_domains, global_step, grl_schedule):
+def make_flat_model(num_classes, num_domains):
     """
     Create model inspired by the VRADA paper model for time-series data
 
@@ -381,7 +382,6 @@ def make_flat_model(num_classes, num_domains, global_step, grl_schedule):
         make_classifier(task_layers, num_classes),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         make_binary_classifier(domain_layers),
     ])
     return feature_extractor, task_classifier, domain_classifier
@@ -430,7 +430,7 @@ class VradaFeatureExtractor(tf.keras.layers.Layer):
         return fe_output, rnn_state
 
 
-def make_vrada_model(num_classes, num_domains, global_step, grl_schedule, vrada=True):
+def make_vrada_model(num_classes, num_domains, vrada=True):
     """
     VRADA R-DANN and VRADA models
 
@@ -445,7 +445,6 @@ def make_vrada_model(num_classes, num_domains, global_step, grl_schedule, vrada=
         tf.keras.layers.Dense(num_classes, activation="softmax"),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         tf.keras.layers.Dense(50),
         tf.keras.layers.Dense(50),
         tf.keras.layers.Dense(50),
@@ -455,7 +454,7 @@ def make_vrada_model(num_classes, num_domains, global_step, grl_schedule, vrada=
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_timenet_model(num_classes, num_domains, global_step, grl_schedule):
+def make_timenet_model(num_classes, num_domains):
     """
     TimeNet https://arxiv.org/pdf/1706.08838.pdf
     So, basically 3-layer GRU with 60 units followed by the rest in my "flat"
@@ -500,13 +499,12 @@ def make_timenet_model(num_classes, num_domains, global_step, grl_schedule):
         make_classifier(task_layers, num_classes),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         make_binary_classifier(domain_layers),
     ])
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_mlp_model(num_classes, num_domains, global_step, grl_schedule):
+def make_mlp_model(num_classes, num_domains):
     """
     MLP -- but split task/domain classifier at last dense layer, and additional
     dense layer for domain classifier
@@ -531,8 +529,6 @@ def make_mlp_model(num_classes, num_domains, global_step, grl_schedule):
         tf.keras.layers.Dense(num_classes, activation="softmax"),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
-
         tf.keras.layers.Dense(500, use_bias=False),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
@@ -548,7 +544,7 @@ def make_mlp_model(num_classes, num_domains, global_step, grl_schedule):
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_fcn_model(num_classes, num_domains, global_step, grl_schedule):
+def make_fcn_model(num_classes, num_domains):
     """
     FCN (fully CNN) -- but domain classifier has additional dense layers
 
@@ -584,8 +580,6 @@ def make_fcn_model(num_classes, num_domains, global_step, grl_schedule):
         # Note: alternative is Dense(128, activation="tanh") like used by
         # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
         # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
-        FlipGradient(global_step, grl_schedule),
-
         tf.keras.layers.Dense(500, use_bias=False),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
@@ -598,10 +592,11 @@ def make_fcn_model(num_classes, num_domains, global_step, grl_schedule):
 
         tf.keras.layers.Dense(num_domains, "softmax"),
     ])
+
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_resnet_model(num_classes, num_domains, global_step, grl_schedule):
+def make_resnet_model(num_classes, num_domains):
     """
     ResNet -- but domain classifier has additional dense layers
 
@@ -621,8 +616,6 @@ def make_resnet_model(num_classes, num_domains, global_step, grl_schedule):
         tf.keras.layers.Dense(num_classes, activation="softmax"),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
-
         tf.keras.layers.Dense(500, use_bias=False),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Activation("relu"),
@@ -638,7 +631,7 @@ def make_resnet_model(num_classes, num_domains, global_step, grl_schedule):
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_dann_mnist_model(num_classes, num_domains, global_step, grl_schedule):
+def make_dann_mnist_model(num_classes, num_domains):
     """ Figure 4(a) MNIST architecture -- Ganin et al. DANN JMLR 2016 paper """
     feature_extractor = CustomSequential([
         tf.keras.layers.Conv2D(32, (5, 5), (1, 1), "valid", activation="relu"),
@@ -653,14 +646,13 @@ def make_dann_mnist_model(num_classes, num_domains, global_step, grl_schedule):
         tf.keras.layers.Dense(num_classes, "softmax"),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         tf.keras.layers.Dense(100, "relu"),
         tf.keras.layers.Dense(num_domains, "softmax"),
     ])
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_dann_svhn_model(num_classes, num_domains, global_step, grl_schedule):
+def make_dann_svhn_model(num_classes, num_domains):
     """ Figure 4(b) SVHN architecture -- Ganin et al. DANN JMLR 2016 paper """
     dropout = FLAGS.dropout
 
@@ -699,7 +691,6 @@ def make_dann_svhn_model(num_classes, num_domains, global_step, grl_schedule):
         tf.keras.layers.Dense(num_classes, "softmax"),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         tf.keras.layers.Dense(1024),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.ReLU(),
@@ -715,7 +706,7 @@ def make_dann_svhn_model(num_classes, num_domains, global_step, grl_schedule):
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_dann_gtsrb_model(num_classes, num_domains, global_step, grl_schedule):
+def make_dann_gtsrb_model(num_classes, num_domains):
     """ Figure 4(c) SVHN architecture -- Ganin et al. DANN JMLR 2016 paper """
     feature_extractor = CustomSequential([
         tf.keras.layers.Conv2D(96, (5, 5), (1, 1), "valid", activation="relu"),
@@ -731,7 +722,6 @@ def make_dann_gtsrb_model(num_classes, num_domains, global_step, grl_schedule):
         tf.keras.layers.Dense(num_classes, "softmax"),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         tf.keras.layers.Dense(1024, "relu"),
         tf.keras.layers.Dense(1024, "relu"),
         tf.keras.layers.Dense(num_domains, "softmax"),
@@ -739,8 +729,7 @@ def make_dann_gtsrb_model(num_classes, num_domains, global_step, grl_schedule):
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_vada_model(num_classes, num_domains, global_step, grl_schedule,
-        small=False):
+def make_vada_model(num_classes, num_domains, small=False):
     """ Table 6 Small CNN -- Shu et al. VADA / DIRT-T ICLR 2018 paper
 
     Note: they used small for digits, traffic signs, and WiFi and large for
@@ -782,7 +771,6 @@ def make_vada_model(num_classes, num_domains, global_step, grl_schedule,
             tf.keras.layers.Dense(num_classes, "softmax"),
         ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         tf.keras.layers.Flatten(),
 
         tf.keras.layers.Dense(100),
@@ -794,7 +782,7 @@ def make_vada_model(num_classes, num_domains, global_step, grl_schedule,
     return feature_extractor, task_classifier, domain_classifier
 
 
-def make_resnet50_model(num_classes, num_domains, global_step, grl_schedule):
+def make_resnet50_model(num_classes, num_domains):
     """ ResNet50 pre-trained on ImageNet -- for use with Office-31 datasets
     Input should be 224x224x3 """
     feature_extractor = tf.keras.applications.ResNet50(
@@ -804,7 +792,6 @@ def make_resnet50_model(num_classes, num_domains, global_step, grl_schedule):
         tf.keras.layers.Dense(num_classes, "softmax"),
     ])
     domain_classifier = CustomSequential([
-        FlipGradient(global_step, grl_schedule),
         tf.keras.layers.Flatten(),
         tf.keras.layers.Dense(num_domains, "softmax"),
     ])
@@ -825,7 +812,7 @@ class DomainAdaptationModel(tf.keras.Model):
             ...
     """
     def __init__(self, num_classes, num_domains, model_name, global_step,
-            num_steps, use_grl=False, sleep_generalize=False, **kwargs):
+            num_steps, use_grl=False, **kwargs):
         super().__init__(**kwargs)
         if use_grl:
             grl_schedule = DannGrlSchedule(num_steps)
@@ -833,7 +820,14 @@ class DomainAdaptationModel(tf.keras.Model):
         else:
             grl_schedule = DisableGrlSchedule()
 
-        args = (num_classes, num_domains, global_step, grl_schedule)
+        # For MDAN Smooth, it's binary classification but we have a separate
+        # discriminator for each source-target pair.
+        # Actually, for now let's use the right number of domains so we
+        # don't have to compute new domain labels
+        #if FLAGS.method == "dann_smooth":
+        #    args = (num_classes, 2)
+
+        args = (num_classes, num_domains)
 
         if model_name == "flat":
             fe, task, domain = make_flat_model(*args)
@@ -866,12 +860,23 @@ class DomainAdaptationModel(tf.keras.Model):
 
         self.feature_extractor = fe
         self.task_classifier = task
-        self.domain_classifier = domain
+        self.flip_gradient = FlipGradient(global_step, grl_schedule)
+
+        # MDAN Smooth requires multiple domain classifiers
+        if FLAGS.method == "dann_smooth":
+            # Note: no need for a target domain classifier, so it's actually
+            # num_domains-1 domain classifiers
+            self.domain_classifier = [domain]
+
+            # Start at 2 since we already have one
+            for i in range(2, num_domains):
+                self.domain_classifier.append(
+                    tf.keras.models.clone_model(domain))
+        else:
+            self.domain_classifier = domain
 
         # For sleep generalization method
-        self.sleep_generalize = sleep_generalize
-
-        if sleep_generalize:
+        if FLAGS.method == "sleep_dg":
             self.concat = tf.keras.layers.Concatenate(axis=1)
             self.stop_gradient = StopGradient()
 
@@ -887,17 +892,31 @@ class DomainAdaptationModel(tf.keras.Model):
             + self.task_classifier.trainable_variables
 
     @property
+    def trainable_variables_domain(self):
+        # If multiple domain classifiers, get variables from all of them
+        if isinstance(self.domain_classifier, list):
+            domain_vars = []
+
+            for dc in self.domain_classifier:
+                domain_vars += dc.trainable_variables
+        else:
+            domain_vars = self.domain_classifier.trainable_variables
+
+        return domain_vars
+
+    @property
     def trainable_variables_task_domain(self):
         return self.feature_extractor.trainable_variables \
             + self.task_classifier.trainable_variables \
-            + self.domain_classifier.trainable_variables
+            + self.trainable_variables_domain
 
     @property
     def trainable_variables_target(self):
         return self.feature_extractor.trainable_variables \
             + self.target_classifier.trainable_variables
 
-    def call(self, inputs, domain="source", target=False, training=None, **kwargs):
+    def call(self, inputs, domain="source", domain_classifier=None,
+            target=False, training=None, **kwargs):
         # Manually set the learning phase since we probably aren't using .fit()
         if training is True:
             tf.keras.backend.set_learning_phase(1)
@@ -919,16 +938,38 @@ class DomainAdaptationModel(tf.keras.Model):
         else:
             task = self.task_classifier(fe_output, domain=domain, **kwargs)
 
+        # Flip the gradient, if desired. If disabled, then this does nothing.
+        grl_output = self.flip_gradient(fe_output, domain=domain, **kwargs)
+
         # If doing the algorithm from the sleep paper, then for generalization
         # we also concatenate the task classifier's output when fed to the
         # domain classifier.
-        if self.sleep_generalize:
+        if FLAGS.method == "sleep_dg":
             task_stop_gradient = self.stop_gradient(task)
-            domain_input = self.concat([fe_output, task_stop_gradient])
+            domain_input = self.concat([grl_output, task_stop_gradient])
         else:
-            domain_input = fe_output
+            domain_input = grl_output
 
-        domain_output = self.domain_classifier(domain_input, domain=domain, **kwargs)
+        if isinstance(self.domain_classifier, list):
+            # We know which one to use (0 = source domain 1, 1 = source domain 2, etc.)
+            if domain_classifier is not None:
+                domain_output = self.domain_classifier[domain_classifier](domain_input, **kwargs)
+            # We don't know which one, so do them all
+            else:
+                domain_output = []
+
+                for dc in self.domain_classifier:
+                    # Note: this feeds all the data through each domain classifier
+                    # since at this point we don't know which data is from which
+                    # domain. In main.py when computing the loss, we'll take the
+                    # proper slices of these outputs.
+                    #
+                    # Note: can't pass domain=domain since it errors for some reason
+                    # due to the layer cloning, but we have CustomSequential disabled
+                    # anyway, so it doesn't really matter.
+                    domain_output.append(dc(domain_input, **kwargs))
+        else:
+            domain_output = self.domain_classifier(domain_input, domain=domain, **kwargs)
 
         return task, domain_output, fe
 
