@@ -1,25 +1,5 @@
 """
 Datasets
-
-Usage:
-    import datasets
-
-    print(datasets.names()) # mnist, usps, svhn, ...
-    mnist = datasets.load("mnist")
-    class_number = mnist.label_to_int("5")
-    class_name = mnist.int_to_label(5)
-
-    # Training
-    train_iter = iter(mnist.train):
-    labels = mnist.class_labels
-    while True:
-        next_batch = next(train_iter)
-
-    # Evaluation
-    for x, y in mnist.train_evaluation:
-        ...
-    for x, y in mnist.test_evaluation:
-        ...
 """
 import os
 import tensorflow as tf
@@ -28,7 +8,7 @@ from absl import app
 from absl import flags
 
 from datasets import datasets, inversions
-from datasets.tfrecord import tfrecord_filename_simple
+from datasets.tfrecord import tfrecord_filename
 
 FLAGS = flags.FLAGS
 
@@ -39,8 +19,6 @@ flags.DEFINE_integer("prefetch_buffer", 1, "Dataset prefetch buffer size (0 = au
 flags.DEFINE_boolean("tune_num_parallel_calls", False, "Autotune num_parallel_calls")
 flags.DEFINE_integer("eval_shuffle_seed", 0, "Evaluation shuffle seed for repeatability")
 flags.DEFINE_integer("eval_max_examples", 0, "Max number of examples to evaluate for validation (default 0, i.e. all)")
-flags.DEFINE_boolean("train_on_source_valid", True, "Train on source validation data for small training sets (and in this case, don't draw much from the number)")
-flags.DEFINE_boolean("train_on_target_valid", False, "Train on target validation data for small training sets (i.e., Office-31)")
 flags.DEFINE_integer("trim_time_steps", 0, "For testing RNN vs. CNN handling varying time series length, allow triming to set size (default 0, i.e. use all data)")
 flags.DEFINE_integer("feature_subset", 0, "For testing RNN vs. CNN handling varying numbers of features, allow only using a subset of the features (default 0, i.e. all the features")
 
@@ -119,7 +97,6 @@ class Dataset:
         feature_description = {
             'x': tf.io.FixedLenFeature([], tf.string),
             'y': tf.io.FixedLenFeature([], tf.string),
-            'domain': tf.io.FixedLenFeature([], tf.string),
         }
 
         def _parse_example_function(example_proto):
@@ -136,7 +113,6 @@ class Dataset:
 
             x = tf.io.parse_tensor(parsed["x"], tf.float32)
             y = tf.io.parse_tensor(parsed["y"], tf.float32)
-            domain = tf.io.parse_tensor(parsed["domain"], tf.float32)
 
             # Trim to certain time series length (note single example, not batch)
             # shape before: [time_steps, features]
@@ -150,7 +126,7 @@ class Dataset:
                 x = tf.slice(x, [0, 0],
                     [tf.shape(x)[0], tf.minimum(tf.shape(x)[1], FLAGS.feature_subset)])
 
-            return x, y, domain
+            return x, y
 
         # Interleave the tfrecord files
         files = tf.data.Dataset.from_tensor_slices(filenames)
@@ -208,28 +184,20 @@ class Dataset:
         return self.class_labels[label_index]
 
 
-def load_da(source_name, target_name, test=False, *args, **kwargs):
-    """ Load two datasets (source and target) but perform necessary conversions
-    to make them compatable for adaptation (i.e. same size, channels, etc.).
-    Names must be in datasets.names().
+def load(dataset_name, num_domains, test=False, *args, **kwargs):
+    """ Load a dataset (source and target). Names must be in datasets.names().
 
     If test=True, then load real test set. Otherwise, load validation set as
     the "test" data (for use during training and hyperparameter tuning).
     """
     # Sanity checks
-    assert source_name in datasets.datasets, \
-        source_name + " not a supported dataset, only "+str(datasets.datasets)
-    assert target_name is None or target_name in datasets.datasets, \
-        target_name + " not a supported dataset, only "+str(datasets.datasets)
+    assert dataset_name in datasets.datasets, \
+        dataset_name + " not a supported dataset, only "+str(datasets.datasets)
 
     # Get dataset information
-    source_num_classes = datasets.datasets[source_name].num_classes
-    source_class_labels = datasets.datasets[source_name].class_labels
-    num_domains = datasets.datasets[source_name].num_domains
-    if target_name is not None:
-        target_num_classes = datasets.datasets[target_name].num_classes
-        target_class_labels = datasets.datasets[target_name].class_labels
-    invert_name = source_name if datasets.datasets[source_name].invertible else None
+    num_classes = datasets.datasets[dataset_name].num_classes
+    class_labels = datasets.datasets[dataset_name].class_labels
+    invert_name = dataset_name if datasets.datasets[dataset_name].invertible else None
 
     # Get dataset tfrecord filenames
     def _path(filename):
@@ -240,62 +208,81 @@ def load_da(source_name, target_name, test=False, *args, **kwargs):
         fn = os.path.join("datasets", filename)
         return [fn] if os.path.exists(fn) else []
 
-    source_train_filenames = _path(tfrecord_filename_simple(source_name, "train"))
-    source_valid_filenames = _path(tfrecord_filename_simple(source_name, "valid"))
-    source_test_filenames = _path(tfrecord_filename_simple(source_name, "test"))
-    if target_name is not None:
-        target_train_filenames = _path(tfrecord_filename_simple(target_name, "train"))
-        target_valid_filenames = _path(tfrecord_filename_simple(target_name, "valid"))
-        target_test_filenames = _path(tfrecord_filename_simple(target_name, "test"))
+    train_filenames = _path(tfrecord_filename(dataset_name, "train"))
+    valid_filenames = _path(tfrecord_filename(dataset_name, "valid"))
+    test_filenames = _path(tfrecord_filename(dataset_name, "test"))
 
     # By default use validation data as the "test" data, unless test=True
     if not test:
-        source_test_filenames = source_valid_filenames
-        if target_name is not None:
-            target_test_filenames = target_valid_filenames
-
-        # However, also train on the source "valid" data since we don't actually
-        # care about those numbers much and some datasets like Office are really
-        # small.
-        if FLAGS.train_on_source_valid:
-            source_train_filenames += source_valid_filenames
-            print("Warning: training on source \"valid\" data")
-
-        # For very small datasets, e.g. Office-31, where there might only be a
-        # few thousand target examples, then we might ought to use everything
-        # for training (unlabeled still though; only validation uses labels for
-        # testing, but not during training).
-        if FLAGS.train_on_target_valid and target_name is not None:
-            target_train_filenames += target_valid_filenames
-            print("Warning: training on unlabeled target \"valid\" data")
-
+        test_filenames = valid_filenames
     # If test=True, then make "train" consist of both training and validation
     # data to match the original dataset.
     else:
-        source_train_filenames += source_valid_filenames
-        if target_name is not None:
-            target_train_filenames += target_valid_filenames
+        train_filenames += valid_filenames
 
     # Create all the train, test, evaluation, ... tf.data.Dataset objects within
     # a Dataset() class that stores them
-    source_dataset = Dataset(source_num_classes, source_class_labels, num_domains,
-        source_train_filenames, source_test_filenames, invert_name,
-        *args, **kwargs)
-    if target_name is not None:
-        target_dataset = Dataset(target_num_classes, target_class_labels, num_domains,
-            target_train_filenames, target_test_filenames, invert_name,
-            *args, **kwargs)
+    dataset = Dataset(num_classes, class_labels, num_domains,
+        train_filenames, test_filenames, invert_name, *args, **kwargs)
+
+    return dataset
+
+
+def load_da(dataset, sources, target, *args, **kwargs):
+    """
+    Load the source(s) and target domains
+
+    Input:
+        dataset - one of the dataset names (e.g. ucihar)
+        sources - comma-separated string of source domain numbers
+        target - string of target domain number
+
+    Returns:
+        [source1_dataset, source2_dataset, ...], target_dataset
+    """
+    # Get proper dataset names
+    sources = [dataset+"_"+x for x in sources.split(",")]
+
+    if target is not None:
+        target = dataset+"_"+target
+
+    # Need to know how many domains for creating the proper-sized model, etc.
+    num_domains = len(sources)
+
+    if target is not None:
+        num_domains += 1
+
+    # Check they're all valid
+    valid_names = names()
+
+    for s in sources:
+        assert s in valid_names, "unknown source domain: "+s
+
+    assert target in valid_names, "unknown target domain: "+target
+
+    # Load each source
+    source_datasets = []
+
+    for s in sources:
+        source_datasets.append(load(s, num_domains, *args, **kwargs))
+
+    # Load target
+    if target is not None:
+        target_dataset = load(target, num_domains, *args, **kwargs)
+
+        # Check validity
+        for i, s in enumerate(source_datasets):
+            assert s.num_classes == target_dataset.num_classes, \
+                "Adapting from source "+str(i)+" to target with different " \
+                "classes not supported"
     else:
         target_dataset = None
 
-    return source_dataset, target_dataset
+    return source_datasets, target_dataset
 
 
 def names():
-    """
-    Returns list of all the available datasets to load with
-        load_da(source, target, ...)
-    """
+    """ Returns list of all the available datasets to load """
     return datasets.names()
 
 
@@ -303,15 +290,20 @@ def main(argv):
     print("Available datasets:", names())
 
     # Example showing that the sizes and number of channels are matched
-    source, target = load_da("utdata_wrist", "utdata_pocket")
+    sources, target = load_da("ucihar", "1,2", "3")
 
-    print("Source:", source.train)
+    print("Source 0:", sources[0].train)
     print("Target:", target.train)
 
-    for x, y in source.train:
-        print("Source x shape:", x.shape)
-        print("Source y shape:", y.shape)
-        break
+    for i, source in enumerate(sources):
+        assert source.train is not None, "dataset file probably doesn't exist"
+
+        for x, y in source.train:
+            print("Source "+str(i)+" x shape:", x.shape)
+            print("Source "+str(i)+" y shape:", y.shape)
+            break
+
+    assert target.train is not None, "dataset file probably doesn't exist"
 
     for x, y in target.train:
         print("Target x shape:", x.shape)

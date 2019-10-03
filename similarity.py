@@ -73,10 +73,8 @@ def load_model_and_data(log_dir, model_dir, source, target, model_name, method_n
     assert target != ""
 
     # Load datasets
-    source_dataset, target_dataset = load_datasets.load_da(source, target,
+    source_datasets, target_dataset = load_datasets.load_da(source, target,
         test=True)
-    assert source_dataset.num_classes == target_dataset.num_classes, \
-        "Adapting from source to target with different classes not supported"
 
     # Evaluation datasets if we have the dataset
     source_dataset_train = source_dataset.train_evaluation

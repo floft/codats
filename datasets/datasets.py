@@ -135,8 +135,7 @@ class Dataset:
 
         def load(self):
             ...
-            return train_data, train_labels, train_domain, \
-                test_data, test_labels, test_domain
+            return train_data, train_labels, test_data, test_labels
 
     Also, add to the datasets={"something": Something, ...} dictionary below.
     """
@@ -168,8 +167,7 @@ class Dataset:
         self.test_percent = test_percent
 
         # Load the dataset
-        train_data, train_labels, self.train_domain, \
-            test_data, test_labels, self.test_domain = self.load()
+        train_data, train_labels, test_data, test_labels = self.load()
 
         if train_data is not None and train_labels is not None:
             self.train_data, self.train_labels = \
@@ -207,17 +205,17 @@ class Dataset:
         options are handled. """
         return data, labels
 
-    def train_test_split(self, x, y, domain, random_state=42):
+    def train_test_split(self, x, y, random_state=42):
         """
         Split x and y data into train/test sets
 
         Warning: train_test_split() is from sklearn but self.train_test_split()
         is this function, which is what you should use.
         """
-        x_train, x_test, y_train, y_test, domain_train, domain_test = \
-            train_test_split(x, y, domain, test_size=self.test_percent,
+        x_train, x_test, y_train, y_test = \
+            train_test_split(x, y, test_size=self.test_percent,
             stratify=y, random_state=random_state)
-        return x_train, y_train, x_test, y_test, domain_train, domain_test
+        return x_train, y_train, x_test, y_test
 
     def get_file_in_archive(self, archive, filename):
         """ Read one file out of the already-open zip/rar file """
@@ -329,23 +327,6 @@ class Dataset:
         return self.class_labels[label_index]
 
 
-def one_to_n(n):
-    """ Return [1, 2, 3, ..., n] """
-    return list(range(1, n+1))
-
-
-def calc_domains(users, is_target):
-    """
-    Returns [list of domains...] based on the number of users and
-    if this is the target or not
-    """
-    if is_target:
-        assert len(users) == 1, "cannot have more than one target"
-        return [0]
-
-    return one_to_n(len(users))
-
-
 class uWaveBase(Dataset):
     """
     uWave Gesture dataset
@@ -365,7 +346,6 @@ class uWaveBase(Dataset):
             *args, **kwargs):
         self.days = days
         self.users = users
-        self.domains = calc_domains(days or users, target)
         super().__init__(num_classes, class_labels, None, None,
             uWaveBase.feature_names, *args, **kwargs)
 
@@ -426,7 +406,6 @@ class uWaveBase(Dataset):
         """ Load ZIP file containing all the RAR files """
         data = []
         labels = []
-        domain = []
 
         with zipfile.ZipFile(filename, "r") as archive:
             filelist = archive.namelist()
@@ -456,16 +435,6 @@ class uWaveBase(Dataset):
                     data += new_data
                     labels += new_labels
 
-                    # Which domain this is for
-                    if self.users is not None:
-                        domain_index = self.users.index(user)
-                    elif self.days is not None:
-                        domain_index = self.days.index(day)
-                    else:
-                        domain_index = 0
-
-                    domain += [self.domains[domain_index]]*len(new_labels)
-
         # Zero pad (appending zeros) to make all the same shape
         # for uwave_all, we know the max max([x.shape[0] for x in data]) = 315
         # and expand the dimensions to [1, time_steps, num_features] so we can
@@ -474,17 +443,16 @@ class uWaveBase(Dataset):
 
         #x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
-        domain = np.hstack(domain).astype(np.float32)
 
-        return data, y, domain
+        return data, y
 
     def load(self):
         # Load data
         dataset_fp = self.download()
-        x, y, domain = self.load_zip(dataset_fp)
+        x, y = self.load_zip(dataset_fp)
         # Split into train/test sets
-        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
-            self.train_test_split(x, y, domain)
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
 
         # Normalize here since we know which data is train vs. test and we have
         # to normalize before we zero pad or the zero padding messes up the
@@ -500,8 +468,7 @@ class uWaveBase(Dataset):
         test_data = np.vstack([np.expand_dims(self.pad_to(d, 315), axis=0)
             for d in test_data]).astype(np.float32)
 
-        return train_data, train_labels, train_domain, \
-            test_data, test_labels, test_domain
+        return train_data, train_labels, test_data, test_labels
 
     def process(self, data, labels):
         """ uWave classes are index-one """
@@ -533,7 +500,6 @@ class SleepBase(Dataset):
             *args, **kwargs):
         self.days = days
         self.users = users
-        self.domains = calc_domains(days or users, target)
         super().__init__(num_classes, class_labels, None, None,
             SleepBase.feature_names, *args, **kwargs)
 
@@ -586,17 +552,7 @@ class SleepBase(Dataset):
         assert x.shape[2] == 10, \
             "Incorrect third dimension of x (not 10)"
 
-        # Which domain this is for
-        if self.users is not None:
-            domain_index = self.users.index(user)
-        elif self.days is not None:
-            domain_index = self.days.index(day)
-        else:
-            domain_index = 0
-
-        domain = [self.domains[domain_index]]*len(stage_labels)
-
-        return x, stage_labels, domain
+        return x, stage_labels
 
     def load_file(self, filename):
         """ Load ZIP file containing all the .npy files """
@@ -605,7 +561,6 @@ class SleepBase(Dataset):
 
         data = []
         labels = []
-        domains = []
 
         with zipfile.ZipFile(filename, "r") as archive:
             filelist = archive.namelist()
@@ -613,26 +568,23 @@ class SleepBase(Dataset):
             for f in filelist:
                 if ".npy" in f:
                     contents = self.get_file_in_archive(archive, f)
-                    x, label, domain = self.process_examples(f, io.BytesIO(contents))
+                    x, label = self.process_examples(f, io.BytesIO(contents))
 
-                    if x is not None and label is not None and domain is not None:
+                    if x is not None and label is not None:
                         data.append(x)
                         labels.append(label)
-                        domains.append(domain)
 
         x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
-        domains = np.hstack(domains).astype(np.float32)
 
-        return x, y, domains
+        return x, y
 
     def load(self):
-        x, y, domain = self.load_file("RFSleep_unencrypted.zip")
-        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
-            self.train_test_split(x, y, domain)
+        x, y = self.load_file("RFSleep_unencrypted.zip")
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
 
-        return train_data, train_labels, train_domain, \
-            test_data, test_labels, test_domain
+        return train_data, train_labels, test_data, test_labels
 
 
 class UciHarBase(Dataset):
@@ -656,7 +608,6 @@ class UciHarBase(Dataset):
 
     def __init__(self, users, target, *args, **kwargs):
         self.users = users
-        self.domains = calc_domains(users, target)
         super().__init__(UciHarBase.num_classes, UciHarBase.class_labels,
             None, None, UciHarBase.feature_names, *args, **kwargs)
 
@@ -724,14 +675,11 @@ class UciHarBase(Dataset):
 
         # All data if no selection
         if self.users is None:
-            raise NotImplementedError("currently you must select a subset of users")
-            # TODO create domain list for all users
-            #return all_data, all_labels
+            return all_data, all_labels
 
         # Otherwise, select based on the desired users
         data = []
         labels = []
-        domains = []
 
         for user in self.users:
             selection = all_subjects == user
@@ -739,26 +687,21 @@ class UciHarBase(Dataset):
             current_labels = all_labels[selection]
             labels.append(current_labels)
 
-            domain_index = self.users.index(user)
-            domains.append([self.domains[domain_index]]*len(current_labels))
-
         x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
-        domains = np.hstack(domains).astype(np.float32)
 
         # print("Selected data:", self.users)
-        # print(x.shape, y.shape, domains.shape)
+        # print(x.shape, y.shape)
 
-        return x, y, domains
+        return x, y
 
     def load(self):
         dataset_fp = self.download()
-        x, y, domain = self.load_file(dataset_fp)
-        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
-            self.train_test_split(x, y, domain)
+        x, y = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
 
-        return train_data, train_labels, train_domain, \
-            test_data, test_labels, test_domain
+        return train_data, train_labels, test_data, test_labels
 
     def process(self, data, labels):
         # Index one
@@ -785,7 +728,6 @@ class UciHHarBase(Dataset):
 
     def __init__(self, users, target, *args, **kwargs):
         self.users = users
-        self.domains = calc_domains(users, target)
         super().__init__(UciHHarBase.num_classes, UciHHarBase.class_labels,
             UciHHarBase.window_size, UciHHarBase.window_overlap,
             UciHHarBase.feature_names, *args, **kwargs)
@@ -856,7 +798,6 @@ class UciHHarBase(Dataset):
         # Otherwise, select based on the desired users
         data = []
         labels = []
-        domains = []
 
         for user in self.users:
             # Load this user's data
@@ -873,26 +814,21 @@ class UciHHarBase(Dataset):
             data.append(current_data)
             labels.append(current_labels)
 
-            domain_index = self.users.index(user)
-            domains.append([self.domains[domain_index]]*len(current_labels))
-
         x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
-        domains = np.hstack(domains).astype(np.float32)
 
         # print("Selected data:", self.users)
-        # print(x.shape, y.shape, domains.shape)
+        # print(x.shape, y.shape)
 
-        return x, y, domains
+        return x, y
 
     def load(self):
         dataset_fp = self.download()
-        x, y, domain = self.load_file(dataset_fp)
-        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
-            self.train_test_split(x, y, domain)
+        x, y = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
 
-        return train_data, train_labels, train_domain, \
-            test_data, test_labels, test_domain
+        return train_data, train_labels, test_data, test_labels
 
 
 class UciHmBase(Dataset):
@@ -919,7 +855,6 @@ class UciHmBase(Dataset):
         self.subsample = subsample
 
         self.users = users
-        self.domains = calc_domains(users, target)
         super().__init__(UciHmBase.num_classes, UciHmBase.class_labels,
             UciHmBase.window_size, UciHmBase.window_overlap,
             UciHmBase.feature_names, *args, **kwargs)
@@ -991,7 +926,6 @@ class UciHmBase(Dataset):
         """
         data = []
         labels = []
-        domains = []
 
         with zipfile.ZipFile(filename, "r") as archive:
             for user in self.users:
@@ -1012,26 +946,21 @@ class UciHmBase(Dataset):
                 data.append(current_data)
                 labels.append(current_labels)
 
-                domain_index = self.users.index(user)
-                domains.append([self.domains[domain_index]]*len(current_labels))
-
         x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
-        domains = np.hstack(domains).astype(np.float32)
 
         # print("Selected data:", self.users)
-        # print(x.shape, y.shape, domains.shape)
+        # print(x.shape, y.shape)
 
-        return x, y, domains
+        return x, y
 
     def load(self):
         dataset_fp = self.download()
-        x, y, domain = self.load_file(dataset_fp)
-        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
-            self.train_test_split(x, y, domain)
+        x, y = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
 
-        return train_data, train_labels, train_domain, \
-            test_data, test_labels, test_domain
+        return train_data, train_labels, test_data, test_labels
 
 
 class WisdmBase(Dataset):
@@ -1053,7 +982,6 @@ class WisdmBase(Dataset):
 
     def __init__(self, users, target, *args, **kwargs):
         self.users = users
-        self.domains = calc_domains(users, target)
         super().__init__(WisdmBase.num_classes, WisdmBase.class_labels,
             WisdmBase.window_size, WisdmBase.window_overlap,
             WisdmBase.feature_names, *args, **kwargs)
@@ -1169,7 +1097,6 @@ class WisdmBase(Dataset):
         # Otherwise, select based on the desired users
         data = []
         labels = []
-        domains = []
 
         for user in self.users:
             # Load this user's data
@@ -1186,26 +1113,21 @@ class WisdmBase(Dataset):
             data.append(current_data)
             labels.append(current_labels)
 
-            domain_index = self.users.index(user)
-            domains.append([self.domains[domain_index]]*len(current_labels))
-
         x = np.vstack(data).astype(np.float32)
         y = np.hstack(labels).astype(np.float32)
-        domains = np.hstack(domains).astype(np.float32)
 
         # print("Selected data:", self.users)
-        # print(x.shape, y.shape, domains.shape)
+        # print(x.shape, y.shape)
 
-        return x, y, domains
+        return x, y
 
     def load(self):
         dataset_fp = self.download()
-        x, y, domain = self.load_file(dataset_fp)
-        train_data, train_labels, test_data, test_labels, train_domain, test_domain = \
-            self.train_test_split(x, y, domain)
+        x, y = self.load_file(dataset_fp)
+        train_data, train_labels, test_data, test_labels = \
+            self.train_test_split(x, y)
 
-        return train_data, train_labels, train_domain, \
-            test_data, test_labels, test_domain
+        return train_data, train_labels, test_data, test_labels
 
 
 def make_uwave(days=None, users=None, target=False):
@@ -1214,10 +1136,6 @@ def make_uwave(days=None, users=None, target=False):
         invertible = False
         num_classes = 8
         class_labels = list(range(num_classes))
-
-        # If source domain, number is source domains + 1 for target
-        # Set here to make it static
-        num_domains = len(users or days)+1 if not target else None
 
         def __init__(self, *args, **kwargs):
             super().__init__(
@@ -1236,10 +1154,6 @@ def make_sleep(days=None, users=None, target=False):
         num_classes = 6
         class_labels = ["Awake", "N1", "N2", "N3", "Light N2", "REM"]
 
-        # If source domain, number is source domains + 1 for target
-        # Set here to make it static
-        num_domains = len(users or days)+1 if not target else None
-
         def __init__(self, *args, **kwargs):
             super().__init__(
                 days, users,
@@ -1253,10 +1167,6 @@ def make_sleep(days=None, users=None, target=False):
 def make_ucihar(users=None, target=False):
     """ Make UCI HAR dataset split on users """
     class UciHarDataset(UciHarBase):
-        # If source domain, number is source domains + 1 for target
-        # Set here to make it static
-        num_domains = len(users)+1 if not target else None
-
         def __init__(self, *args, **kwargs):
             super().__init__(users, target, *args, **kwargs)
 
@@ -1266,10 +1176,6 @@ def make_ucihar(users=None, target=False):
 def make_ucihhar(users=None, target=False):
     """ Make UCI HHAR dataset split on users """
     class UciHHarDataset(UciHHarBase):
-        # If source domain, number is source domains + 1 for target
-        # Set here to make it static
-        num_domains = len(users)+1 if not target else None
-
         def __init__(self, *args, **kwargs):
             super().__init__(users, target, *args, **kwargs)
 
@@ -1282,10 +1188,6 @@ def make_ucihm(users=None, target=False):
     split = True
 
     class UciHmDataset(UciHmBase):
-        # If source domain, number is source domains + 1 for target
-        # Set here to make it static
-        num_domains = len(users)+1 if not target else None
-
         def __init__(self, *args, **kwargs):
             super().__init__(users, target, split, *args, **kwargs)
 
@@ -1298,10 +1200,6 @@ def make_ucihm_full(users=None, target=False):
     split = False
 
     class UciHmDataset(UciHmBase):
-        # If source domain, number is source domains + 1 for target
-        # Set here to make it static
-        num_domains = len(users)+1 if not target else None
-
         def __init__(self, *args, **kwargs):
             super().__init__(users, target, split, *args, **kwargs)
 
@@ -1311,10 +1209,6 @@ def make_ucihm_full(users=None, target=False):
 def make_wisdm(users=None, target=False):
     """ Make WISDM Actitracker dataset split on users """
     class WisdmDataset(WisdmBase):
-        # If source domain, number is source domains + 1 for target
-        # Set here to make it static
-        num_domains = len(users)+1 if not target else None
-
         def __init__(self, *args, **kwargs):
             super().__init__(users, target, *args, **kwargs)
 
@@ -1325,298 +1219,104 @@ def make_wisdm(users=None, target=False):
 # always has domain=0 whereas the others have domain=1,2,... for each source
 # See pick_multi_source.py
 datasets = {
-    "ucihar_n13_0": make_ucihar(users=[7,8,11,12,13,14,16,17,20,21,23,24,26]),
-    "ucihar_n13_1": make_ucihar(users=[4,9,11,13,14,16,17,18,21,23,25,28,30]),
-    "ucihar_n13_10": make_ucihar(users=[3,5,6,9,12,18,19,20,21,23,24,27,29]),
-    "ucihar_n13_11": make_ucihar(users=[1,5,6,10,11,12,13,14,15,16,22,27,28]),
-    "ucihar_n13_12": make_ucihar(users=[2,4,7,8,13,15,17,18,19,20,25,26,29]),
-    "ucihar_n13_13": make_ucihar(users=[3,8,9,10,12,13,14,15,20,23,26,29,30]),
-    "ucihar_n13_14": make_ucihar(users=[4,8,11,14,16,19,20,21,24,25,26,29,30]),
-    "ucihar_n13_2": make_ucihar(users=[2,5,6,7,10,12,14,16,17,18,23,25,30]),
-    "ucihar_n13_3": make_ucihar(users=[1,4,5,6,8,11,13,15,17,18,20,24,26]),
-    "ucihar_n13_4": make_ucihar(users=[1,4,5,7,8,11,12,16,18,22,23,26,28]),
-    "ucihar_n13_5": make_ucihar(users=[3,4,6,8,13,14,16,17,18,20,21,22,24]),
-    "ucihar_n13_6": make_ucihar(users=[2,4,6,8,10,14,15,16,22,23,27,28,29]),
-    "ucihar_n13_7": make_ucihar(users=[1,2,4,6,7,9,10,12,15,21,22,23,27]),
-    "ucihar_n13_8": make_ucihar(users=[1,5,7,11,13,15,16,20,21,23,26,27,28]),
-    "ucihar_n13_9": make_ucihar(users=[1,7,10,11,13,15,17,18,24,25,26,28,30]),
-    "ucihar_n19_0": make_ucihar(users=[3,4,7,8,11,12,13,14,15,16,17,18,20,21,23,24,26,28,30]),
-    "ucihar_n19_1": make_ucihar(users=[3,4,5,6,8,9,11,13,14,16,17,18,19,21,22,23,25,28,30]),
-    "ucihar_n19_10": make_ucihar(users=[3,5,6,9,10,11,12,13,16,18,19,20,21,22,23,24,26,27,29]),
-    "ucihar_n19_11": make_ucihar(users=[1,5,6,8,9,10,11,12,13,14,15,16,19,21,22,23,24,27,28]),
-    "ucihar_n19_12": make_ucihar(users=[1,2,3,4,7,8,13,15,16,17,18,19,20,21,25,26,27,28,29]),
-    "ucihar_n19_13": make_ucihar(users=[2,3,4,6,8,9,10,12,13,14,15,17,20,23,25,26,27,29,30]),
-    "ucihar_n19_14": make_ucihar(users=[4,6,7,8,9,11,12,13,14,16,19,20,21,23,24,25,26,29,30]),
-    "ucihar_n19_2": make_ucihar(users=[2,5,6,7,9,10,12,14,15,16,17,18,23,24,25,26,27,29,30]),
-    "ucihar_n19_3": make_ucihar(users=[1,3,4,5,6,8,11,12,13,15,17,18,20,21,23,24,26,27,29]),
-    "ucihar_n19_4": make_ucihar(users=[1,3,4,5,7,8,11,12,13,16,17,18,21,22,23,26,28,29,30]),
-    "ucihar_n19_5": make_ucihar(users=[3,4,6,7,8,9,11,13,14,15,16,17,18,20,21,22,24,26,28]),
-    "ucihar_n19_6": make_ucihar(users=[2,4,5,6,8,9,10,11,13,14,15,16,20,22,23,24,27,28,29]),
-    "ucihar_n19_7": make_ucihar(users=[1,2,4,5,6,7,9,10,12,15,16,17,18,20,21,22,23,27,29]),
-    "ucihar_n19_8": make_ucihar(users=[1,5,6,7,11,13,14,15,16,19,20,21,22,23,24,25,26,27,28]),
-    "ucihar_n19_9": make_ucihar(users=[1,3,6,7,10,11,13,15,16,17,18,19,20,21,24,25,26,28,30]),
-    "ucihar_n1_0": make_ucihar(users=[20]),
-    "ucihar_n1_1": make_ucihar(users=[4]),
-    "ucihar_n1_2": make_ucihar(users=[12]),
-    "ucihar_n1_3": make_ucihar(users=[23]),
-    "ucihar_n1_4": make_ucihar(users=[21]),
-    "ucihar_n1_5": make_ucihar(users=[16]),
-    "ucihar_n1_6": make_ucihar(users=[10]),
-    "ucihar_n1_7": make_ucihar(users=[27]),
-    "ucihar_n1_8": make_ucihar(users=[26]),
-    "ucihar_n1_9": make_ucihar(users=[17]),
-    "ucihar_n25_0": make_ucihar(users=[3,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,23,24,26,27,28,29,30]),
-    "ucihar_n25_1": make_ucihar(users=[3,4,5,6,7,8,9,11,12,13,14,15,16,17,18,19,21,22,23,24,25,26,28,29,30]),
-    "ucihar_n25_10": make_ucihar(users=[1,2,3,5,6,8,9,10,11,12,13,14,16,18,19,20,21,22,23,24,25,26,27,29,30]),
-    "ucihar_n25_11": make_ucihar(users=[1,3,5,6,7,8,9,10,11,12,13,14,15,16,18,19,21,22,23,24,25,26,27,28,29]),
-    "ucihar_n25_12": make_ucihar(users=[1,2,3,4,6,7,8,10,11,13,14,15,16,17,18,19,20,21,22,25,26,27,28,29,30]),
-    "ucihar_n25_13": make_ucihar(users=[1,2,3,4,6,8,9,10,11,12,13,14,15,17,18,20,21,22,23,24,25,26,27,29,30]),
-    "ucihar_n25_14": make_ucihar(users=[1,3,4,6,7,8,9,11,12,13,14,15,16,19,20,21,22,23,24,25,26,27,28,29,30]),
-    "ucihar_n25_2": make_ucihar(users=[2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18,20,21,23,24,25,26,27,29,30]),
-    "ucihar_n25_3": make_ucihar(users=[1,3,4,5,6,8,10,11,12,13,14,15,16,17,18,20,21,22,23,24,26,27,28,29,30]),
-    "ucihar_n25_4": make_ucihar(users=[1,3,4,5,7,8,10,11,12,13,14,15,16,17,18,20,21,22,23,24,26,27,28,29,30]),
-    "ucihar_n25_5": make_ucihar(users=[3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,20,21,22,24,25,26,27,28,30]),
-    "ucihar_n25_6": make_ucihar(users=[1,2,4,5,6,8,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,25,27,28,29]),
-    "ucihar_n25_7": make_ucihar(users=[1,2,4,5,6,7,9,10,11,12,13,14,15,16,17,18,20,21,22,23,24,27,28,29,30]),
-    "ucihar_n25_8": make_ucihar(users=[1,5,6,7,8,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30]),
-    "ucihar_n25_9": make_ucihar(users=[1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,24,25,26,27,28,30]),
-    "ucihar_n7_0": make_ucihar(users=[7,8,12,16,20,23,24]),
-    "ucihar_n7_1": make_ucihar(users=[4,9,14,17,18,21,23]),
-    "ucihar_n7_10": make_ucihar(users=[6,18,20,21,23,24,27]),
-    "ucihar_n7_11": make_ucihar(users=[6,10,13,16,22,27,28]),
-    "ucihar_n7_12": make_ucihar(users=[7,8,17,18,19,20,25]),
-    "ucihar_n7_13": make_ucihar(users=[8,9,14,20,23,26,30]),
-    "ucihar_n7_14": make_ucihar(users=[4,11,19,20,24,26,29]),
-    "ucihar_n7_2": make_ucihar(users=[2,5,10,12,14,16,25]),
-    "ucihar_n7_3": make_ucihar(users=[1,4,13,18,20,24,26]),
-    "ucihar_n7_4": make_ucihar(users=[5,7,11,18,23,26,28]),
-    "ucihar_n7_5": make_ucihar(users=[8,16,17,18,20,21,24]),
-    "ucihar_n7_6": make_ucihar(users=[6,8,10,14,15,16,29]),
-    "ucihar_n7_7": make_ucihar(users=[4,6,9,12,21,22,27]),
-    "ucihar_n7_8": make_ucihar(users=[1,7,15,20,23,26,27]),
-    "ucihar_n7_9": make_ucihar(users=[1,7,10,15,18,24,25]),
-    "ucihar_t1": make_ucihar(users=[1], target=True),
-    "ucihar_t2": make_ucihar(users=[2], target=True),
-    "ucihar_t3": make_ucihar(users=[3], target=True),
-    "ucihar_t4": make_ucihar(users=[4], target=True),
-    "ucihar_t5": make_ucihar(users=[5], target=True),
-    "ucihhar_n1_0": make_ucihhar(users=[4]),
-    "ucihhar_n1_1": make_ucihhar(users=[3]),
-    "ucihhar_n1_2": make_ucihhar(users=[6]),
-    "ucihhar_n1_3": make_ucihhar(users=[5]),
-    "ucihhar_n1_4": make_ucihhar(users=[0]),
-    "ucihhar_n1_5": make_ucihhar(users=[2]),
-    "ucihhar_n1_6": make_ucihhar(users=[1]),
-    "ucihhar_n2_0": make_ucihhar(users=[4,5]),
-    "ucihhar_n2_1": make_ucihhar(users=[4,8]),
-    "ucihhar_n2_10": make_ucihhar(users=[0,8]),
-    "ucihhar_n2_11": make_ucihhar(users=[0,3]),
-    "ucihhar_n2_2": make_ucihhar(users=[4,6]),
-    "ucihhar_n2_3": make_ucihhar(users=[2,3]),
-    "ucihhar_n2_4": make_ucihhar(users=[3,6]),
-    "ucihhar_n2_5": make_ucihhar(users=[1,4]),
-    "ucihhar_n2_6": make_ucihhar(users=[6,8]),
-    "ucihhar_n2_7": make_ucihhar(users=[3,5]),
-    "ucihhar_n2_8": make_ucihhar(users=[5,6]),
-    "ucihhar_n2_9": make_ucihhar(users=[0,5]),
-    "ucihhar_n3_0": make_ucihhar(users=[4,5,7]),
-    "ucihhar_n3_1": make_ucihhar(users=[3,4,8]),
-    "ucihhar_n3_10": make_ucihhar(users=[0,4,5]),
-    "ucihhar_n3_11": make_ucihhar(users=[0,4,8]),
-    "ucihhar_n3_12": make_ucihhar(users=[5,6,7]),
-    "ucihhar_n3_13": make_ucihhar(users=[0,7,8]),
-    "ucihhar_n3_2": make_ucihhar(users=[3,4,6]),
-    "ucihhar_n3_3": make_ucihhar(users=[0,2,3]),
-    "ucihhar_n3_4": make_ucihhar(users=[3,6,8]),
-    "ucihhar_n3_5": make_ucihhar(users=[4,6,7]),
-    "ucihhar_n3_6": make_ucihhar(users=[0,1,4]),
-    "ucihhar_n3_7": make_ucihhar(users=[6,7,8]),
-    "ucihhar_n3_8": make_ucihhar(users=[3,5,8]),
-    "ucihhar_n3_9": make_ucihhar(users=[1,5,6]),
-    "ucihhar_n4_0": make_ucihhar(users=[4,5,7,8]),
-    "ucihhar_n4_1": make_ucihhar(users=[1,3,4,8]),
-    "ucihhar_n4_10": make_ucihhar(users=[0,4,5,6]),
-    "ucihhar_n4_11": make_ucihhar(users=[0,4,7,8]),
-    "ucihhar_n4_12": make_ucihhar(users=[0,1,2,3]),
-    "ucihhar_n4_13": make_ucihhar(users=[3,5,6,7]),
-    "ucihhar_n4_14": make_ucihhar(users=[0,1,7,8]),
-    "ucihhar_n4_2": make_ucihhar(users=[3,4,5,6]),
-    "ucihhar_n4_3": make_ucihhar(users=[0,2,3,8]),
-    "ucihhar_n4_4": make_ucihhar(users=[3,4,6,8]),
-    "ucihhar_n4_5": make_ucihhar(users=[4,5,6,7]),
-    "ucihhar_n4_6": make_ucihhar(users=[0,1,4,8]),
-    "ucihhar_n4_7": make_ucihhar(users=[3,6,7,8]),
-    "ucihhar_n4_8": make_ucihhar(users=[1,3,5,8]),
-    "ucihhar_n4_9": make_ucihhar(users=[1,2,5,6]),
-    "ucihhar_n5_0": make_ucihhar(users=[3,4,5,7,8]),
-    "ucihhar_n5_1": make_ucihhar(users=[1,3,4,5,8]),
-    "ucihhar_n5_10": make_ucihhar(users=[0,1,4,5,6]),
-    "ucihhar_n5_11": make_ucihhar(users=[0,1,4,7,8]),
-    "ucihhar_n5_12": make_ucihhar(users=[0,1,2,3,8]),
-    "ucihhar_n5_13": make_ucihhar(users=[2,3,5,6,7]),
-    "ucihhar_n5_14": make_ucihhar(users=[0,1,2,7,8]),
-    "ucihhar_n5_2": make_ucihhar(users=[2,3,4,5,6]),
-    "ucihhar_n5_3": make_ucihhar(users=[0,2,3,5,8]),
-    "ucihhar_n5_4": make_ucihhar(users=[2,3,4,6,8]),
-    "ucihhar_n5_5": make_ucihhar(users=[0,4,5,6,7]),
-    "ucihhar_n5_6": make_ucihhar(users=[0,1,4,5,8]),
-    "ucihhar_n5_7": make_ucihhar(users=[3,5,6,7,8]),
-    "ucihhar_n5_8": make_ucihhar(users=[1,3,5,7,8]),
-    "ucihhar_n5_9": make_ucihhar(users=[1,2,5,6,8]),
-    "ucihhar_t0": make_ucihhar(users=[0], target=True),
-    "ucihhar_t1": make_ucihhar(users=[1], target=True),
-    "ucihhar_t2": make_ucihhar(users=[2], target=True),
-    "ucihhar_t3": make_ucihhar(users=[3], target=True),
-    "ucihhar_t4": make_ucihhar(users=[4], target=True),
-    "uwave_n1_0": make_uwave(users=[3]),
-    "uwave_n1_1": make_uwave(users=[5]),
-    "uwave_n1_2": make_uwave(users=[4]),
-    "uwave_n1_3": make_uwave(users=[8]),
-    "uwave_n1_4": make_uwave(users=[7]),
-    "uwave_n1_5": make_uwave(users=[6]),
-    "uwave_n1_6": make_uwave(users=[2]),
-    "uwave_n1_7": make_uwave(users=[1]),
-    "uwave_n2_0": make_uwave(users=[3,5]),
-    "uwave_n2_1": make_uwave(users=[5,8]),
-    "uwave_n2_10": make_uwave(users=[5,6]),
-    "uwave_n2_11": make_uwave(users=[1,8]),
-    "uwave_n2_12": make_uwave(users=[4,8]),
-    "uwave_n2_13": make_uwave(users=[6,8]),
-    "uwave_n2_2": make_uwave(users=[4,5]),
-    "uwave_n2_3": make_uwave(users=[4,7]),
-    "uwave_n2_4": make_uwave(users=[1,7]),
-    "uwave_n2_5": make_uwave(users=[6,7]),
-    "uwave_n2_6": make_uwave(users=[4,6]),
-    "uwave_n2_7": make_uwave(users=[1,2]),
-    "uwave_n2_8": make_uwave(users=[3,6]),
-    "uwave_n2_9": make_uwave(users=[1,5]),
-    "uwave_n3_0": make_uwave(users=[3,5,6]),
-    "uwave_n3_1": make_uwave(users=[4,5,8]),
-    "uwave_n3_10": make_uwave(users=[1,5,6]),
-    "uwave_n3_11": make_uwave(users=[4,6,8]),
-    "uwave_n3_12": make_uwave(users=[1,6,8]),
-    "uwave_n3_13": make_uwave(users=[6,7,8]),
-    "uwave_n3_2": make_uwave(users=[4,5,6]),
-    "uwave_n3_3": make_uwave(users=[1,4,7]),
-    "uwave_n3_4": make_uwave(users=[5,7,8]),
-    "uwave_n3_5": make_uwave(users=[1,5,7]),
-    "uwave_n3_6": make_uwave(users=[2,6,7]),
-    "uwave_n3_7": make_uwave(users=[2,4,6]),
-    "uwave_n3_8": make_uwave(users=[1,2,5]),
-    "uwave_n3_9": make_uwave(users=[3,6,7]),
-    "uwave_n4_0": make_uwave(users=[3,4,5,6]),
-    "uwave_n4_1": make_uwave(users=[4,5,6,8]),
-    "uwave_n4_10": make_uwave(users=[1,5,6,8]),
-    "uwave_n4_11": make_uwave(users=[2,5,6,8]),
-    "uwave_n4_12": make_uwave(users=[1,3,6,8]),
-    "uwave_n4_13": make_uwave(users=[2,4,6,8]),
-    "uwave_n4_14": make_uwave(users=[2,6,7,8]),
-    "uwave_n4_2": make_uwave(users=[2,4,5,7]),
-    "uwave_n4_3": make_uwave(users=[3,5,7,8]),
-    "uwave_n4_4": make_uwave(users=[1,5,6,7]),
-    "uwave_n4_5": make_uwave(users=[3,4,6,7]),
-    "uwave_n4_6": make_uwave(users=[2,4,6,7]),
-    "uwave_n4_7": make_uwave(users=[1,2,5,7]),
-    "uwave_n4_8": make_uwave(users=[2,4,5,6]),
-    "uwave_n4_9": make_uwave(users=[3,5,6,7]),
-    "uwave_n5_0": make_uwave(users=[3,4,5,6,8]),
-    "uwave_n5_1": make_uwave(users=[2,4,5,6,8]),
-    "uwave_n5_10": make_uwave(users=[1,2,5,6,8]),
-    "uwave_n5_11": make_uwave(users=[1,2,4,6,8]),
-    "uwave_n5_12": make_uwave(users=[1,3,6,7,8]),
-    "uwave_n5_13": make_uwave(users=[1,2,6,7,8]),
-    "uwave_n5_2": make_uwave(users=[3,4,5,6,7]),
-    "uwave_n5_3": make_uwave(users=[1,4,5,7,8]),
-    "uwave_n5_4": make_uwave(users=[1,3,5,7,8]),
-    "uwave_n5_5": make_uwave(users=[1,3,5,6,7]),
-    "uwave_n5_6": make_uwave(users=[2,4,6,7,8]),
-    "uwave_n5_7": make_uwave(users=[2,4,5,6,7]),
-    "uwave_n5_8": make_uwave(users=[1,2,5,7,8]),
-    "uwave_n5_9": make_uwave(users=[2,3,5,6,8]),
-    "uwave_t1": make_uwave(users=[1], target=True),
-    "uwave_t2": make_uwave(users=[2], target=True),
-    "uwave_t3": make_uwave(users=[3], target=True),
-    "uwave_t4": make_uwave(users=[4], target=True),
-    "uwave_t5": make_uwave(users=[5], target=True),
-    "wisdm_n11_0": make_wisdm(users=[5,10,12,17,20,24,26,27,30,32,46]),
-    "wisdm_n11_1": make_wisdm(users=[1,2,4,10,14,16,20,29,30,42,43]),
-    "wisdm_n11_10": make_wisdm(users=[1,2,12,23,28,30,31,35,38,42,50]),
-    "wisdm_n11_11": make_wisdm(users=[7,9,11,12,19,22,24,28,34,42,46]),
-    "wisdm_n11_12": make_wisdm(users=[1,6,9,10,12,24,26,30,35,44,46]),
-    "wisdm_n11_13": make_wisdm(users=[3,5,10,16,20,21,23,24,29,31,48]),
-    "wisdm_n11_14": make_wisdm(users=[0,5,12,15,18,25,26,34,39,41,47]),
-    "wisdm_n11_2": make_wisdm(users=[1,7,11,15,18,19,20,23,24,27,31]),
-    "wisdm_n11_3": make_wisdm(users=[6,14,15,18,23,25,28,29,38,42,49]),
-    "wisdm_n11_4": make_wisdm(users=[6,10,12,14,19,24,26,27,31,33,40]),
-    "wisdm_n11_5": make_wisdm(users=[10,11,15,17,19,20,31,33,40,42,49]),
-    "wisdm_n11_6": make_wisdm(users=[0,10,15,25,29,32,36,39,41,43,46]),
-    "wisdm_n11_7": make_wisdm(users=[3,6,8,12,13,21,26,27,28,30,47]),
-    "wisdm_n11_8": make_wisdm(users=[6,11,16,17,21,25,27,33,37,42,49]),
-    "wisdm_n11_9": make_wisdm(users=[8,16,17,24,29,35,39,41,43,45,49]),
-    "wisdm_n1_0": make_wisdm(users=[26]),
-    "wisdm_n1_1": make_wisdm(users=[43]),
-    "wisdm_n1_10": make_wisdm(users=[42]),
-    "wisdm_n1_11": make_wisdm(users=[28]),
-    "wisdm_n1_12": make_wisdm(users=[24]),
-    "wisdm_n1_13": make_wisdm(users=[5]),
-    "wisdm_n1_2": make_wisdm(users=[23]),
-    "wisdm_n1_3": make_wisdm(users=[49]),
-    "wisdm_n1_4": make_wisdm(users=[27]),
-    "wisdm_n1_5": make_wisdm(users=[33]),
-    "wisdm_n1_6": make_wisdm(users=[10]),
-    "wisdm_n1_7": make_wisdm(users=[30]),
-    "wisdm_n1_8": make_wisdm(users=[17]),
-    "wisdm_n1_9": make_wisdm(users=[16]),
-    "wisdm_n21_0": make_wisdm(users=[1,4,5,10,11,12,13,17,20,22,24,25,26,27,30,32,36,39,40,44,46]),
-    "wisdm_n21_1": make_wisdm(users=[1,2,4,10,11,14,16,17,18,20,23,26,29,30,31,38,39,42,43,46,49]),
-    "wisdm_n21_10": make_wisdm(users=[1,2,4,7,11,12,14,15,16,17,23,28,30,31,32,35,38,39,42,44,50]),
-    "wisdm_n21_11": make_wisdm(users=[7,9,11,12,17,18,19,22,24,28,29,33,34,36,39,42,45,46,48,49,50]),
-    "wisdm_n21_12": make_wisdm(users=[0,1,3,6,9,10,12,14,15,20,24,25,26,30,33,35,36,44,46,49,50]),
-    "wisdm_n21_13": make_wisdm(users=[0,2,3,5,8,10,12,14,16,17,19,20,21,23,24,27,29,31,36,43,48]),
-    "wisdm_n21_14": make_wisdm(users=[0,3,5,6,12,15,18,21,25,26,28,32,34,35,36,38,39,41,45,46,47]),
-    "wisdm_n21_2": make_wisdm(users=[1,6,7,11,13,15,18,19,20,22,23,24,27,31,33,38,40,41,44,47,48]),
-    "wisdm_n21_3": make_wisdm(users=[3,5,6,9,14,15,18,19,22,23,25,28,29,31,32,35,38,40,42,46,49]),
-    "wisdm_n21_4": make_wisdm(users=[6,7,10,12,13,14,18,19,20,21,23,24,25,26,27,30,31,32,33,40,49]),
-    "wisdm_n21_5": make_wisdm(users=[2,10,11,15,17,19,20,21,23,26,27,31,32,33,36,39,40,42,44,45,49]),
-    "wisdm_n21_6": make_wisdm(users=[0,7,9,10,13,15,18,23,25,27,28,29,32,36,39,40,41,42,43,46,49]),
-    "wisdm_n21_7": make_wisdm(users=[1,3,6,8,12,13,14,15,21,22,25,26,27,28,30,32,37,42,43,45,47]),
-    "wisdm_n21_8": make_wisdm(users=[4,6,11,13,14,15,16,17,18,19,21,23,25,27,31,33,34,37,42,44,49]),
-    "wisdm_n21_9": make_wisdm(users=[7,8,10,12,14,16,17,21,24,28,29,32,33,35,39,40,41,43,45,48,49]),
-    "wisdm_n31_0": make_wisdm(users=[1,4,5,10,11,12,13,17,19,20,21,22,23,24,25,26,27,29,30,31,32,34,36,39,40,42,43,44,46,47,49]),
-    "wisdm_n31_1": make_wisdm(users=[1,2,4,9,10,11,12,14,16,17,18,20,21,22,23,26,27,28,29,30,31,32,33,34,38,39,42,43,46,49,50]),
-    "wisdm_n31_10": make_wisdm(users=[0,1,2,4,6,7,10,11,12,14,15,16,17,18,23,24,28,29,30,31,32,34,35,37,38,39,41,42,44,48,50]),
-    "wisdm_n31_11": make_wisdm(users=[0,4,6,7,8,9,11,12,14,17,18,19,21,22,23,24,28,29,33,34,35,36,38,39,41,42,45,46,48,49,50]),
-    "wisdm_n31_12": make_wisdm(users=[0,1,2,3,6,7,8,9,10,12,13,14,15,20,23,24,25,26,27,28,30,33,35,36,37,38,42,44,46,49,50]),
-    "wisdm_n31_13": make_wisdm(users=[0,2,3,5,7,8,10,12,13,14,16,17,19,20,21,23,24,27,29,31,33,34,36,38,40,41,43,44,46,48,49]),
-    "wisdm_n31_14": make_wisdm(users=[0,2,3,5,6,12,13,15,18,19,21,22,23,25,26,27,28,29,32,33,34,35,36,38,39,41,45,46,47,48,49]),
-    "wisdm_n31_2": make_wisdm(users=[1,2,3,4,5,6,7,8,11,12,13,15,18,19,20,22,23,24,25,27,29,31,33,34,38,40,41,44,47,48,49]),
-    "wisdm_n31_3": make_wisdm(users=[2,3,4,5,6,8,9,14,15,16,18,19,22,23,25,26,27,28,29,31,32,35,36,37,38,39,40,42,44,46,49]),
-    "wisdm_n31_4": make_wisdm(users=[3,6,7,9,10,11,12,13,14,17,18,19,20,21,23,24,25,26,27,28,30,31,32,33,40,42,43,46,47,48,49]),
-    "wisdm_n31_5": make_wisdm(users=[2,3,6,8,10,11,14,15,17,19,20,21,23,24,25,26,27,31,32,33,34,36,37,38,39,40,41,42,44,45,49]),
-    "wisdm_n31_6": make_wisdm(users=[0,1,3,7,9,10,13,14,15,17,18,19,20,22,23,24,25,27,28,29,30,32,36,39,40,41,42,43,45,46,49]),
-    "wisdm_n31_7": make_wisdm(users=[1,3,4,6,8,10,12,13,14,15,18,21,22,25,26,27,28,30,31,32,37,38,40,41,42,43,44,45,46,47,50]),
-    "wisdm_n31_8": make_wisdm(users=[1,4,6,7,11,12,13,14,15,16,17,18,19,21,22,23,25,26,27,29,30,31,32,33,34,37,39,42,44,45,49]),
-    "wisdm_n31_9": make_wisdm(users=[0,4,6,7,8,9,10,11,12,14,16,17,19,21,24,27,28,29,32,33,34,35,37,39,40,41,43,45,48,49,50]),
-    "wisdm_n41_0": make_wisdm(users=[1,3,4,5,6,10,11,12,13,14,17,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,36,37,38,39,40,42,43,44,45,46,47,48,49,50]),
-    "wisdm_n41_1": make_wisdm(users=[1,2,3,4,5,7,9,10,11,12,13,14,15,16,17,18,20,21,22,23,26,27,28,29,30,31,32,33,34,37,38,39,42,43,44,45,46,47,48,49,50]),
-    "wisdm_n41_10": make_wisdm(users=[0,1,2,4,6,7,9,10,11,12,13,14,15,16,17,18,19,23,24,25,26,27,28,29,30,31,32,34,35,36,37,38,39,41,42,44,45,46,47,48,50]),
-    "wisdm_n41_11": make_wisdm(users=[0,4,5,6,7,8,9,11,12,14,17,18,19,21,22,23,24,25,26,27,28,29,30,32,33,34,35,36,37,38,39,40,41,42,43,45,46,47,48,49,50]),
-    "wisdm_n41_12": make_wisdm(users=[0,1,2,3,5,6,7,8,9,10,12,13,14,15,19,20,21,22,23,24,25,26,27,28,30,32,33,35,36,37,38,39,40,42,43,44,45,46,47,49,50]),
-    "wisdm_n41_13": make_wisdm(users=[0,2,3,5,6,7,8,9,10,11,12,13,14,16,17,19,20,21,23,24,27,29,30,31,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]),
-    "wisdm_n41_14": make_wisdm(users=[0,2,3,5,6,7,11,12,13,14,15,17,18,19,20,21,22,23,24,25,26,27,28,29,30,32,33,34,35,36,38,39,41,42,44,45,46,47,48,49,50]),
-    "wisdm_n41_2": make_wisdm(users=[1,2,3,4,5,6,7,8,9,10,11,12,13,15,16,17,18,19,20,22,23,24,25,27,28,29,30,31,33,34,35,36,38,39,40,41,43,44,47,48,49]),
-    "wisdm_n41_3": make_wisdm(users=[2,3,4,5,6,8,9,10,13,14,15,16,18,19,20,21,22,23,24,25,26,27,28,29,31,32,34,35,36,37,38,39,40,41,42,43,44,46,48,49,50]),
-    "wisdm_n41_4": make_wisdm(users=[0,3,4,6,7,9,10,11,12,13,14,17,18,19,20,21,23,24,25,26,27,28,30,31,32,33,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]),
-    "wisdm_n41_5": make_wisdm(users=[0,2,3,4,5,6,8,10,11,12,14,15,17,18,19,20,21,23,24,25,26,27,28,30,31,32,33,34,36,37,38,39,40,41,42,43,44,45,48,49,50]),
-    "wisdm_n41_6": make_wisdm(users=[0,1,3,5,6,7,8,9,10,12,13,14,15,16,17,18,19,20,22,23,24,25,26,27,28,29,30,32,35,36,37,39,40,41,42,43,44,45,46,47,49]),
-    "wisdm_n41_7": make_wisdm(users=[0,1,3,4,6,7,8,10,12,13,14,15,18,20,21,22,25,26,27,28,29,30,31,32,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50]),
-    "wisdm_n41_8": make_wisdm(users=[1,3,4,6,7,9,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,29,30,31,32,33,34,37,38,39,40,41,42,43,44,45,47,48,49]),
-    "wisdm_n41_9": make_wisdm(users=[0,1,4,5,6,7,8,9,10,11,12,14,16,17,18,19,21,22,24,26,27,28,29,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,48,49,50]),
-    "wisdm_t0": make_wisdm(users=[0], target=True),
-    "wisdm_t1": make_wisdm(users=[1], target=True),
-    "wisdm_t2": make_wisdm(users=[2], target=True),
-    "wisdm_t3": make_wisdm(users=[3], target=True),
-    "wisdm_t4": make_wisdm(users=[4], target=True),
+    "ucihar_1": make_ucihar(users=[1]),
+    "ucihar_2": make_ucihar(users=[2]),
+    "ucihar_3": make_ucihar(users=[3]),
+    "ucihar_4": make_ucihar(users=[4]),
+    "ucihar_5": make_ucihar(users=[5]),
+    "ucihar_6": make_ucihar(users=[6]),
+    "ucihar_7": make_ucihar(users=[7]),
+    "ucihar_8": make_ucihar(users=[8]),
+    "ucihar_9": make_ucihar(users=[9]),
+    "ucihar_10": make_ucihar(users=[10]),
+    "ucihar_11": make_ucihar(users=[11]),
+    "ucihar_12": make_ucihar(users=[12]),
+    "ucihar_13": make_ucihar(users=[13]),
+    "ucihar_14": make_ucihar(users=[14]),
+    "ucihar_15": make_ucihar(users=[15]),
+    "ucihar_16": make_ucihar(users=[16]),
+    "ucihar_17": make_ucihar(users=[17]),
+    "ucihar_18": make_ucihar(users=[18]),
+    "ucihar_19": make_ucihar(users=[19]),
+    "ucihar_20": make_ucihar(users=[20]),
+    "ucihar_21": make_ucihar(users=[21]),
+    "ucihar_22": make_ucihar(users=[22]),
+    "ucihar_23": make_ucihar(users=[23]),
+    "ucihar_24": make_ucihar(users=[24]),
+    "ucihar_25": make_ucihar(users=[25]),
+    "ucihar_26": make_ucihar(users=[26]),
+    "ucihar_27": make_ucihar(users=[27]),
+    "ucihar_28": make_ucihar(users=[28]),
+    "ucihar_29": make_ucihar(users=[29]),
+    "ucihar_30": make_ucihar(users=[30]),
+    "uwave_1": make_uwave(users=[1]),
+    "uwave_2": make_uwave(users=[2]),
+    "uwave_3": make_uwave(users=[3]),
+    "uwave_4": make_uwave(users=[4]),
+    "uwave_5": make_uwave(users=[5]),
+    "uwave_6": make_uwave(users=[6]),
+    "uwave_7": make_uwave(users=[7]),
+    "uwave_8": make_uwave(users=[8]),
+    "ucihhar_0": make_ucihhar(users=[0]),
+    "ucihhar_1": make_ucihhar(users=[1]),
+    "ucihhar_2": make_ucihhar(users=[2]),
+    "ucihhar_3": make_ucihhar(users=[3]),
+    "ucihhar_4": make_ucihhar(users=[4]),
+    "ucihhar_5": make_ucihhar(users=[5]),
+    "ucihhar_6": make_ucihhar(users=[6]),
+    "ucihhar_7": make_ucihhar(users=[7]),
+    "ucihhar_8": make_ucihhar(users=[8]),
+    "wisdm_0": make_wisdm(users=[0]),
+    "wisdm_1": make_wisdm(users=[1]),
+    "wisdm_2": make_wisdm(users=[2]),
+    "wisdm_3": make_wisdm(users=[3]),
+    "wisdm_4": make_wisdm(users=[4]),
+    "wisdm_5": make_wisdm(users=[5]),
+    "wisdm_6": make_wisdm(users=[6]),
+    "wisdm_7": make_wisdm(users=[7]),
+    "wisdm_8": make_wisdm(users=[8]),
+    "wisdm_9": make_wisdm(users=[9]),
+    "wisdm_10": make_wisdm(users=[10]),
+    "wisdm_11": make_wisdm(users=[11]),
+    "wisdm_12": make_wisdm(users=[12]),
+    "wisdm_13": make_wisdm(users=[13]),
+    "wisdm_14": make_wisdm(users=[14]),
+    "wisdm_15": make_wisdm(users=[15]),
+    "wisdm_16": make_wisdm(users=[16]),
+    "wisdm_17": make_wisdm(users=[17]),
+    "wisdm_18": make_wisdm(users=[18]),
+    "wisdm_19": make_wisdm(users=[19]),
+    "wisdm_20": make_wisdm(users=[20]),
+    "wisdm_21": make_wisdm(users=[21]),
+    "wisdm_22": make_wisdm(users=[22]),
+    "wisdm_23": make_wisdm(users=[23]),
+    "wisdm_24": make_wisdm(users=[24]),
+    "wisdm_25": make_wisdm(users=[25]),
+    "wisdm_26": make_wisdm(users=[26]),
+    "wisdm_27": make_wisdm(users=[27]),
+    "wisdm_28": make_wisdm(users=[28]),
+    "wisdm_29": make_wisdm(users=[29]),
+    "wisdm_30": make_wisdm(users=[30]),
+    "wisdm_31": make_wisdm(users=[31]),
+    "wisdm_32": make_wisdm(users=[32]),
+    "wisdm_33": make_wisdm(users=[33]),
+    "wisdm_34": make_wisdm(users=[34]),
+    "wisdm_35": make_wisdm(users=[35]),
+    "wisdm_36": make_wisdm(users=[36]),
+    "wisdm_37": make_wisdm(users=[37]),
+    "wisdm_38": make_wisdm(users=[38]),
+    "wisdm_39": make_wisdm(users=[39]),
+    "wisdm_40": make_wisdm(users=[40]),
+    "wisdm_41": make_wisdm(users=[41]),
+    "wisdm_42": make_wisdm(users=[42]),
+    "wisdm_43": make_wisdm(users=[43]),
+    "wisdm_44": make_wisdm(users=[44]),
+    "wisdm_45": make_wisdm(users=[45]),
+    "wisdm_46": make_wisdm(users=[46]),
+    "wisdm_47": make_wisdm(users=[47]),
+    "wisdm_48": make_wisdm(users=[48]),
+    "wisdm_49": make_wisdm(users=[49]),
+    "wisdm_50": make_wisdm(users=[50]),
 }
 
 
@@ -1625,22 +1325,6 @@ def load(name, *args, **kwargs):
     """ Load a dataset based on the name (must be one of datasets.names()) """
     assert name in datasets.keys(), "Name specified not in datasets.names()"
     return datasets[name](*args, **kwargs)
-
-
-def load_da(source_name, target_name, *args, **kwargs):
-    """ Load two datasets (source and target) but perform necessary conversions
-    to make them compatable for adaptation (i.e. same size, channels, etc.).
-    Names must be in datasets.names()."""
-
-    # No conversions, resizes, etc.
-    source_dataset = load(source_name, *args, **kwargs)
-
-    if target_name is not None:
-        target_dataset = load(target_name, *args, **kwargs)
-    else:
-        target_dataset = None
-
-    return source_dataset, target_dataset
 
 
 # Get names
@@ -1652,18 +1336,13 @@ def names():
 
 
 def main(argv):
-    sd, td = load_da("ucihar_1", "ucihar_t2")
+    sd = load("ucihar_1")
 
-    print("Source")
-    print(sd.train_data, sd.train_labels, sd.train_domain)
-    print(sd.train_data.shape, sd.train_labels.shape, sd.train_domain.shape)
-    print(sd.test_data, sd.test_labels, sd.test_domain)
-    print(sd.test_data.shape, sd.test_labels.shape, sd.test_domain.shape)
-    print("Target")
-    print(td.train_data, td.train_labels, td.train_domain)
-    print(td.train_data.shape, td.train_labels.shape, td.train_domain.shape)
-    print(td.test_data, td.test_labels, td.test_domain)
-    print(td.test_data.shape, td.test_labels.shape, td.test_domain.shape)
+    print("Source dataset")
+    print(sd.train_data, sd.train_labels)
+    print(sd.train_data.shape, sd.train_labels.shape)
+    print(sd.test_data, sd.test_labels)
+    print(sd.test_data.shape, sd.test_labels.shape)
 
 
 if __name__ == "__main__":

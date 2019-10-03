@@ -390,7 +390,7 @@ class Metrics:
             # classifier based on which domain the sample is from. However,
             # for now just grab the first classifier's output. TODO
             if isinstance(domain_y_pred, list):
-                domain_y_pred = domain_y_pred[0]
+                domain_y_pred = domain_y_pred[0] # TODO
 
             domain_l = self.domain_loss(domain_y_true, domain_y_pred)
             total_l = task_l + domain_l

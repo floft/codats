@@ -66,10 +66,11 @@ def main(argv):
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
     # Input data
+    source_dataset = datasets.load(FLAGS.source)
+
     if FLAGS.target != "":
-        source_dataset, target_dataset = datasets.load_da(FLAGS.source, FLAGS.target)
+        target_dataset = datasets.load(FLAGS.target)
     else:
-        source_dataset = datasets.load(FLAGS.source)
         target_dataset = None
 
     if not FLAGS.test:

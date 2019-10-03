@@ -91,22 +91,19 @@ def get_models_to_evaluate():
 
     for log_dir in files:
         items = str(log_dir.stem).split("-")
-        assert len(items) >= 4, \
-            "name should be one of source-target-model-method{,-num}"
+        assert len(items) >= 5, \
+            "name should be one of dataset-sources-target-model-method{,-num}"
 
-        source, target, model_name, method_name = items[:4]
+        dataset_name, sources, target, model_name, method_name = items[:5]
         assert method_name in methods, \
             "unknown method "+method_name
 
         model_dir = os.path.join(FLAGS.modeldir, log_dir.stem)
         assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)
-
         assert model_name in models.names(), "Unknown model "+str(model_name)
-        assert source in load_datasets.names(), "Unknown source "+str(source)
-        assert target in [""]+load_datasets.names(), "Unknown target "+str(target)
 
-        models_to_evaluate.append((str(log_dir), model_dir, source, target,
-            model_name, method_name))
+        models_to_evaluate.append((str(log_dir), model_dir, dataset_name,
+            sources, target, model_name, method_name))
 
     return models_to_evaluate
 
@@ -209,8 +206,8 @@ def print_results(results):
         print("No data.")
 
 
-def process_model(log_dir, model_dir, source, target, model_name, method_name,
-        gpumem, multi_gpu):
+def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
+        method_name, gpumem, multi_gpu):
     """ Evaluate a model on the train/test data and compute the results """
     # We need to do this in the process since otherwise TF can't access cuDNN
     # for some reason. But, we only need to do this the first time we create the
@@ -236,17 +233,13 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
     # Load datasets
-    if target != "":
-        source_dataset, target_dataset = load_datasets.load_da(source,
-            target, test=True)
-        assert source_dataset.num_classes == target_dataset.num_classes, \
-            "Adapting from source to target with different classes not supported"
-    else:
-        assert method_name not in ["cyclegan", "cycada", "forecast"], \
+    source_datasets, target_dataset = load_datasets.load_da(dataset_name,
+        sources, target, test=True)
+
+    # Check validity
+    if target == "":
+        assert FLAGS.method not in ["cyclegan", "cycada", "forecast"], \
             "mapping methods require both source and target data"
-        source_dataset, _ = load_datasets.load_da(source,
-            None, test=True)
-        target_dataset = None
 
     # Evaluation datasets if we have the dataset
     source_dataset_train = source_dataset.train_evaluation

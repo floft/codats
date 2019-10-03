@@ -43,16 +43,9 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
     # anyway.
     possible_target_users = users[:max_users]
 
-    # Keep track of unique indexes for all lists of source domains -- can't list
-    # domains in filename since too long
-    source_domain_uids = []
-
-    # Output strings - ignore duplicates in datasets.py by indexing by name
-    for_tfrecords = []
-    for_datasets = []
+    # We'll generate multi-source options for each target user
     pairs = []
 
-    # We'll generate multi-source options for each target user
     for target_user in possible_target_users:
         already_used_target = {}
 
@@ -93,31 +86,11 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
             if skip:
                 continue
 
-            source_users = [str(x) for x in source_users]
-            source_users_str = ",".join(source_users)
+            source_users = ",".join([str(x) for x in source_users])
+            target_user = str(target_user)
+            pairs.append((dataset_name, source_users, target_user))
 
-            # Filenames get too long, so pick index instead of list of all sources
-            if source_users_str not in source_domain_uids:
-                source_domain_uids.append(source_users_str)
-            source_list_index = source_domain_uids.index(source_users_str)
-
-            source = "\"" + dataset_name + "_n" + str(n) + "_" + str(source_list_index) + "\""
-            target = "\"" + dataset_name + "_t" + str(target_user) + "\""
-
-            #for_tfrecords.append("(" + source + ", " + target + "),")
-            # Since these don't depend on the pairing anymore, just output
-            # once for each. This will reduce the time to generate the datasets
-            # since even if it already exists, it still loads it first.
-            for_tfrecords.append("(" + source + ", None),")
-            for_tfrecords.append("(" + target + ", None),")
-
-            for_datasets.append(source + ": make_" + dataset_name
-                + "(users=[" + source_users_str + "]),")
-            for_datasets.append(target + ": make_" + dataset_name
-                + "(users=[" + str(target_user) + "], target=True),")
-            pairs.append((source, target))
-
-    return for_datasets, for_tfrecords, pairs
+    return pairs
 
 
 if __name__ == "__main__":
@@ -133,9 +106,18 @@ if __name__ == "__main__":
         #"ucihm_full": zero_to_n(5),
     }
 
-    # Output strings
+    # Datasets for all users
     for_tfrecords = []
     for_datasets = []
+
+    for name, users in datasets.items():
+        for user in users:
+            dataset_name = name+"_"+str(user)
+            for_tfrecords.append("\"" + dataset_name + "\",")
+            for_datasets.append("\"" + dataset_name + "\": make_" + name
+                + "(users=[" + str(user) + "]),")
+
+    # Sources-target pairs for training
     pairs = []
 
     for name, users in datasets.items():
@@ -146,24 +128,13 @@ if __name__ == "__main__":
             # n's we use, etc. Also nice since we end up using a subset of
             # n's source domains as (n-1)'s source domains. For example,
             # we get
-            # "sleep_17", "sleep_t0"
-            # "sleep_17,13", "sleep_t0"
-            # "sleep_17,13,10", "sleep_t0"
-            # "sleep_17,13,10,20", "sleep_t0"
+            # (dataset_name, source_users, target_user) where each is a string
+            # "sleep", "17", "0"
+            # "sleep", "17,13", "0"
+            # "sleep", "17,13,10", "0"
+            # "sleep", "17,13,10,20", "0"
             random.seed(42)
-
-            curr_datasets, curr_tfrecords, curr_pairs = generate_multi_source(name, users, n)
-            for_datasets += curr_datasets
-            for_tfrecords += curr_tfrecords
-            pairs += curr_pairs
-
-    # Remove duplicates (still could be duplicates due to target)
-    for_datasets = list(set(for_datasets))
-    for_tfrecords = list(set(for_tfrecords))
-
-    # Sort
-    for_datasets.sort()
-    for_tfrecords.sort()
+            pairs += generate_multi_source(name, users, n)
 
     # Print
     print("For generate_tfrecords.py:")
@@ -177,22 +148,35 @@ if __name__ == "__main__":
     print()
 
     print("For kamiak_{train,eval}_real.srun:")
+    dataset_names = []
     sources = []
     targets = []
-    for source, target in pairs:
-        sources.append(source)
-        targets.append(target)
+    dataset_target_pairs = []
+    for dataset_name, source, target in pairs:
+        dataset_names.append("\""+dataset_name+"\"")
+        sources.append("\""+source+"\"")
+        targets.append("\""+target+"\"")
+        dataset_target_pairs.append(("\""+dataset_name+"\"", "\""+target+"\""))
 
     print("# number of adaptation problems =", len(sources))
+    print("datasets=(", " ".join(dataset_names), ")", sep="")
     print("sources=(", " ".join(sources), ")", sep="")
     print("targets=(", " ".join(targets), ")", sep="")
     print()
 
     print("For kamiak_{train,eval}_real_upper.srun:")
-    targets_unique = list(set(targets))
+    targets_unique = list(set(dataset_target_pairs))
     targets_unique.sort()
     sources_blank = ["\"\""]*len(targets_unique)
 
+    targets_unique_dataset = []
+    targets_unique_target = []
+
+    for dataset_name, target in targets_unique:
+        targets_unique_dataset.append(dataset_name)
+        targets_unique_target.append(target)
+
     print("# number of adaptation problems =", len(targets_unique))
+    print("datasets=(", " ".join(targets_unique_dataset), ")", sep="")
     print("sources=(", " ".join(sources_blank), ")", sep="")
-    print("targets=(", " ".join(targets_unique), ")", sep="")
+    print("targets=(", " ".join(targets_unique_target), ")", sep="")

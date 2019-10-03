@@ -46,8 +46,9 @@ flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, methods, "What method of domain adaptation to perform (or none)")
 flags.DEFINE_boolean("task", True, "Whether to perform task (classification) if true or just the mapping if false")
 flags.DEFINE_enum("cyclegan_loss", "wgan", ["gan", "lsgan", "wgan", "wgan-gp"], "When using CycleGAN, which loss to use")
-flags.DEFINE_enum("source", None, load_datasets.names(), "What dataset to use as the source")
-flags.DEFINE_enum("target", "", [""]+load_datasets.names(), "What dataset to use as the target")
+flags.DEFINE_string("dataset", None, "What dataset to use (e.g. \"ucihar\")")
+flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
+flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")
 flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
 flags.DEFINE_integer("pretrain_steps", 0, "Number of training steps to pretrain feature extractor and task classifier on source data")
 flags.DEFINE_float("lr", 0.001, "Learning rate for training")
@@ -76,12 +77,13 @@ flags.DEFINE_integer("debugnum", -1, "Specify exact log/model/images number to u
 
 flags.mark_flag_as_required("model")
 flags.mark_flag_as_required("method")
-flags.mark_flag_as_required("source")
+flags.mark_flag_as_required("dataset")
+flags.mark_flag_as_required("sources")
 
 
 def get_directory_names():
     """ Figure out the log and model directory names """
-    prefix = FLAGS.source+"-"+FLAGS.target+"-"+FLAGS.model
+    prefix = FLAGS.dataset+"-"+FLAGS.sources+"-"+FLAGS.target+"-"+FLAGS.model
 
     methods_suffix = {
         "none": "-none",
@@ -924,17 +926,13 @@ def main(argv):
     # scores only." (self-ensembling) -- so, only use *_test for evaluation.
     # However, for now we'll use 1000 random target test samples for the
     # validation dataset (as is common).
-    if FLAGS.target != "":
-        source_dataset, target_dataset = load_datasets.load_da(FLAGS.source,
-            FLAGS.target, test=FLAGS.test, train_batch=train_batch)
-        assert source_dataset.num_classes == target_dataset.num_classes, \
-            "Adapting from source to target with different classes not supported"
-    else:
+    source_datasets, target_dataset = load_datasets.load_da(FLAGS.dataset,
+        FLAGS.sources, FLAGS.target, test=FLAGS.test, train_batch=train_batch)
+
+    # Check validity
+    if FLAGS.target == "":
         assert FLAGS.method not in ["cyclegan", "cycada", "forecast"], \
             "mapping methods require both source and target data"
-        source_dataset, _ = load_datasets.load_da(FLAGS.source,
-            None, test=FLAGS.test, train_batch=train_batch)
-        target_dataset = None
 
     # Iterator and evaluation datasets if we have the dataset
     source_iter = iter(source_dataset.train)
@@ -945,8 +943,8 @@ def main(argv):
         if target_dataset is not None else None
 
     # Information about domains
-    num_classes = source_dataset.num_classes
-    num_domains = source_dataset.num_domains
+    num_classes = target_dataset.num_classes
+    num_domains = target_dataset.num_domains
 
     # If num_domains = None, then we're passing a "target" dataset as the source
     # for the upper bound, so we really only have one domain
@@ -977,7 +975,9 @@ def main(argv):
 
     # For mapping, we need to know the source and target sizes
     # Note: first dimension is batch size, so drop that
-    source_first_x, _, _ = next(iter(source_dataset.train))
+    # We'll assume that all source domains have the same size, so just look
+    # at the first one's size. We require at least one source.
+    source_first_x, _, _ = next(iter(source_datasets[0].train))
     source_x_shape = source_first_x.shape[1:]
     if target_dataset is not None:
         target_first_x, _, _ = next(iter(target_dataset.train))
@@ -1033,7 +1033,9 @@ def main(argv):
 
     # Metrics
     has_target_domain = target_dataset is not None
-    metrics = Metrics(log_dir, source_dataset,
+    # Note: again assuming that all sources have same # classes, invertible
+    # function, etc.
+    metrics = Metrics(log_dir, source_datasets[0],
         task_loss, domain_loss, has_target_domain, has_target_classifier,
         enable_compile=FLAGS.compile_metrics)
 
