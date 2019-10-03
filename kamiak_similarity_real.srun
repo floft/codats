@@ -10,7 +10,7 @@
 #SBATCH --array=0-299
 
 #
-# Afterwards, check for errors: grep "Error occured" similarity_test1_* | wc -l
+# Afterwards, check for errors: grep "Error occurred" similarity_test1_* | wc -l
 # and then concatenate: tail -qn 1 similarity_test1_* > similarity.txt
 #
 
@@ -31,7 +31,7 @@ gpumem=0
 
 # Errors
 handle_terminate() { echo "Exiting"; exit 1; }
-handle_error() { echo "Error occured -- exiting"; exit 1; }
+handle_error() { echo "Error occurred -- exiting"; exit 1; }
 trap "handle_terminate" SIGTERM SIGINT
 
 # Get suffix, i.e. files stored in kamiak-{models,logs}-suffix
@@ -72,7 +72,7 @@ source="${sources[$index1]}"
 target="${targets[$index1]}"
 
 # Output name uses method from above not the "none" for "upper"
-out="similarity_${suffix}_$variant-$method-$source-$target.txt"
+out="results/similarity_${suffix}_$variant-$method-$source-$target.txt"
 
 # Upper bound is actually "none" but without a target domain and with other args
 additional_args=()
@@ -105,6 +105,7 @@ name="$source-$target-$model-$method-1"
 echo "$suffix;$method;$source;$target;$SLURM_ARRAY_TASK_ID;$name;$@" > "$out"
 
 cd "$remotedir"
+mkdir -p results
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 { python3 similarity.py \

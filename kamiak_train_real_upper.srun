@@ -33,7 +33,7 @@ gpumem=0
 
 # Errors
 handle_terminate() { echo "Exiting"; exit 1; }
-handle_error() { echo "Error occured -- exiting"; exit 1; }
+handle_error() { echo "Error occurred -- exiting"; exit 1; }
 trap "handle_terminate" SIGTERM SIGINT
 
 # Get suffix, i.e. files stored in kamiak-{models,logs}-suffix

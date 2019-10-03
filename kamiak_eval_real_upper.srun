@@ -26,7 +26,7 @@ gpumem=0
 
 # Errors
 handle_terminate() { echo "Exiting"; exit 1; }
-handle_error() { echo "Error occured -- exiting"; exit 1; }
+handle_error() { echo "Error occurred -- exiting"; exit 1; }
 trap "handle_terminate" SIGTERM SIGINT
 
 # Get suffix, i.e. files stored in kamiak-{models,logs}-suffix
@@ -67,7 +67,7 @@ source="${sources[$index1]}"
 target="${targets[$index1]}"
 
 # Output name uses method from above not the "none" for "upper"
-out="results_${suffix}_$variant-$method-$source-$target.txt"
+out="results/results_${suffix}_$variant-$method-$source-$target.txt"
 
 # Upper bound is actually "none" but without a target domain and with other args
 additional_args=()
@@ -99,6 +99,7 @@ echo "Other args: $@" >> "$out"
 echo "$source --> $target" >> "$out"
 
 cd "$remotedir"
+mkdir -p results
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 { python3 main_eval.py \

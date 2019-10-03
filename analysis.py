@@ -2,6 +2,7 @@
 """
 Analyze the results
 """
+import os
 import re
 import sys
 import pathlib
@@ -110,9 +111,9 @@ def parse_file(filename):
     traintest = []
     averages = []
 
-    valid_header = "Log Dir,Source,Target,Model,Method,Best Step,Accuracy at Step"
-    traintest_header = "Log Dir,Source,Target,Model,Method,Train A,Test A,Train B,Test B,Target Train A,Target Test A,Target Train B,Target Test B"
-    averages_header = "Dataset,Avg,Std"
+    valid_header = "Log Dir;Source;Target;Model;Method;Best Step;Accuracy at Step"
+    traintest_header = "Log Dir;Source;Target;Model;Method;Train A;Test A;Train B;Test B;Target Train A;Target Test A;Target Train B;Target Test B"
+    averages_header = "Dataset;Avg;Std"
 
     with open(filename) as f:
         for line in f:
@@ -120,7 +121,7 @@ def parse_file(filename):
 
             if line == "Virtual devices must be set at program startup":
                 pass
-            elif line == "Error occured -- exiting":
+            elif line == "Error occurred -- exiting":
                 print("Found:", line, "in", filename, file=sys.stderr)
                 exit(1)
             elif beginning_match(valid_header, line):
@@ -166,9 +167,9 @@ def parse_file(filename):
                 in_traintest = False
                 in_averages = False
 
-    validation = pd.DataFrame(data=validation, columns=valid_header.split(","))
-    traintest = pd.DataFrame(data=traintest, columns=traintest_header.split(","))
-    averages = pd.DataFrame(data=averages, columns=averages_header.split(","))
+    validation = pd.DataFrame(data=validation, columns=valid_header.split(";"))
+    traintest = pd.DataFrame(data=traintest, columns=traintest_header.split(";"))
+    averages = pd.DataFrame(data=averages, columns=averages_header.split(";"))
 
     return validation, traintest, averages
 
@@ -315,11 +316,11 @@ def pretty_source_target_names(source, target):
 
 
 def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf"):
+        legend_separate=True, suffix="pdf", dir_name="results"):
     """ Generate plots of target accuracy vs. number of source domains """
     ms_results = {}
 
-    files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant+"-")
     results = all_stats(files)
 
     if FLAGS.similarity:
@@ -361,7 +362,7 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
             mean = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
             std = avgs[avgs["Dataset"] == "Test A"]["Std"].values[0]
 
-        #print(dataset_name, method, seqlen, mean, std, sep=",")
+        #print(dataset_name, method, seqlen, mean, std, sep=";")
 
         if dataset_name not in ms_results:
             ms_results[dataset_name] = {}
@@ -454,7 +455,8 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
             plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
         if save_plot:
-            plt.savefig(prefix+"_"+dataset_name+"."+suffix, bbox_inches='tight')
+            plt.savefig(os.path.join(dir_name,
+                prefix+"_"+dataset_name+"."+suffix), bbox_inches='tight')
             plt.close()
 
     if not save_plot:

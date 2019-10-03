@@ -124,7 +124,7 @@ def print_results(results):
     target_target_test = []
 
     print("Log Dir;Source;Target;Model;Method;"
-        "Train A;Test A;Train B;Test B;Target Train A"
+        "Train A;Test A;Train B;Test B;Target Train A;"
         "Target Test A;Target Train B;Target Test B")
     for log_dir, source, target, model, method, \
             s_train, t_train, s_test, t_test, \
