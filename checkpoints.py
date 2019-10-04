@@ -39,10 +39,9 @@ class CheckpointManager:
     Latest stored in model_dir and best stored in model_dir/best
     Saves the best validation accuracy in log_dir/best_valid_accuracy.txt
     """
-    def __init__(self, checkpoint, model_dir, log_dir, target=False):
+    def __init__(self, checkpoint, model_dir, log_dir):
         self.checkpoint = checkpoint
         self.log_dir = log_dir
-        self.target = target
 
         # Keep track of the latest for restoring interrupted training
         self.latest_manager = tf.train.CheckpointManager(
@@ -52,13 +51,6 @@ class CheckpointManager:
         best_model_dir = os.path.join(model_dir, "best")
         self.best_manager = tf.train.CheckpointManager(
             checkpoint, directory=best_model_dir, max_to_keep=FLAGS.best_checkpoints)
-
-        # Keeps track of best model based on target classifier valid accuracy
-        if self.target:
-            best_target_model_dir = os.path.join(model_dir, "best_target")
-            self.best_target_manager = tf.train.CheckpointManager(
-                checkpoint, directory=best_target_model_dir,
-                max_to_keep=FLAGS.best_checkpoints)
 
         # Restore best from file or if no file yet, set it to zero
         self.best_validation = get_best_valid_accuracy(self.log_dir)
@@ -79,27 +71,21 @@ class CheckpointManager:
         """ Restore the checkpoint from the latest one """
         self.checkpoint.restore(self.latest_manager.latest_checkpoint).expect_partial()
 
-    def restore_best(self, target=False):
+    def restore_best(self):
         """ Restore the checkpoint from the best one """
         # Note: using expect_partial() so we don't get warnings about loading
         # only some of the weights
-        if target and self.target:
-            self.checkpoint.restore(self.best_target_manager.latest_checkpoint).expect_partial()
-        else:
-            self.checkpoint.restore(self.best_manager.latest_checkpoint).expect_partial()
+        self.checkpoint.restore(self.best_manager.latest_checkpoint).expect_partial()
 
     def latest_step(self):
         """ Return the step number from the latest checkpoint. Returns None if
         no checkpoints. """
         return self._get_step_from_manager(self.latest_manager)
 
-    def best_step(self, target=False):
+    def best_step(self):
         """ Return the step number from the best checkpoint. Returns None if
         no checkpoints. """
-        if target and self.target:
-            return self._get_step_from_manager(self.best_target_manager)
-        else:
-            return self._get_step_from_manager(self.best_manager)
+        return self._get_step_from_manager(self.best_manager)
 
     def _get_step_from_manager(self, manager):
         # If no checkpoints found
@@ -115,7 +101,7 @@ class CheckpointManager:
 
         return step
 
-    def save(self, step, validation_accuracy=None, target_validation_accuracy=None):
+    def save(self, step, validation_accuracy=None):
         """ Save the latest model. If validation_accuracy specified and higher
         than the previous best, also save this model as the new best one. """
         # Always save the latest
@@ -127,11 +113,3 @@ class CheckpointManager:
                 self.best_manager.save(checkpoint_number=step)
                 self.best_validation = validation_accuracy
                 write_best_valid_accuracy(self.log_dir, self.best_validation)
-
-        # Based on target classifier
-        if target_validation_accuracy is not None and self.target:
-            if target_validation_accuracy > self.best_target_validation:
-                self.best_target_manager.save(checkpoint_number=step)
-                self.best_target_validation = target_validation_accuracy
-                write_best_target_valid_accuracy(self.log_dir,
-                    self.best_target_validation)
