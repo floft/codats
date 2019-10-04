@@ -119,8 +119,14 @@ if __name__ == "__main__":
 
     # Sources-target pairs for training
     pairs = []
+    uids = []
 
     for name, users in datasets.items():
+        # Since sources-target aren't stored in filename anymore (too long), we
+        # would run into folder name conflicts if we didn't append a unique ID
+        # to each soruces-target pair
+        uid = 0
+
         # For each value of n, from 1 (single-source domain adaptation) up to
         # the full number of users - 1 (since we have one for the target)
         for n in generate_n_with_max(len(users), 5):
@@ -134,7 +140,13 @@ if __name__ == "__main__":
             # "sleep", "17,13,10", "0"
             # "sleep", "17,13,10,20", "0"
             random.seed(42)
-            pairs += generate_multi_source(name, users, n)
+            curr_pairs = generate_multi_source(name, users, n)
+
+            for i in range(len(curr_pairs)):
+                uids.append(uid)
+                uid += 1
+
+            pairs += curr_pairs
 
     # Print
     print("For generate_tfrecords.py:")
@@ -159,6 +171,7 @@ if __name__ == "__main__":
         dataset_target_pairs.append(("\""+dataset_name+"\"", "\""+target+"\""))
 
     print("# number of adaptation problems =", len(sources))
+    print("uids=(", " ".join([str(x) for x in uids]), ")", sep="")
     print("datasets=(", " ".join(dataset_names), ")", sep="")
     print("sources=(", " ".join(sources), ")", sep="")
     print("targets=(", " ".join(targets), ")", sep="")
@@ -169,14 +182,19 @@ if __name__ == "__main__":
     targets_unique.sort()
     sources_blank = ["\"\""]*len(targets_unique)
 
+    uid = 0
+    targets_unique_uids = []
     targets_unique_dataset = []
     targets_unique_target = []
 
     for dataset_name, target in targets_unique:
+        targets_unique_uids.append(uid)
+        uid += 1
         targets_unique_dataset.append(dataset_name)
         targets_unique_target.append(target)
 
     print("# number of adaptation problems =", len(targets_unique))
+    print("uids=(", " ".join([str(x) for x in targets_unique_uids]), ")", sep="")
     print("datasets=(", " ".join(targets_unique_dataset), ")", sep="")
     print("sources=(", " ".join(sources_blank), ")", sep="")
     print("targets=(", " ".join(targets_unique_target), ")", sep="")

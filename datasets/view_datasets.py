@@ -6,7 +6,6 @@ Note: sets CUDA_VISIBLE_DEVICES= so that it doesn't use the GPU.
 """
 import os
 import numpy as np
-import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from absl import app

@@ -45,8 +45,10 @@ model=fcn
 methods=("upper")
 debugnums=(1 2 3)
 # number of adaptation problems = 20
+uids=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19)
+datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "wisdm" "wisdm" "wisdm" "wisdm" "wisdm")
 sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
-targets=("ucihar_t1" "ucihar_t2" "ucihar_t3" "ucihar_t4" "ucihar_t5" "ucihhar_t0" "ucihhar_t1" "ucihhar_t2" "ucihhar_t3" "ucihhar_t4" "uwave_t1" "uwave_t2" "uwave_t3" "uwave_t4" "uwave_t5" "wisdm_t0" "wisdm_t1" "wisdm_t2" "wisdm_t3" "wisdm_t4")
+targets=("1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "1" "2" "3" "4" "5" "0" "1" "2" "3" "4")
 
 # Make sure we're using the right number
 correct_min=0
@@ -69,6 +71,8 @@ index1=$((index % index1max))
 
 method="${methods[$index3]}"
 debugnum="${debugnums[$index2]}"
+uid="${uids[$index1]}"
+dataset_name="${datasets[$index1]}"
 source="${sources[$index1]}"
 target="${targets[$index1]}"
 
@@ -96,25 +100,19 @@ elif [[ $method == "random" ]]; then
     additional_args+=("--log_val_steps=100")
 fi
 
-# Pretraining - VRADA requires its custom reconstruction loss
-#if [[ $method == "vrada" || $method == "rdann" || $method == "random" ]]; then
-#    pretraining=0
-#else
-#    pretraining=1000
-#fi
-pretraining=0
-
 echo "$suffix #$SLURM_ARRAY_TASK_ID"
 echo "Method: $method"
 echo "DebugNum: $debugnum"
 echo "Other args: $@"
-echo "$source --> $target"
+echo "UID: $uid"
+echo "$dataset_name $source --> $target"
 
 cd "$remotedir"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
 python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --model="$model" --steps="$steps" --train_batch=$batch --pretrain_steps=$pretraining --lr="$lr" \
-    --method="$method" --source="$source" --target="$target" --debugnum="$debugnum" \
+    --model="$model" --steps="$steps" --train_batch=$batch --lr="$lr" \
+    --method="$method" --dataset="$dataset_name" --sources="$source" \
+    --target="$target" --uid=$uid --debugnum="$debugnum" \
     --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error

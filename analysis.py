@@ -3,7 +3,6 @@
 Analyze the results
 """
 import os
-import re
 import sys
 import pathlib
 import numpy as np
@@ -12,14 +11,14 @@ import matplotlib.pyplot as plt
 
 from absl import app
 from absl import flags
-from scipy import stats
+# from scipy import stats
 
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
-flags.DEFINE_boolean("similarity", False, "Similarity on x axis rather than number of source domains")
-flags.DEFINE_string("similarity_filename", "similarity.txt", "File containing similarity")
+# flags.DEFINE_boolean("similarity", False, "Similarity on x axis rather than number of source domains")
+# flags.DEFINE_string("similarity_filename", "similarity.txt", "File containing similarity")
 
 
 # Use nice names for the plot
@@ -38,42 +37,31 @@ nice_method_names = {
     "sleep_dg": "DG-Sleep",
     "aflac_dg": "DG-AFLAC",
     "ciddg_dg": "DG-CIDDG",
-
-    #"none": "Lower Bound",  # (no adaptation)
-    #"upper": "Upper Bound",  # (train on target)
-    "dann_shu": "CoDATS + DANN-Shu",
-    "cyclegan": "CoDATS + CycleGAN",
-    "cyclegan_dann": "CoDATS + CycleGAN + DANN",
-    "cycada": "CoDATS + CyCADA",
-    "deepjdot": "CoDATS + DeepJDOT",
-    "rdann": "R-DANN",
-    "vrada": "VRADA",
-    "random": "Many Reinit",
 }
 
 
-def get_similarity():
-    """ Returns dictionary indexed by target then source and lists the
-    train mean +/- stdev then test mean +/- stdev similarity """
-    similarity = {}
+# def get_similarity():
+#     """ Returns dictionary indexed by target then source and lists the
+#     train mean +/- stdev then test mean +/- stdev similarity """
+#     similarity = {}
 
-    with open(FLAGS.similarity_filename) as f:
-        for line in f:
-            parts = line.split(";")
-            assert len(parts) == 10
-            _, _, source, target, _, _, \
-                distance_train_mean, distance_train_std, \
-                distance_test_mean, distance_test_std = parts
+#     with open(FLAGS.similarity_filename) as f:
+#         for line in f:
+#             parts = line.split(";")
+#             assert len(parts) == 10
+#             _, _, source, target, _, _, \
+#                 distance_train_mean, distance_train_std, \
+#                 distance_test_mean, distance_test_std = parts
 
-            if target not in similarity:
-                similarity[target] = {}
+#             if target not in similarity:
+#                 similarity[target] = {}
 
-            similarity[target][source] = (
-                distance_train_mean, distance_train_std,
-                distance_test_mean, distance_test_std
-            )
+#             similarity[target][source] = (
+#                 distance_train_mean, distance_train_std,
+#                 distance_test_mean, distance_test_std
+#             )
 
-    return similarity
+#     return similarity
 
 
 def get_tuning_files(dir_name, prefix):
@@ -111,9 +99,17 @@ def parse_file(filename):
     traintest = []
     averages = []
 
-    valid_header = "Log Dir;Source;Target;Model;Method;Best Step;Accuracy at Step"
-    traintest_header = "Log Dir;Source;Target;Model;Method;Train A;Test A;Train B;Test B;Target Train A;Target Test A;Target Train B;Target Test B"
+    valid_header = "Log Dir;Dataset;Sources;Target;Model;Method;Best Step;Accuracy at Step"
+    traintest_header = "Log Dir;Dataset;Sources;Target;Model;Method;Train A;Test A;Train B;Test B"
     averages_header = "Dataset;Avg;Std"
+
+    # Config information
+    dataset_name = None
+    sources = None
+    num_domains = None
+    target = None
+    model = None
+    method = None
 
     with open(filename) as f:
         for line in f:
@@ -153,12 +149,24 @@ def parse_file(filename):
 
                     validation.append((values[0], values[1], values[2],
                         values[3], values[4], int(values[5]), float(values[6])))
+
+                    # Get data, make sure it's not conflicting with previous
+                    # values
+                    assert dataset_name is None or values[1] == dataset_name
+                    dataset_name = values[1]
+                    assert sources is None or values[2] == sources
+                    sources = values[2]
+                    num_domains = len(sources.split(","))
+                    assert target is None or values[3] == target
+                    target = values[3]
+                    assert model is None or values[4] == model
+                    model = values[4]
+                    assert method is None or values[5] == method
+                    method = values[5]
                 elif in_traintest:
                     traintest.append((values[0], values[1], values[2],
                         values[3], values[4], float(values[5]),
-                        float(values[6]), float(values[7]), float(values[8]),
-                        float(values[9]), float(values[10]), float(values[11]),
-                        float(values[12])))
+                        float(values[6]), float(values[7]), float(values[8])))
                 elif in_averages:
                     averages.append((values[0], float(values[1]), float(values[2])))
             else:
@@ -171,7 +179,19 @@ def parse_file(filename):
     traintest = pd.DataFrame(data=traintest, columns=traintest_header.split(";"))
     averages = pd.DataFrame(data=averages, columns=averages_header.split(";"))
 
-    return validation, traintest, averages
+    # Create params
+    assert num_domains is not None, "could not find config information in file"
+
+    params = {
+        "dataset": dataset_name,
+        "sources": sources,
+        "num_domains": num_domains,
+        "target": target,
+        "model": model,
+        "method": method,
+    }
+
+    return validation, traintest, averages, params
 
 
 def compute_mean_std(df, name, filename):
@@ -192,40 +212,13 @@ def compute_val_stats(df, filename):
     return compute_mean_std(df, "Accuracy at Step", filename)
 
 
-def compute_eval_stats(df, filename, has_target_classifier=False):
+def compute_eval_stats(df, filename):
     names = ["Train A", "Test A", "Train B", "Test B"]
-    if has_target_classifier:
-        names += ["Target Train A", "Target Test A", "Target Train B", "Target Test B"]
     data = [[name]+list(compute_mean_std(df, name, filename)) for name in names]
     return pd.DataFrame(data=data, columns=["Dataset", "Avg", "Std"])
 
 
-def parse_name_real(name):
-    # Get values
-    values = name.split("-")
-
-    method = values[0]
-    source = values[1]
-    target = values[2]
-
-    # number of source domains, 0 for upper bound with only target
-    if source == "":
-        num_source = 0
-    else:
-        # Find the n# in the source domain name
-        m = re.search(r"n([0-9]+)", source)
-        assert m is not None, "could not find n# in "+source
-        num_source = m.group(1)
-
-    return {
-        "method": method,
-        "source": source,
-        "target": target,
-        "n": num_source,
-    }
-
-
-def all_stats(files, recompute_averages=True, has_target_classifier=False):
+def all_stats(files, recompute_averages=True):
     results = []
 
     for name, file in files:
@@ -235,13 +228,12 @@ def all_stats(files, recompute_averages=True, has_target_classifier=False):
             print("Warning: no data, skipping", file, file=sys.stderr)
             continue
 
-        validation, traintest, averages = parse_result
+        validation, traintest, averages, params = parse_result
 
         if recompute_averages:
-            averages = compute_eval_stats(traintest, name, has_target_classifier)
+            averages = compute_eval_stats(traintest, name)
 
         validavg = compute_val_stats(validation, name)
-        params = parse_name_real(name)
 
         results.append({
             "name": name,
@@ -292,27 +284,18 @@ def make_replacements(s, replacements):
     return s
 
 
-def pretty_source_target_names(source, target):
-    # Remove the list of which source domains it used exactly. We only care
-    # about the number.
-    m = re.search(r"^(.*_n[0-9]+)_.*$", source)
-    if m is not None:
-        source = m.group(1)
-
-    # Make it look good
+def pretty_dataset_name(dataset):
+    """ Make dataset name look good for plots """
     replacements = [
-        ("ucihar_", "HAR "),
-        ("ucihhar_", "HHAR "),
-        ("ucihm_", "HM "),
-        ("uwave_", "uWave "),
-        ("utdata_wrist", "Wrist"),
-        ("utdata_pocket", "Pocket"),
+        ("ucihar", "HAR"),
+        ("ucihhar", "HHAR"),
+        ("ucihm", "HM"),
+        ("uwave", "uWave"),
+        ("utdata", "UT-Data"),
+        ("sleep", "Sleep"),
     ]
 
-    source = make_replacements(source, replacements)
-    target = make_replacements(target, replacements)
-
-    return source, target
+    return make_replacements(dataset, replacements)
 
 
 def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
@@ -323,39 +306,41 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
     files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant+"-")
     results = all_stats(files)
 
-    if FLAGS.similarity:
-        prefix = "similarity"
-        similarity = get_similarity()
-    else:
-        prefix = "multisource"
-        similarity = None
+    # if FLAGS.similarity:
+    #     prefix = "similarity"
+    #     similarity = get_similarity()
+    # else:
+    prefix = "multisource"
 
     for result in results:
         params = result["parameters"]
         avgs = result["averages"]
         method = params["method"]
-        n = params["n"]
-        source, target = pretty_source_target_names(params["source"], params["target"])
+        n = params["num_domains"]
+        dataset_name = pretty_dataset_name(params["dataset"])
+        # sources = dataset_name + " n = " + str(n)
+        target = dataset_name + " " + params["target"]
+        # raw_sources = dataset_name + "_" + params["source"]
+        # raw_target = dataset_name + "_" + params["target"]
         #dataset_name = source + " --> " + target
         dataset_name = target
         mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
         std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
 
-        if FLAGS.similarity:
-            # The raw values, not pretty versions
-            if params["target"] in similarity and \
-                    params["source"] in similarity[params["target"]]:
-                result_similarity = similarity[params["target"]][params["source"]]
+        # if FLAGS.similarity:
+        #     # The raw values, not pretty versions
+        #     if raw_target in similarity and raw_sources in similarity[raw_target]:
+        #         result_similarity = similarity[raw_target][raw_sources]
 
-                # Use the mean training value
-                result_similarity = result_similarity[0]
-            else:
-                print("Warning: skipping", params["source"], "to",
-                    params["target"], "if not target, then probably update",
-                    FLAGS.similarity_filename)
-                continue
-        else:
-            result_similarity = 0.0
+        #         # Use the mean training value
+        #         result_similarity = result_similarity[0]
+        #     else:
+        #         print("Warning: skipping", raw_sources, "to",
+        #             raw_target, "if not target, then probably update",
+        #             FLAGS.similarity_filename)
+        #         continue
+        # else:
+        result_similarity = 0.0
 
         # For upper bound, we set the source to the target
         if method == "upper":

@@ -15,8 +15,9 @@ Steps:
 
 This requires the following packages:
 
+    pip install --user --upgrade pip
     pip install --user numpy cython
-    pip install --user tf-nightly-gpu-2.0-preview pillow lxml jupyter matplotlib pandas sklearn scipy tb-nightly rarfile POT dtw
+    pip install --user tensorflow-gpu pillow lxml jupyter matplotlib pandas sklearn scipy tensorboard rarfile POT pyyaml
 
 ## Training
 

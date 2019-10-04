@@ -3,8 +3,14 @@ Functions for handling loading/saving files
 """
 import os
 import re
+import yaml
 import pathlib
 import numpy as np
+
+from absl import flags
+
+
+FLAGS = flags.FLAGS
 
 
 def get_last_int(s, only_one=False):
@@ -150,3 +156,35 @@ def write_finished(log_dir):
 
     with open(filename, "w") as f:
         f.write("\n")
+
+
+def get_config(log_dir):
+    """ Get config file containing dataset name, sources, target, etc. """
+    filename = os.path.join(log_dir, "config.yaml")
+
+    with open(filename) as f:
+        config = yaml.load(f)
+
+    return config
+
+
+def write_config_from_args(log_dir):
+    """ Save config file containing dataset name, sources, target, etc. """
+    filename = os.path.join(log_dir, "config.yaml")
+
+    config = {
+        "dataset": FLAGS.dataset,
+        "sources": [int(x) for x in FLAGS.sources.split(",")],
+        "target": int(FLAGS.target) if FLAGS.target != "" else None,
+        "method": FLAGS.method,
+        "model": FLAGS.model,
+        "steps": FLAGS.steps,
+        "lr": FLAGS.lr,
+        "lr_domain_mult": FLAGS.lr_domain_mult,
+        "batch": FLAGS.train_batch,
+        "uid": FLAGS.uid,
+        "debugnum": FLAGS.debugnum,
+    }
+
+    with open(filename, "w") as f:
+        yaml.dump(config, f)
