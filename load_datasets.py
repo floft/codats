@@ -243,14 +243,15 @@ def load_da(dataset, sources, target, *args, **kwargs):
     # Get proper dataset names
     sources = [dataset+"_"+x for x in sources.split(",")]
 
-    if target is not None:
-        target = dataset+"_"+target
-
     # Need to know how many domains for creating the proper-sized model, etc.
     num_domains = len(sources)
 
     if target is not None:
-        num_domains += 1
+        # Probably 1, but still will work if we ever support multiple targets
+        num_domains += len(target.split(","))
+
+    if target is not None:
+        target = dataset+"_"+target
 
     # Check they're all valid
     valid_names = names()
@@ -266,15 +267,19 @@ def load_da(dataset, sources, target, *args, **kwargs):
     for s in sources:
         source_datasets.append(load(s, num_domains, *args, **kwargs))
 
+    # Check that they all have the same number of classes as the first one
+    for i in range(1, len(source_datasets)):
+        assert source_datasets[i].num_classes == source_datasets[0].num_classes, \
+            "Source domain "+str(i)+" has different # of classes than source 0"
+
     # Load target
     if target is not None:
         target_dataset = load(target, num_domains, *args, **kwargs)
 
-        # Check validity
-        for i, s in enumerate(source_datasets):
-            assert s.num_classes == target_dataset.num_classes, \
-                "Adapting from source "+str(i)+" to target with different " \
-                "classes not supported"
+        # Check that the target has the same number of classes as the first
+        # source (since we already verified all sources have the same)
+        assert target_dataset.num_classes == source_datasets[0].num_classes, \
+            "Target has different # of classes than source 0"
     else:
         target_dataset = None
 

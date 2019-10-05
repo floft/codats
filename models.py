@@ -1,8 +1,5 @@
 """
 Models
-
-Provides the model DomainAdaptationModel() and its components along with the
-make_{task,domain}_loss() functions
 """
 import tensorflow as tf
 
@@ -12,7 +9,7 @@ FLAGS = flags.FLAGS
 
 
 @tf.custom_gradient
-def flip_gradient(x, grl_lambda=1.0):
+def flip_gradient(x, grl_lambda):
     """ Forward pass identity, backward pass negate gradient and multiply by  """
     grl_lambda = tf.cast(grl_lambda, dtype=tf.float32)
 
@@ -44,20 +41,6 @@ class FlipGradient(tf.keras.layers.Layer):
         return flip_gradient(inputs, grl_lambda)
 
 
-def ConstantGrlSchedule(constant=1.0):
-    """ Constant GRL schedule (always returns the same number) """
-    def schedule(step):
-        return constant
-    return schedule
-
-
-def DisableGrlSchedule():
-    """ Setting grl_lambda=-0.1 removes any effect from it """
-    def schedule(step):
-        return -1.0
-    return schedule
-
-
 def DannGrlSchedule(num_steps):
     """ GRL schedule from DANN paper """
     num_steps = tf.cast(num_steps, tf.float32)
@@ -75,7 +58,7 @@ class StopGradient(tf.keras.layers.Layer):
         return tf.stop_gradient(inputs)
 
 
-def make_fcn_model(num_classes, num_domains):
+class FcnModelBase(tf.keras.Model):
     """
     FCN (fully CNN) -- but domain classifier has additional dense layers
 
@@ -83,109 +66,46 @@ def make_fcn_model(num_classes, num_domains):
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
     Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/fcn.py
     """
-    feature_extractor = tf.keras.Sequential([
-        tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
-            use_bias=False),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-
-        tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
-            use_bias=False),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-
-        tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
-            use_bias=False),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-
-        tf.keras.layers.GlobalAveragePooling1D(),
-    ])
-    task_classifier = tf.keras.Sequential([
-        tf.keras.layers.Dense(num_classes, activation="softmax"),
-    ])
-    domain_classifier = tf.keras.Sequential([
-        # Note: alternative is Dense(128, activation="tanh") like used by
-        # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
-        # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
-        tf.keras.layers.Dense(500, use_bias=False),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-        tf.keras.layers.Dropout(0.3),
-
-        tf.keras.layers.Dense(500, use_bias=False),
-        tf.keras.layers.BatchNormalization(),
-        tf.keras.layers.Activation("relu"),
-        tf.keras.layers.Dropout(0.3),
-
-        tf.keras.layers.Dense(num_domains, "softmax"),
-    ])
-
-    return feature_extractor, task_classifier, domain_classifier
-
-
-class DomainAdaptationModel(tf.keras.Model):
-    """
-    Domain adaptation model -- task and domain classifier outputs, depends on
-    command line --model=X argument
-
-    Usage:
-        model = DomainAdaptationModel(num_classes, "flat",
-            global_step, num_steps)
-
-        with tf.GradientTape() as tape:
-            task_y_pred, domain_y_pred, embedding = model(x, training=True)
-            ...
-    """
-    def __init__(self, num_classes, num_domains, model_name, global_step,
-            num_steps, use_grl=False, **kwargs):
+    def __init__(self, num_classes, num_domains, **kwargs):
+        assert FLAGS.model == "fcn", "currently only support FCN"
         super().__init__(**kwargs)
-        if use_grl:
-            grl_schedule = DannGrlSchedule(num_steps)
-        else:
-            grl_schedule = DisableGrlSchedule()
+        self.feature_extractor = tf.keras.Sequential([
+            tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
 
-        # For MDAN Smooth, it's binary classification but we have a separate
-        # discriminator for each source-target pair.
-        # Actually, for now let's use the right number of domains so we
-        # don't have to compute new domain labels
-        #if FLAGS.method == "dann_smooth":
-        #    args = (num_classes, 2)
+            tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
 
-        args = (num_classes, num_domains)
+            tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
 
-        if model_name == "fcn":
-            fe, task, domain = make_fcn_model(*args)
-        else:
-            raise NotImplementedError("Model name: "+str(model_name))
+            tf.keras.layers.GlobalAveragePooling1D(),
+        ])
+        self.task_classifier = tf.keras.Sequential([
+            tf.keras.layers.Dense(num_classes, activation="softmax"),
+        ])
+        self.domain_classifier = tf.keras.Sequential([
+            # Note: alternative is Dense(128, activation="tanh") like used by
+            # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
+            # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
+            tf.keras.layers.Dense(500, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+            tf.keras.layers.Dropout(0.3),
 
-        self.feature_extractor = fe
-        self.task_classifier = task
-        self.flip_gradient = FlipGradient(global_step, grl_schedule)
+            tf.keras.layers.Dense(500, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+            tf.keras.layers.Dropout(0.3),
 
-        # MDAN Smooth requires multiple domain classifiers
-        if FLAGS.method == "dann_smooth":
-            # Note: no need for a target domain classifier, so it's actually
-            # num_domains-1 domain classifiers
-            self.domain_classifier = [domain]
-
-            # Start at 2 since we already have one
-            for i in range(2, num_domains):
-                self.domain_classifier.append(
-                    tf.keras.models.clone_model(domain))
-        else:
-            self.domain_classifier = domain
-
-        # For sleep generalization method
-        if FLAGS.method == "sleep_dg":
-            self.concat = tf.keras.layers.Concatenate(axis=1)
-            self.stop_gradient = StopGradient()
-
-        # Target classifier (if used) will be the same as the task classifier
-        # but will be trained on pseudo-labeled data. Then, call
-        # model(..., target=True) to use this classifier rather than the task
-        # classifier.
-        self.target_classifier = tf.keras.models.clone_model(task)
+            tf.keras.layers.Dense(num_domains, "softmax"),
+        ])
 
     @property
     def trainable_variables_task(self):
@@ -194,16 +114,7 @@ class DomainAdaptationModel(tf.keras.Model):
 
     @property
     def trainable_variables_domain(self):
-        # If multiple domain classifiers, get variables from all of them
-        if isinstance(self.domain_classifier, list):
-            domain_vars = []
-
-            for dc in self.domain_classifier:
-                domain_vars += dc.trainable_variables
-        else:
-            domain_vars = self.domain_classifier.trainable_variables
-
-        return domain_vars
+        return self.domain_classifier.trainable_variables
 
     @property
     def trainable_variables_task_domain(self):
@@ -211,132 +122,107 @@ class DomainAdaptationModel(tf.keras.Model):
             + self.task_classifier.trainable_variables \
             + self.trainable_variables_domain
 
-    @property
-    def trainable_variables_target(self):
-        return self.feature_extractor.trainable_variables \
-            + self.target_classifier.trainable_variables
-
-    def call(self, inputs, domain="source", domain_classifier=None,
-            target=False, training=None, **kwargs):
+    def set_learning_phase(self, training):
         # Manually set the learning phase since we probably aren't using .fit()
         if training is True:
             tf.keras.backend.set_learning_phase(1)
         elif training is False:
             tf.keras.backend.set_learning_phase(0)
 
-        fe = self.feature_extractor(inputs, domain=domain, **kwargs)
+    # Allow easily overriding each part of the call() function, without having
+    # to override call() in its entirety
+    def call_feature_extractor(self, inputs, **kwargs):
+        return self.feature_extractor(inputs, **kwargs)
 
-        # If an RNN, then we'll return (rnn_output, rnn_state), so pass the
-        # output to the classifiers but return both from call()
-        if isinstance(fe, tuple):
-            fe_output = fe[0]
+    def call_task_classifier(self, fe, **kwargs):
+        return self.task_classifier(fe, **kwargs)
+
+    def call_domain_classifier(self, fe, task, **kwargs):
+        return self.domain_classifier(fe, **kwargs)
+
+    def call(self, inputs, training=None, **kwargs):
+        self.set_learning_phase(training)
+        fe = self.call_feature_extractor(inputs, **kwargs)
+        task = self.call_task_classifier(fe, **kwargs)
+        domain = self.call_domain_classifier(fe, task, **kwargs)
+        return task, domain, fe
+
+
+class DannModel(FcnModelBase):
+    """ DANN adds a gradient reversal layer before the domain classifier """
+    def __init__(self, num_classes, num_domains, global_step,
+            total_steps, **kwargs):
+        super().__init__(num_classes, num_domains, **kwargs)
+        grl_schedule = DannGrlSchedule(total_steps)
+        self.flip_gradient = FlipGradient(global_step, grl_schedule)
+
+    def call_domain_classifier(self, fe, task, **kwargs):
+        grl_output = self.flip_gradient(fe, **kwargs)
+        return self.domain_classifier(grl_output, **kwargs)
+
+
+class SleepModel(DannModel):
+    """ Sleep model is DANN but concatenating task classifier output (with stop
+    gradient) with feature extractor output when fed to the domain classifier """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.concat = tf.keras.layers.Concatenate(axis=1)
+        self.stop_gradient = StopGradient()
+
+    def call_domain_classifier(self, fe, task, **kwargs):
+        grl_output = self.flip_gradient(fe, **kwargs)
+        task_stop_gradient = self.stop_gradient(task)
+        domain_input = self.concat([grl_output, task_stop_gradient])
+        return self.domain_classifier(domain_input, **kwargs)
+
+
+class DannSmoothModel(DannModel):
+    def __init__(self, num_classes, num_domains, **kwargs):
+        # For MDAN Smooth, it's binary classification but we have a separate
+        # discriminator for each source-target pair.
+        super().__init__(num_classes, 2, **kwargs)
+
+        # MDAN Smooth requires multiple domain classifiers
+        # Note: no need for a target domain classifier, so it's actually
+        # num_domains-1 domain classifiers
+        new_domain_classifier = [self.domain_classifier]
+
+        # Start at 2 since we already have one
+        for i in range(2, num_domains):
+            new_domain_classifier.append(
+                tf.keras.models.clone_model(self.domain_classifier))
+
+        self.domain_classifier = new_domain_classifier
+
+    @property
+    def trainable_variables_domain(self):
+        # We have multiple domain classifiers, so get all variables
+        domain_vars = []
+
+        for dc in self.domain_classifier:
+            domain_vars += dc.trainable_variables
+
+        return domain_vars
+
+    def call_domain_classifier(self, fe, task, domain_classifier=None, **kwargs):
+        grl_output = self.flip_gradient(fe, **kwargs)
+
+        # We know which one to use (0 = source domain 1, 1 = source domain 2, etc.)
+        if domain_classifier is not None:
+            domain_output = self.domain_classifier[domain_classifier](
+                grl_output, **kwargs)
+        # We don't know which one, so do them all
         else:
-            fe_output = fe
+            domain_output = []
 
-        # If desired, use the target classifier rather than the task classifier
-        if target:
-            task = self.target_classifier(fe_output, domain=domain, **kwargs)
-        else:
-            task = self.task_classifier(fe_output, domain=domain, **kwargs)
+            for dc in self.domain_classifier:
+                # Note: this feeds all the data through each domain classifier
+                # since at this point we don't know which data is from which
+                # domain. In main.py when computing the loss, we'll take the
+                # proper slices of these outputs.
+                domain_output.append(dc(grl_output, **kwargs))
 
-        # Flip the gradient, if desired. If disabled, then this does nothing.
-        grl_output = self.flip_gradient(fe_output, domain=domain, **kwargs)
-
-        # If doing the algorithm from the sleep paper, then for generalization
-        # we also concatenate the task classifier's output when fed to the
-        # domain classifier.
-        if FLAGS.method == "sleep_dg":
-            task_stop_gradient = self.stop_gradient(task)
-            domain_input = self.concat([grl_output, task_stop_gradient])
-        else:
-            domain_input = grl_output
-
-        if isinstance(self.domain_classifier, list):
-            # We know which one to use (0 = source domain 1, 1 = source domain 2, etc.)
-            if domain_classifier is not None:
-                domain_output = self.domain_classifier[domain_classifier](domain_input, **kwargs)
-            # We don't know which one, so do them all
-            else:
-                domain_output = []
-
-                for dc in self.domain_classifier:
-                    # Note: this feeds all the data through each domain classifier
-                    # since at this point we don't know which data is from which
-                    # domain. In main.py when computing the loss, we'll take the
-                    # proper slices of these outputs.
-                    #
-                    # Note: can't pass domain=domain since it errors for some reason
-                    # due to the layer cloning, but we have CustomSequential disabled
-                    # anyway, so it doesn't really matter.
-                    domain_output.append(dc(domain_input, **kwargs))
-        else:
-            domain_output = self.domain_classifier(domain_input, domain=domain, **kwargs)
-
-        return task, domain_output, fe
-
-
-def make_task_loss(adapt):
-    """
-    The same as CategoricalCrossentropy() but only on half the batch if doing
-    adaptation and in the training phase
-    """
-    cce = tf.keras.losses.SparseCategoricalCrossentropy()
-
-    def task_loss(y_true, y_pred, training=None):
-        """
-        Compute loss on the outputs of the task classifier
-
-        Note: domain classifier can use normal tf.keras.losses.CategoricalCrossentropy
-        but for the task loss when doing adaptation we need to ignore the second half
-        of the batch since this is unsupervised
-        """
-        if training is None:
-            training = tf.keras.backend.learning_phase()
-
-        # If doing domain adaptation, then we'll need to ignore the second half of the
-        # batch for task classification during training since we don't know the labels
-        # of the target data
-        if adapt and training:
-            batch_size = tf.shape(y_pred)[0]
-            y_pred = tf.slice(y_pred, [0, 0], [batch_size // 2, -1])
-            # With the sparse loss, this isn't 2D anymore
-            y_true = tf.slice(y_true, [0], [batch_size // 2])
-
-        return cce(y_true, y_pred)
-
-    return task_loss
-
-
-def make_weighted_loss():
-    """ The same as CategoricalCrossentropy() but weighted """
-    cce = tf.keras.losses.SparseCategoricalCrossentropy()
-
-    def task_loss(y_true, y_pred, weights, training=None):
-        """
-        Compute loss on the outputs of a classifier weighted by the specified
-        weights
-        """
-        return cce(y_true, y_pred, sample_weight=weights)
-
-    return task_loss
-
-
-def make_domain_loss(use_domain_loss):
-    """
-    Just CategoricalCrossentropy() but for consistency with make_task_loss()
-    """
-    if use_domain_loss:
-        cce = tf.keras.losses.SparseCategoricalCrossentropy()
-
-        def domain_loss(y_true, y_pred):
-            """ Compute loss on the outputs of the domain classifier """
-            return cce(y_true, y_pred)
-    else:
-        def domain_loss(y_true, y_pred):
-            """ Domain loss only used during adaptation """
-            return 0
-
-    return domain_loss
+        return domain_output
 
 
 # List of names

@@ -154,13 +154,23 @@ def parse_file(filename):
                     # values
                     assert dataset_name is None or values[1] == dataset_name
                     dataset_name = values[1]
+
                     assert sources is None or values[2] == sources
                     sources = values[2]
+
                     num_domains = len(sources.split(","))
+
                     assert target is None or values[3] == target
                     target = values[3]
+
+                    if target != "":
+                        # Probably 1, but still will work if we ever support
+                        # multiple targets
+                        num_domains += len(target.split(","))
+
                     assert model is None or values[4] == model
                     model = values[4]
+
                     assert method is None or values[5] == method
                     method = values[5]
                 elif in_traintest:
