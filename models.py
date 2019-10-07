@@ -180,7 +180,7 @@ class DannSmoothModel(DannModel):
     def __init__(self, num_classes, num_domains, **kwargs):
         # For MDAN Smooth, it's binary classification but we have a separate
         # discriminator for each source-target pair.
-        super().__init__(num_classes, 2, **kwargs)
+        super().__init__(num_classes, num_domains, **kwargs)
 
         # MDAN Smooth requires multiple domain classifiers
         # Note: no need for a target domain classifier, so it's actually
@@ -204,25 +204,20 @@ class DannSmoothModel(DannModel):
 
         return domain_vars
 
+    def call_feature_extractor(self, inputs, **kwargs):
+        # Override so we don't pass domain_classifier argument to model
+        return self.feature_extractor(inputs)
+
+    def call_task_classifier(self, fe, **kwargs):
+        # Override so we don't pass domain_classifier argument to model
+        return self.task_classifier(fe)
+
     def call_domain_classifier(self, fe, task, domain_classifier=None, **kwargs):
+        assert domain_classifier is not None, \
+            "must specify which domain classifier to use with method Smooth"
         grl_output = self.flip_gradient(fe, **kwargs)
-
-        # We know which one to use (0 = source domain 1, 1 = source domain 2, etc.)
-        if domain_classifier is not None:
-            domain_output = self.domain_classifier[domain_classifier](
-                grl_output, **kwargs)
-        # We don't know which one, so do them all
-        else:
-            domain_output = []
-
-            for dc in self.domain_classifier:
-                # Note: this feeds all the data through each domain classifier
-                # since at this point we don't know which data is from which
-                # domain. In main.py when computing the loss, we'll take the
-                # proper slices of these outputs.
-                domain_output.append(dc(grl_output, **kwargs))
-
-        return domain_output
+        # 0 = source domain 1 with target, 1 = source domain 2 with target, etc.
+        return self.domain_classifier[domain_classifier](grl_output, **kwargs)
 
 
 # List of names

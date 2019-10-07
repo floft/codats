@@ -5,22 +5,25 @@ Update metrics for displaying in TensorBoard during training or evaluation after
 training
 
 Usage during training (logging to a log file for TensorBoard):
-    metrics = Metrics(log_dir, source_dataset,
-        task_loss_fn, domain_loss_fn, domain_b_data is not None)
+    metrics = Metrics(log_dir, method, source_datasets, target_dataset,
+        domain_b_data is not None)
 
     # Evaluate model on a single training batch, update metrics, save to log file
-    metrics.train(model, train_data_a, train_data_b, step, train_time)
+    metrics.train(train_data_a, train_data_b, step, train_time)
 
     # Evaluate model on entire evaluation dataset, update metrics, save to log file
-    validation_accuracy = metrics.test(model, eval_data_a, eval_data_b, step)
+    validation_accuracy = metrics.test(step)
+
+    # Generate plots
+    metrics.plots(step)
 
 Usage after training (evaluating but not logging):
-    metrics = Metrics(log_dir, source_dataset,
-        None, None, domain_b_data is not None)
+    metrics = Metrics(log_dir, method, source_datasets, target_datasets,
+        domain_b_data is not None)
 
     # Evaluate on datasets
-    metrics.train(model, train_data_a, train_data_b, evaluation=True)
-    metrics.test(model, eval_data_a, eval_data_b, evaluation=True)
+    metrics.train_eval()
+    metrics.test(evaluation=True)
 
     # Get the results
     results = metrics.results()
@@ -29,6 +32,7 @@ import time
 import tensorflow as tf
 
 from absl import flags
+from sklearn.utils import shuffle
 
 from plots import generate_plots
 
@@ -43,29 +47,26 @@ class Metrics:
     after all (or just the one) batches are processed, saving this to a log file
     for viewing in TensorBoard.
 
-    Note: enable_compile=True decorates some functions with tf.function, but when
-    only evaluating once this can drastically increase the run time. Thus, set
-    to enable_compile=False when only evaluating the metrics once.
-
     Accuracy values:
         accuracy_{domain,task}/{source,target}/{training,validation}
         {auc,precision,recall}_{task,target}/{source,target}/{training,validation}
         accuracy_{task,target}_class_{class1name,...}/{source,target}/{training,validation}
         rates_{task,target}_class_{class1name,...}/{TP,FP,TN,FN}/{source,target}/{training,validation}
-    Loss values:
-        loss/{total,task,domain}
+    Loss values (number depends on method):
+        loss/loss{0,1,2,...}
     """
-    def __init__(self, log_dir, source_dataset,
-            task_loss, domain_loss, target_domain=True,
-            enable_compile=True):
+    def __init__(self, log_dir, method, source_datasets, target_dataset,
+            target_domain=True):
         self.writer = tf.summary.create_file_writer(log_dir)
-        self.source_dataset = source_dataset
-        self.num_classes = source_dataset.num_classes
-        self.num_domains = source_dataset.num_domains
+        self.method = method
+        self.source_datasets = source_datasets
+        self.target_dataset = target_dataset
+        # Just take from first one since they were checked earlier that they're
+        # all the same
+        self.num_classes = source_datasets[0].num_classes
+        self.num_domains = source_datasets[0].num_domains
 
         self.datasets = ["training", "validation"]
-        self.task_loss = task_loss if task_loss is not None else lambda y_true, y_pred, training: 0
-        self.domain_loss = domain_loss if domain_loss is not None else lambda y_true, y_pred: 0
         self.target_domain = target_domain  # whether we have just source or both
 
         if not target_domain:
@@ -101,7 +102,7 @@ class Metrics:
         # Create all per-class metrics
         self.per_class_metrics = {dataset: {} for dataset in self.datasets}
         for i in range(self.num_classes):
-            class_name = self.source_dataset.int_to_label(i)
+            class_name = self.source_datasets[0].int_to_label(i)
 
             for domain in self.domains:
                 for dataset in self.datasets:
@@ -121,16 +122,8 @@ class Metrics:
                         n = "rates_%s_class_%s/FN/%s/%s"%(classifier, class_name, domain, dataset)
                         self.per_class_metrics[dataset][n] = tf.keras.metrics.FalseNegatives(name=n)
 
-        # Losses
-        self.loss_total = tf.keras.metrics.Mean(name="loss/total")
-        self.loss_task = tf.keras.metrics.Mean(name="loss/task")
-        self.loss_domain = tf.keras.metrics.Mean(name="loss/domain")
-
-        # Compile frequent-running functions if the metrics will be updated
-        # multiple times
-        if enable_compile:
-            self._run_single_batch_a = tf.function(self._run_single_batch_a)
-            self._run_single_batch_b = tf.function(self._run_single_batch_b)
+        # Variable number of losses
+        self.losses = {dataset: {} for dataset in self.datasets}
 
     def _reset_states(self, dataset):
         """ Reset states of all the Keras metrics """
@@ -140,23 +133,12 @@ class Metrics:
         for _, metric in self.per_class_metrics[dataset].items():
             metric.reset_states()
 
-        if dataset == "training":
-            self.loss_total.reset_states()
-            self.loss_task.reset_states()
-            self.loss_domain.reset_states()
-
-    def _process_losses(self, results):
-        """ Update loss values """
-        _, _, _, _, \
-            total_loss, task_loss, domain_loss = results
-        self.loss_total(total_loss)
-        self.loss_task(task_loss)
-        self.loss_domain(domain_loss)
+        for _, metric in self.losses[dataset].items():
+            metric.reset_states()
 
     def _process_batch(self, results, classifier, domain, dataset):
         """ Update metrics for accuracy over entire batch for domain-dataset """
-        task_y_true, task_y_pred, domain_y_true, domain_y_pred, \
-            _, _, _ = results
+        task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses = results
 
         # Since we are now using sparse
         domain_y_true = tf.one_hot(tf.cast(domain_y_true, tf.int32), self.num_domains)
@@ -185,7 +167,7 @@ class Metrics:
 
     def _process_per_class(self, results, classifier, domain, dataset):
         """ Update metrics for accuracy over per-class portions of batch for domain-dataset """
-        task_y_true, task_y_pred, _, _, _, _, _ = results
+        task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses = results
         batch_size = tf.shape(task_y_true)[0]
 
         # Since we are now using sparse
@@ -207,7 +189,7 @@ class Metrics:
         ]
 
         for i in range(self.num_classes):
-            class_name = self.source_dataset.int_to_label(i)
+            class_name = self.source_datasets[0].int_to_label(i)
 
             # Get ith column (all groundtruth/predictions for ith class)
             y_true = tf.slice(task_y_true, [0, i], [batch_size, 1])  # if not sparse
@@ -225,6 +207,25 @@ class Metrics:
                 name = n%(classifier, class_name, domain, dataset)
                 self.per_class_metrics[dataset][name](acc_y_true, acc_y_pred)
 
+    def _process_losses(self, results, domain, dataset):
+        """ Update losses, but create if it hasn't been seen before. Create here
+        rather than in __init__ since different methods have different numbers
+        of losses, e.g. some have a domain loss and others don't """
+        task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses = results
+
+        # If only one loss, then make it a list so we can use the same code
+        # for either case
+        if not isinstance(losses, list):
+            losses = [losses]
+
+        for i, loss in enumerate(losses):
+            name = "loss"+str(i)+"/"+domain+"/"+dataset
+
+            if name not in self.losses[dataset]:
+                self.losses[dataset][name] = tf.keras.metrics.Mean(name=name)
+
+            self.losses[dataset][name](loss)
+
     def _write_data(self, step, dataset, eval_time, train_time=None,
             additional_losses=None):
         """ Write either the training or validation data """
@@ -238,11 +239,8 @@ class Metrics:
             for key, metric in self.per_class_metrics[dataset].items():
                 tf.summary.scalar(key, metric.result(), step=step)
 
-            # Only log losses on training data
-            if dataset == "training":
-                tf.summary.scalar("loss/total", self.loss_total.result(), step=step)
-                tf.summary.scalar("loss/task", self.loss_task.result(), step=step)
-                tf.summary.scalar("loss/domain", self.loss_domain.result(), step=step)
+            for key, metric in self.losses[dataset].items():
+                tf.summary.scalar(key, metric.result(), step=step)
 
             # Any other losses
             if additional_losses is not None:
@@ -265,91 +263,58 @@ class Metrics:
         # Make sure we sync to disk
         self.writer.flush()
 
-    def _run_dataset(self, model, data_a, data_b, dataset, target):
+    def _run_dataset(self, data_a, data_b, dataset):
         """ Run all the data A/B through the model -- data_a and data_b
-        should both be of type tf.data.Dataset """
+        should both be of type tf.data.Dataset (with data_a a list of them) """
         if data_a is not None:
-            for x, task_y_true, domain_y_true in data_a:
-                self._run_single_batch_a(x, task_y_true, domain_y_true, model,
-                    dataset)
+            source_iterators = [iter(x) for x in data_a]
+
+            # TODO This breaks on the *smallest* source domain. Though, during
+            # evaluation, if we have enough data, we take the same number of
+            # samples from each, so it won't matter. However, if we don't have
+            # enough, then we take 20% which will differ between domains.
+            while True:
+                try:
+                    data, _ = self.method.get_next_batch(source_iterators, None)
+                    self._run_single_batch(data, dataset, "source")
+                except StopIteration:
+                    break
 
         if self.target_domain and data_b is not None:
-            for x, task_y_true, domain_y_true in data_b:
-                self._run_single_batch_b(x, task_y_true, domain_y_true, model,
-                    dataset)
+            target_iterator = iter(data_b)
 
-    def _run_batch(self, model, data_a, data_b, dataset, target):
+            while True:
+                try:
+                    _, data = self.method.get_next_batch(None, target_iterator)
+                    self._run_single_batch(data, dataset, "target")
+                except StopIteration:
+                    break
+
+    def _run_batch(self, model, data_a, data_b, dataset):
         """ Run a single batch of A/B data through the model -- data_a and data_b
-        should both be a tuple of (x, task_y_true) """
+        should both be a tuple of (x, task_y_true, domain_y_true) """
         if data_a is not None:
-            self._run_single_batch_a(*data_a, model, dataset)
+            self._run_single_batch(data_a, dataset, "source")
 
         if self.target_domain and data_b is not None:
-            self._run_single_batch_b(*data_b, model, dataset)
+            self._run_single_batch(data_b, dataset, "target")
 
-    def _run_single_batch(self, x, task_y_true, domain_y_true, model,
-            dataset_name, domain_name):
-        """
-        Run a batch of data through the model. Call after_batch() afterwards:
-            after_batch([labels_batch_a, task_y_pred, domains_batch_a, domain_y_pred,
-                total_loss, task_loss, domain_loss], domain_name, dataset_name)
-        """
+    def _run_single_batch(self, data, dataset_name, domain_name):
+        """ Run a single batch of data through the model """
         assert dataset_name in self.datasets, "unknown dataset "+str(dataset_name)
         assert domain_name in self.domains, "unknown domain "+str(domain_name)
 
-        # Evaluate model on data
-        task_y_pred, domain_y_pred, _ = model(x, training=False)
+        results = self.method.eval_step(data)
 
-        # Calculate losses
-        task_l = self.task_loss(task_y_true, task_y_pred, training=False)
-
-        # For MDAN Smooth ideally we'd grab the loss from the right domain
-        # classifier based on which domain the sample is from. However,
-        # for now just grab the first classifier's output. TODO
-        if isinstance(domain_y_pred, list):
-            domain_y_pred = domain_y_pred[0] # TODO
-
-        domain_l = self.domain_loss(domain_y_true, domain_y_pred)
-        total_l = task_l + domain_l
-
-        # We'll compute the accuracy based on a binary output, not the logits
-        # which we used for the loss function
-        domain_y_pred = tf.sigmoid(domain_y_pred)
-
-        # Process this batch
-        results = [
-            task_y_true, task_y_pred, domain_y_true, domain_y_pred,
-            total_l, task_l, domain_l,
-        ]
-
-        # Which classifier's task_y_pred are we looking at?
-        classifier = "task"
+        classifier = "task"  # Which classifier's task_y_pred are we looking at?
         self._process_batch(results, classifier, domain_name, dataset_name)
         self._process_per_class(results, classifier, domain_name, dataset_name)
+        self._process_losses(results, domain_name, dataset_name)
 
-        # Only log losses on training data with the task classifier (not target)
-        if dataset_name == "training":
-            self._process_losses(results)
-
-    # Compile separate _run_single_batch functions since if we pass in varying
-    # values of dataset_name it ends up dying sometimes with the error:
-    #   "ValueError: tf.function-decorated function tried to create variables on
-    #   non-first call."
-    def _run_single_batch_a(self, *args, **kwargs):
-        return self._run_single_batch(*args, domain_name="source", **kwargs)
-
-    def _run_single_batch_b(self, *args, **kwargs):
-        return self._run_single_batch(*args, domain_name="target", **kwargs)
-
-    def train(self, model, data_a, data_b,
-            step=None, train_time=None, additional_losses=None, evaluation=False):
+    def train(self, data_a, data_b, step, train_time):
         """
-        Call this once after evaluating on the training data for domain A and
-        domain B
-
-        Note: leave off step and train_time if evaluation=True and make sure
-        data_a and data_b are the entire training datasets rathe than a single
-        batch as when evaluation=False.
+        Evaluate the model on a batch of training data (during training,
+        not at evaluation time -- use train_eval() for that)
         """
         dataset = "training"
         self._reset_states(dataset)
@@ -358,23 +323,30 @@ class Metrics:
         if not self.target_domain:
             data_b = None
 
-        # evaluation=True is a tf.data.Dataset, otherwise a single batch
-        if evaluation:
-            self._run_dataset(model, data_a, data_b, dataset)
-        else:
-            self._run_batch(model, data_a, data_b, dataset)
+        self._run_batch(data_a, data_b, dataset)
 
         t = time.time() - t
+        step = int(step)
+        self._write_data(step, dataset, t, train_time)
 
-        if not evaluation:
-            assert step is not None and train_time is not None, \
-                "Must pass step and train_time to train() if evaluation=False"
-            step = int(step)
-            self._write_data(step, dataset, t, train_time,
-                additional_losses=additional_losses)
+    def train_eval(self):
+        """
+        Evaluate the model on the entire training dataset, for use during
+        evaluation -- not at training time
+        """
+        dataset = "training"
+        self._reset_states(dataset)
 
-    def test(self, model, eval_data_a, eval_data_b, step=None,
-            evaluation=False):
+        if self.target_domain:
+            target_datasets = self.target_train_eval_dataset
+        else:
+            target_datasets = None
+
+        # At evaluation time, use eval tf.data.Dataset
+        self._run_dataset(self.method.source_train_eval_datasets,
+            target_datasets, dataset)
+
+    def test(self, step=None, evaluation=False):
         """
         Evaluate the model on domain A/B but batched to make sure we don't run
         out of memory
@@ -387,25 +359,25 @@ class Metrics:
         self._reset_states(dataset)
         t = time.time()
 
-        if not self.target_domain:
-            eval_data_b = None
+        if self.target_domain:
+            target_datasets = self.method.target_test_eval_dataset
+        else:
+            target_datasets = None
 
-        self._run_dataset(model, eval_data_a, eval_data_b, dataset)
+        self._run_dataset(self.method.source_test_eval_datasets,
+            target_datasets, dataset)
 
-        # These are metrics only filled out when there's a task model
-        if model is not None:
-            # We use the validation accuracy to save the best model
-            #
-            # If best_source then use source validation accuracy (so we never look)
-            # at labeled target data. However, as is commonly done, another approach
-            # is tuning based on 1000 random labeled target samples.
-            if FLAGS.best_source:
-                acc = self.batch_metrics["validation"]["accuracy_task/source/validation"]
-            else:
-                acc = self.batch_metrics["validation"]["accuracy_task/target/validation"]
+        # We use the validation accuracy to save the best model
+        #
+        # If best_source then use source validation accuracy (so we never look)
+        # at labeled target data. However, as is commonly done, another approach
+        # is tuning based on 1000 random labeled target samples.
+        if FLAGS.best_source:
+            acc = self.batch_metrics["validation"]["accuracy_task/source/validation"]
+        else:
+            acc = self.batch_metrics["validation"]["accuracy_task/target/validation"]
 
-            validation_accuracy = float(acc.result())
-
+        validation_accuracy = float(acc.result())
         t = time.time() - t
 
         if not evaluation:
@@ -413,20 +385,32 @@ class Metrics:
             step = int(step)
             self._write_data(step, dataset, t)
 
-        if model is not None:
-            return validation_accuracy
-        else:
-            return None, None
+        return validation_accuracy
 
-    def plots(self, model, eval_data_a, eval_data_b, adapt, global_step):
+    def plots(self, global_step):
         """ Log plots """
-        # Get first batch of data
-        data_a = next(iter(eval_data_a))
+        # Get first batch of source(s) and target data
+        data_a, _ = self.method.get_next_batch([
+            iter(x) for x in self.method.source_test_eval_datasets], None)
 
         if not self.target_domain:
             data_b = None
         else:
-            data_b = next(iter(eval_data_b))
+            _, data_b = self.method.get_next_batch(None,
+                iter(self.method.target_test_eval_dataset))
+
+        # Concatenate all source domains' data
+        x_a, y_a, domain_a = data_a
+        x_a = tf.concat(x_a, axis=0)
+        y_a = tf.concat(y_a, axis=0)
+        domain_a = tf.concat(domain_a, axis=0)
+
+        # Shuffle (simpler than interleaving) the domains' data since we only
+        # take the top-n of them for the plots, and we want an even
+        # representation. Set random seed though since we want the plots from
+        # one iteration to be comparable to those in the next iteration.
+        x_a, y_a, domain_a = shuffle(x_a, y_a, domain_a, random_state=0)
+        data_a = (x_a, y_a, domain_a)
 
         # We'll only plot the real plots once since they don't change
         step = int(global_step)
@@ -434,7 +418,8 @@ class Metrics:
 
         # Generate plots
         t = time.time()
-        plots = generate_plots(data_a, data_b, model, adapt, first_time)
+        plots = generate_plots(data_a, data_b,
+            self.method.model.feature_extractor, first_time)
         t = time.time() - t
 
         # Write all the values to the file
@@ -458,8 +443,7 @@ class Metrics:
             for key, metric in self.per_class_metrics[dataset].items():
                 results[key] = float(metric.result())
 
-        results["loss/total"] = float(self.loss_total.result())
-        results["loss/task"] = float(self.loss_task.result())
-        results["loss/domain"] = float(self.loss_domain.result())
+            for key, metric in self.losses[dataset].items():
+                results[key] = float(metric.result())
 
         return results

@@ -34,7 +34,6 @@ flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
 flags.DEFINE_integer("log_val_steps", 4000, "Log validation information every so many steps (also saves model)")
 flags.DEFINE_integer("log_plots_steps", 4000, "Log plots every so many steps")
-flags.DEFINE_boolean("compile_metrics", True, "Compile metrics loop with tf.function for subsequent speed (disable if std::terminate)")
 flags.DEFINE_boolean("test", False, "Use real test set for evaluation rather than validation set")
 flags.DEFINE_boolean("subdir", True, "Save models/logs in subdirectory of prefix")
 flags.DEFINE_boolean("debug", False, "Start new log/model/images rather than continuing from previous run")
@@ -118,10 +117,8 @@ def main(argv):
 
     # Metrics
     has_target_domain = target_dataset is not None
-    # Note: assuming that all sources have same num_classes, etc. choose source 0
-    metrics = Metrics(log_dir, source_datasets[0],
-        task_loss, domain_loss, has_target_domain,
-        enable_compile=FLAGS.compile_metrics)
+    metrics = Metrics(log_dir, method, source_datasets, target_dataset,
+        has_target_domain)
 
     # Start training
     for i in range(int(global_step), FLAGS.steps+1):
@@ -140,13 +137,12 @@ def main(argv):
 
         # Metrics on training/validation data
         if i%FLAGS.log_train_steps == 0:
-            metrics.train(model, data_sources, data_target, global_step, t)
+            metrics.train(data_sources, data_target, global_step, t)
 
         # Evaluate every log_val_steps but also at the last step
         validation_accuracy = None
         if i%FLAGS.log_val_steps == 0 or i == FLAGS.steps:
-            validation_accuracy = metrics.test(model, source_dataset_eval,
-                target_dataset_eval, global_step)
+            validation_accuracy = metrics.test(global_step)
 
         # Checkpoints -- Save either if at the right model step or if we found
         # a new validation accuracy. If this is better than the previous best
@@ -157,8 +153,7 @@ def main(argv):
 
         # Plots
         if i%FLAGS.log_plots_steps == 0:
-            metrics.plots(model, source_dataset_eval, target_dataset_eval,
-                adapt, global_step)
+            metrics.plots(global_step)
 
     # We're done -- used for hyperparameter tuning
     file_utils.write_finished(log_dir)

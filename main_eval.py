@@ -20,29 +20,17 @@ from absl import app
 from absl import flags
 
 import models
+import methods
 import file_utils
 import load_datasets
 
 from pool import run_job_pool
-from models import DomainAdaptationModel
 from metrics import Metrics
 from checkpoints import CheckpointManager
 from gpu_memory import set_gpu_memory
 
 
 FLAGS = flags.FLAGS
-
-# Copy from main.py
-methods = [
-    # No adaptation or training on target
-    "none",
-
-    # Multi-source domain adaptation (works with it...)
-    "dann_grl", "dann_grl_gs", "dann_smooth",
-
-    # Domain generalization
-    "dann_grl_dg", "sleep_dg", "aflac_dg", "ciddg_dg",
-]
 
 # Same as in main.py
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
@@ -195,31 +183,16 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
     source_datasets, target_dataset = load_datasets.load_da(dataset_name,
         sources, target, test=True)
 
-    # Evaluation datasets if we have the dataset
-    source_dataset_train = source_dataset.train_evaluation
-    target_dataset_train = target_dataset.train_evaluation \
-        if target_dataset is not None else None
-    source_dataset_test = source_dataset.test_evaluation
-    target_dataset_test = target_dataset.test_evaluation \
-        if target_dataset is not None else None
-
-    # Information about domains
-    num_classes = target_dataset.num_classes
-    num_domains = target_dataset.num_domains
-
-    # Changes model
-    sleep_generalize = method_name in ["sleep_dg"]
-
-    # Build our model
+    # Load the method, model, etc.
     # Note: {global,num}_step are for training, so it doesn't matter what
     # we set them to here
-    global_step = 1
-    num_steps = 1
-    model = DomainAdaptationModel(num_classes, num_domains, model_name,
-        global_step, num_steps, sleep_generalize=sleep_generalize)
+    method = methods.load(method_name,
+        source_datasets=source_datasets,
+        target_dataset=target_dataset,
+        global_step=1, total_steps=1)
 
     # Load model from checkpoint
-    checkpoint = tf.train.Checkpoint(model=model)
+    checkpoint = tf.train.Checkpoint(method=method, **method.checkpoint_variables)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
 
     if FLAGS.last:
@@ -242,14 +215,13 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
             None, None, None, None
 
     # Metrics
-    have_target_domain = target_dataset is not None
-    # Note: assuming that all sources have same num_classes, etc. choose source 0
-    metrics = Metrics(log_dir, source_datasets[0],
-            None, None, have_target_domain, enable_compile=False)
+    has_target_domain = target_dataset is not None
+    metrics = Metrics(log_dir, method, source_datasets, target_dataset,
+        has_target_domain)
 
     # Evaluate on both datasets
-    metrics.train(model, source_dataset_train, None, target_dataset_train, evaluation=True)
-    metrics.test(model, source_dataset_test, target_dataset_test, evaluation=True)
+    metrics.train_eval()
+    metrics.test(evaluation=True)
 
     # Get results
     results = metrics.results()

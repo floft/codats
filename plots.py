@@ -20,11 +20,14 @@ FLAGS = flags.FLAGS
 flags.DEFINE_integer("max_plot_embedding", 100, "Max points to plot in t-SNE and PCA plots (0 = skip these plots)")
 
 
-def generate_plots(data_a, data_b, model, adapt, first_time):
+def generate_plots(data_a, data_b, feature_extractor, first_time):
     """
     Run the first batch of evaluation data through the feature extractor, then
     generate and return the PCA and t-SNE plots. Optionally, save these to a file
     as well.
+
+    Note: data_a should already be concatenated (and maybe shuffled/interleaved)
+    from all the source domains. It should not be a tuple of lists.
     """
     plots = []
     x_a, y_a, domain_a = data_a
@@ -35,7 +38,7 @@ def generate_plots(data_a, data_b, model, adapt, first_time):
     #
     # TSNE and PCA
     #
-    if model is not None and FLAGS.max_plot_embedding > 0 and data_b is not None:
+    if feature_extractor is not None and FLAGS.max_plot_embedding > 0 and data_b is not None:
         emb_x_a = x_a[:FLAGS.max_plot_embedding]
         emb_x_b = x_b[:FLAGS.max_plot_embedding]
         emb_y_a = y_a[:FLAGS.max_plot_embedding]
@@ -49,7 +52,7 @@ def generate_plots(data_a, data_b, model, adapt, first_time):
         combined_domain = tf.concat((emb_d_a, emb_d_b), axis=0)
 
         # Run through model's feature extractor
-        embedding = model.feature_extractor(combined_x, training=False, domain="both")
+        embedding = feature_extractor(combined_x, training=False)
 
         # If an RNN, get only the embedding, not the RNN state
         if isinstance(embedding, tuple):
@@ -59,15 +62,10 @@ def generate_plots(data_a, data_b, model, adapt, first_time):
         tsne = TSNE(n_components=2, init='pca', n_iter=3000).fit_transform(embedding)
         pca = PCA(n_components=2).fit_transform(embedding)
 
-        if adapt:
-            title = "Domain Adaptation"
-        else:
-            title = "No Adaptation"
-
         tsne_plot = plot_embedding(tsne, tf.squeeze(combined_labels),
-            tf.squeeze(combined_domain), title=title + " - t-SNE")
+            tf.squeeze(combined_domain), title="t-SNE")
         pca_plot = plot_embedding(pca, tf.squeeze(combined_labels),
-            tf.squeeze(combined_domain), title=title + " - PCA")
+            tf.squeeze(combined_domain), title="PCA")
 
         if tsne_plot is not None:
             plots.append(('tsne', tsne_plot))
