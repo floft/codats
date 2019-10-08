@@ -79,11 +79,6 @@ def get_best_valid_accuracy(log_dir, filename="best_valid_accuracy.txt"):
     return None
 
 
-def get_best_target_valid_accuracy(log_dir):
-    """ Best accuracy based on target classifier """
-    return get_best_valid_accuracy(log_dir, "best_target_valid_accuracy.txt")
-
-
 def write_best_valid_accuracy(log_dir, accuracy,
         filename="best_valid_accuracy.txt"):
     """ Write the best validation accuracy to a file """
@@ -91,12 +86,6 @@ def write_best_valid_accuracy(log_dir, accuracy,
 
     with open(filename, "w") as f:
         f.write(str(accuracy))
-
-
-def write_best_target_valid_accuracy(log_dir, accuracy):
-    """ Write best accuracy based on target classifier """
-    return write_best_valid_accuracy(log_dir, accuracy,
-        "best_target_valid_accuracy.txt")
 
 
 def get_finished(log_dir):

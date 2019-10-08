@@ -69,6 +69,8 @@ class FcnModelBase(tf.keras.Model):
     def __init__(self, num_classes, num_domains, **kwargs):
         assert FLAGS.model == "fcn", "currently only support FCN"
         super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.num_domains = num_domains
         self.feature_extractor = tf.keras.Sequential([
             tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
                 use_bias=False),
@@ -88,7 +90,7 @@ class FcnModelBase(tf.keras.Model):
             tf.keras.layers.GlobalAveragePooling1D(),
         ])
         self.task_classifier = tf.keras.Sequential([
-            tf.keras.layers.Dense(num_classes, activation="softmax"),
+            tf.keras.layers.Dense(num_classes),
         ])
         self.domain_classifier = tf.keras.Sequential([
             # Note: alternative is Dense(128, activation="tanh") like used by
@@ -104,7 +106,7 @@ class FcnModelBase(tf.keras.Model):
             tf.keras.layers.Activation("relu"),
             tf.keras.layers.Dropout(0.3),
 
-            tf.keras.layers.Dense(num_domains, "softmax"),
+            tf.keras.layers.Dense(num_domains),
         ])
 
     @property
@@ -124,6 +126,8 @@ class FcnModelBase(tf.keras.Model):
 
     def set_learning_phase(self, training):
         # Manually set the learning phase since we probably aren't using .fit()
+        # but layers like batch norm and dropout still need to know if
+        # training/testing
         if training is True:
             tf.keras.backend.set_learning_phase(1)
         elif training is False:
@@ -177,18 +181,17 @@ class SleepModel(DannModel):
 
 
 class DannSmoothModel(DannModel):
-    def __init__(self, num_classes, num_domains, **kwargs):
+    def __init__(self, *args, num_domain_classifiers, **kwargs):
         # For MDAN Smooth, it's binary classification but we have a separate
         # discriminator for each source-target pair.
-        super().__init__(num_classes, num_domains, **kwargs)
+        super().__init__(*args, **kwargs)
 
-        # MDAN Smooth requires multiple domain classifiers
-        # Note: no need for a target domain classifier, so it's actually
-        # num_domains-1 domain classifiers
+        # MDAN Smooth requires multiple domain classifiers, one for each source
+        # domain. Assumes a single target domain.
         new_domain_classifier = [self.domain_classifier]
 
-        # Start at 2 since we already have one
-        for i in range(2, num_domains):
+        # Start at 1 since we already have one
+        for i in range(1, num_domain_classifiers):
             new_domain_classifier.append(
                 tf.keras.models.clone_model(self.domain_classifier))
 

@@ -339,7 +339,6 @@ class uWaveBase(Dataset):
       - To get all data: days=None, users=None
     (or specify any subset of those users/days)
     """
-    invertible = False
     feature_names = ["accel_x", "accel_y", "accel_z"]
 
     def __init__(self, days, users, num_classes, class_labels, target,
@@ -492,7 +491,6 @@ class SleepBase(Dataset):
       - The RF data is complex, so we'll split the complex 5 features into
         the 5 real and then 5 imaginary components to end up with 10 features.
     """
-    invertible = False
     feature_names = ["real1", "real2", "real3", "real4", "real5",
         "imag1", "imag2", "imag3", "imag4", "imag5"]
 
@@ -594,7 +592,6 @@ class UciHarBase(Dataset):
     Download from:
     https://archive.ics.uci.edu/ml/datasets/Human+Activity+Recognition+Using+Smartphones
     """
-    invertible = False
     feature_names = [
         "body_acc_x", "body_acc_y", "body_acc_z",
         "body_gyro_x", "body_gyro_y", "body_gyro_z",
@@ -714,7 +711,6 @@ class UciHHarBase(Dataset):
     Loads Heterogeneity Human Activity Recognition (HHAR) dataset
     http://archive.ics.uci.edu/ml/datasets/Heterogeneity+Activity+Recognition
     """
-    invertible = False
     feature_names = [
         "acc_x", "acc_y", "acc_z",
         "gyro_x", "gyro_y", "gyro_z",
@@ -836,7 +832,6 @@ class UciHmBase(Dataset):
     Loads sEMG for Basic Hand movements dataset
     http://archive.ics.uci.edu/ml/datasets/sEMG+for+Basic+Hand+movements
     """
-    invertible = False
     feature_names = [
         "ch1", "ch2",
     ]
@@ -969,7 +964,6 @@ class WisdmBase(Dataset):
     http://www.cis.fordham.edu/wisdm/dataset.php#actitracker (note: click
     on Actitracker link on left menu)
     """
-    invertible = False
     feature_names = [
         "acc_x", "acc_y", "acc_z",
     ]
@@ -1133,7 +1127,6 @@ class WisdmBase(Dataset):
 def make_uwave(days=None, users=None, target=False):
     """ Make uWave dataset split on either days or users """
     class uWaveGestures(uWaveBase):
-        invertible = False
         num_classes = 8
         class_labels = list(range(num_classes))
 
@@ -1150,7 +1143,6 @@ def make_uwave(days=None, users=None, target=False):
 def make_sleep(days=None, users=None, target=False):
     """ Make RF sleep dataset split on either days or users """
     class SleepDataset(SleepBase):
-        invertible = False
         num_classes = 6
         class_labels = ["Awake", "N1", "N2", "N3", "Light N2", "REM"]
 

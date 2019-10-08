@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("max_plot_embedding", 100, "Max points to plot in t-SNE and PCA plots (0 = skip these plots)")
+flags.DEFINE_integer("max_plot_embedding", 15, "Max points to plot in t-SNE and PCA plots (0 = skip these plots)")
 
 
 def generate_plots(data_a, data_b, feature_extractor, first_time):
@@ -26,8 +26,8 @@ def generate_plots(data_a, data_b, feature_extractor, first_time):
     generate and return the PCA and t-SNE plots. Optionally, save these to a file
     as well.
 
-    Note: data_a should already be concatenated (and maybe shuffled/interleaved)
-    from all the source domains. It should not be a tuple of lists.
+    Note: data_a should be a tuple of lists (since there may be multiple source
+    domains)
     """
     plots = []
     x_a, y_a, domain_a = data_a
@@ -39,11 +39,26 @@ def generate_plots(data_a, data_b, feature_extractor, first_time):
     # TSNE and PCA
     #
     if feature_extractor is not None and FLAGS.max_plot_embedding > 0 and data_b is not None:
-        emb_x_a = x_a[:FLAGS.max_plot_embedding]
+        # Take a few of the first data from each domain to plot
+        num_source_domains = len(x_a)
+        assert len(y_a) == num_source_domains
+        assert len(domain_a) == num_source_domains
+
+        emb_x_a = []
+        emb_y_a = []
+        emb_d_a = []
+
+        for i in range(num_source_domains):
+            emb_x_a.append(x_a[i][:FLAGS.max_plot_embedding])
+            emb_y_a.append(y_a[i][:FLAGS.max_plot_embedding])
+            emb_d_a.append(domain_a[i][:FLAGS.max_plot_embedding])
+
+        emb_x_a = tf.concat(emb_x_a, axis=0)
+        emb_y_a = tf.concat(emb_y_a, axis=0)
+        emb_d_a = tf.concat(emb_d_a, axis=0)
+
         emb_x_b = x_b[:FLAGS.max_plot_embedding]
-        emb_y_a = y_a[:FLAGS.max_plot_embedding]
         emb_y_b = y_b[:FLAGS.max_plot_embedding]
-        emb_d_a = domain_a[:FLAGS.max_plot_embedding]
         emb_d_b = domain_b[:FLAGS.max_plot_embedding]
 
         # Source then target

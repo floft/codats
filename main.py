@@ -28,7 +28,7 @@ flags.DEFINE_string("dataset", None, "What dataset to use (e.g. \"ucihar\")")
 flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
 flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")
 flags.DEFINE_integer("uid", 0, "A unique ID saved in the log/model folder names to avoid conflicts")
-flags.DEFINE_integer("steps", 80000, "Number of training steps to run")
+flags.DEFINE_integer("steps", 30000, "Number of training steps to run")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps")
@@ -48,7 +48,7 @@ flags.mark_flag_as_required("uid")
 
 def get_directory_names():
     """ Figure out the log and model directory names """
-    prefix = FLAGS.dataset+"-"+FLAGS.uid+"-"+FLAGS.method
+    prefix = FLAGS.dataset+"-"+str(FLAGS.uid)+"-"+FLAGS.method
 
     # Use the number specified on the command line (higher precedence than --debug)
     if FLAGS.debugnum >= 0:
@@ -110,8 +110,8 @@ def main(argv):
         total_steps=FLAGS.steps)
 
     # Checkpoints
-    checkpoint = tf.train.Checkpoint(
-        global_step=global_step, method=method, **method.checkpoint_variables)
+    checkpoint = tf.train.Checkpoint(global_step=global_step,
+        **method.checkpoint_variables)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
     checkpoint_manager.restore_latest()
 
@@ -123,7 +123,7 @@ def main(argv):
     # Start training
     for i in range(int(global_step), FLAGS.steps+1):
         t = time.time()
-        data_sources, data_target = method.get_next_data()
+        data_sources, data_target = method.get_next_train_data()
         method.train_step(data_sources, data_target)
         global_step.assign_add(1)
         t = time.time() - t

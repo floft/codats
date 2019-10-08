@@ -23,7 +23,6 @@ import tensorflow as tf
 from absl import flags
 
 from file_utils import get_best_valid_accuracy, write_best_valid_accuracy, \
-    get_best_target_valid_accuracy, write_best_target_valid_accuracy, \
     get_last_int
 
 FLAGS = flags.FLAGS
@@ -59,13 +58,6 @@ class CheckpointManager:
         if self.best_validation is None:
             self.found = False
             self.best_validation = 0.0
-
-        # Best target
-        if self.target:
-            self.best_target_validation = get_best_target_valid_accuracy(self.log_dir)
-
-            if self.best_target_validation is None:
-                self.best_target_validation = 0.0
 
     def restore_latest(self):
         """ Restore the checkpoint from the latest one """

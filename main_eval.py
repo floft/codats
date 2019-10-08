@@ -192,7 +192,7 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
         global_step=1, total_steps=1)
 
     # Load model from checkpoint
-    checkpoint = tf.train.Checkpoint(method=method, **method.checkpoint_variables)
+    checkpoint = tf.train.Checkpoint(**method.checkpoint_variables)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
 
     if FLAGS.last:

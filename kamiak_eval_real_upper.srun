@@ -79,11 +79,7 @@ if [[ $method == "upper" ]]; then
     method="none"
     source="$target"
     target=""
-    #additional_args+=("--best_source")
 fi
-
-# For DG vs. DA always pass these for being more fair.
-additional_args+=("--best_source")
 
 # Model
 if [[ $method == "vrada" || $method == "rdann" ]]; then

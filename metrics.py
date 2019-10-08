@@ -32,13 +32,12 @@ import time
 import tensorflow as tf
 
 from absl import flags
-from sklearn.utils import shuffle
 
 from plots import generate_plots
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_boolean("best_source", False, "Calculate \"best\" model based on source (vs. target) validation data")
+flags.DEFINE_boolean("best_source", True, "Calculate \"best\" model based on source (vs. target) validation data")
 
 
 class Metrics:
@@ -52,8 +51,8 @@ class Metrics:
         {auc,precision,recall}_{task,target}/{source,target}/{training,validation}
         accuracy_{task,target}_class_{class1name,...}/{source,target}/{training,validation}
         rates_{task,target}_class_{class1name,...}/{TP,FP,TN,FN}/{source,target}/{training,validation}
-    Loss values (number depends on method):
-        loss/loss{0,1,2,...}
+    Loss values (names and number of them varies by method), e.g.:
+        loss/total/{source,target}/{training,validation}
     """
     def __init__(self, log_dir, method, source_datasets, target_dataset,
             target_domain=True):
@@ -218,8 +217,11 @@ class Metrics:
         if not isinstance(losses, list):
             losses = [losses]
 
+        assert len(self.method.loss_names) >= len(losses), \
+            "not enough loss_names defined in method"
+
         for i, loss in enumerate(losses):
-            name = "loss"+str(i)+"/"+domain+"/"+dataset
+            name = "loss/"+self.method.loss_names[i]+"/"+domain+"/"+dataset
 
             if name not in self.losses[dataset]:
                 self.losses[dataset][name] = tf.keras.metrics.Mean(name=name)
@@ -290,7 +292,7 @@ class Metrics:
                 except StopIteration:
                     break
 
-    def _run_batch(self, model, data_a, data_b, dataset):
+    def _run_batch(self, data_a, data_b, dataset):
         """ Run a single batch of A/B data through the model -- data_a and data_b
         should both be a tuple of (x, task_y_true, domain_y_true) """
         if data_a is not None:
@@ -398,19 +400,6 @@ class Metrics:
         else:
             _, data_b = self.method.get_next_batch(None,
                 iter(self.method.target_test_eval_dataset))
-
-        # Concatenate all source domains' data
-        x_a, y_a, domain_a = data_a
-        x_a = tf.concat(x_a, axis=0)
-        y_a = tf.concat(y_a, axis=0)
-        domain_a = tf.concat(domain_a, axis=0)
-
-        # Shuffle (simpler than interleaving) the domains' data since we only
-        # take the top-n of them for the plots, and we want an even
-        # representation. Set random seed though since we want the plots from
-        # one iteration to be comparable to those in the next iteration.
-        x_a, y_a, domain_a = shuffle(x_a, y_a, domain_a, random_state=0)
-        data_a = (x_a, y_a, domain_a)
 
         # We'll only plot the real plots once since they don't change
         step = int(global_step)

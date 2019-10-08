@@ -6,11 +6,12 @@ import tensorflow as tf
 from absl import flags
 
 import models
+import load_datasets
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_enum("model", "fcn", models.names(), "What model to use for the method")
-flags.DEFINE_float("lr", 0.001, "Learning rate for training")
+flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 
 
@@ -23,13 +24,14 @@ class MethodBase:
         self.num_domains = len(source_datasets)
 
         if target_dataset is not None:
-            if isinstance(target_dataset, int):
-                self.num_domains += 1
-            elif isinstance(target_dataset, list):
+            if isinstance(target_dataset, list):
                 self.num_domains += len(target_dataset)
+            elif isinstance(target_dataset, load_datasets.Dataset):
+                self.num_domains += 1
             else:
                 raise NotImplementedError("target_dataset should be either one "
-                    "int or a list")
+                    "load_datasets.Dataset() or a list of them, "
+                    "but is "+str(target_dataset))
 
         # We need to know the num_classes for creating the model
         # We'll just pick the first source since we have to have at least one
@@ -44,6 +46,12 @@ class MethodBase:
         self.create_optimizers()
         self.create_model()
         self.create_losses()
+
+        # Always save the model in the checkpoint
+        self.checkpoint_variables["model"] = self.model
+
+        # Names of the losses returned in compute_losses
+        self.loss_names = ["total"]
 
     def create_iterators(self):
         """ Get the source/target train/eval datasets """
@@ -82,7 +90,8 @@ class MethodBase:
     def get_next_batch(self, source_iterators, target_iterator):
         """ Get next batch of data, same as get_next_train_batch()
         except allows you to pass in your own iterators """
-        data_sources = [next(x) for x in source_iterators]
+        data_sources = [next(x) for x in source_iterators] \
+            if source_iterators is not None else None
         data_target = next(target_iterator) \
             if target_iterator is not None else None
         return self.get_next_data(data_sources, data_target)
@@ -148,6 +157,34 @@ class MethodBase:
         domain_y_true = tf.concat(domain_a, axis=0)
         return x, task_y_true, domain_y_true
 
+    def prepare_data_eval(self, data):
+        """ Prepare the data for the model, e.g. by concatenating all sources
+        together. This is like prepare_data() but use during evaluation. """
+        x, y, domain = data
+
+        assert isinstance(x, list), \
+            "Must pass x=[...] even if only one domain for tf.function consistency"
+        assert isinstance(y, list), \
+            "Must pass y=[...] even if only one domain for tf.function consistency"
+        assert isinstance(domain, list), \
+            "Must pass domain=[...] even if only one domain for tf.function consistency"
+
+        # Concatenate all the data (e.g. if multiple source domains)
+        x = tf.concat(x, axis=0)
+        y = tf.concat(y, axis=0)
+        domain = tf.concat(domain, axis=0)
+
+        return x, y, domain
+
+    def post_data_eval(self, task_y_true, task_y_pred, domain_y_true,
+            domain_y_pred):
+        """ Optionally do something with the data after feeding through the
+        model. Since the model outputs logits, here we actually take the softmax
+        so that during evaluation we have probability distributions. """
+        task_y_pred = tf.nn.softmax(task_y_pred)
+        domain_y_pred = tf.nn.softmax(domain_y_pred)
+        return task_y_true, task_y_pred, domain_y_true, domain_y_pred
+
     def call_model(self, x, **kwargs):
         return self.model(x, **kwargs)
 
@@ -199,21 +236,8 @@ class MethodBase:
 
     @tf.function
     def eval_step_list(self, data):
-        # Don't call prepare_data() since that is for preparing the data for
-        # training, e.g. it gets rid of target labels
-        x, y, domain = data
-
-        assert isinstance(x, list), \
-            "Must pass x=[...] even if only one domain for tf.function consistency"
-        assert isinstance(y, list), \
-            "Must pass y=[...] even if only one domain for tf.function consistency"
-        assert isinstance(domain, list), \
-            "Must pass domain=[...] even if only one domain for tf.function consistency"
-
-        # Concatenate all the data (e.g. if multiple source domains)
-        x = tf.concat(x, axis=0)
-        task_y_true = tf.concat(y, axis=0)
-        domain_y_true = tf.concat(domain, axis=0)
+        """ Override preparation in prepare_data_eval() """
+        x, task_y_true, domain_y_true = self.prepare_data_eval(data)
 
         # Run through model
         task_y_pred, domain_y_pred, fe_output = self.call_model(x, training=False)
@@ -221,6 +245,11 @@ class MethodBase:
         # Calculate losses
         losses = self.compute_losses(task_y_true, domain_y_true,
             task_y_pred, domain_y_pred, fe_output, training=False)
+
+        # Post-process data (e.g. compute softmax from logits)
+        task_y_true, task_y_pred, domain_y_true, domain_y_pred = \
+            self.post_data_eval(task_y_true, task_y_pred, domain_y_true,
+            domain_y_pred)
 
         return task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses
 
@@ -236,10 +265,7 @@ class MethodDann(MethodBase):
         self.global_step = global_step  # should be TF variable
         self.total_steps = total_steps
         super().__init__(source_datasets, target_dataset, *args, **kwargs)
-
-        # TODO remove, just want to check that it's initialized like I think
-        assert "d_opt" in self.checkpoint_variables, \
-            "didn't create domain optimizer?"
+        self.loss_names += ["task", "domain"]
 
     def create_model(self):
         self.model = models.DannModel(self.num_classes, self.num_domains,
@@ -278,7 +304,7 @@ class MethodDann(MethodBase):
 
     def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
-        nontarget = tf.squeeze(tf.not_equal(domain_y_true, 0))
+        nontarget = tf.where(tf.squeeze(tf.not_equal(domain_y_true, 0)))
         task_y_true = tf.gather(task_y_true, nontarget)
         task_y_pred = tf.gather(task_y_pred, nontarget)
 
@@ -309,10 +335,11 @@ class MethodDannGS(MethodDann):
             self.global_step, self.total_steps)
 
     @tf.function
-    def get_next_data(self):
+    def get_next_data(self, data_sources, data_target):
         """ Replace all source domains' domain labels with 1, i.e. group all
         sources together """
-        data_sources, data_target = super().get_next_data()
+        data_sources, data_target = super().get_next_data(
+            data_sources, data_target)
 
         if data_sources is not None:
             x_sources, y_sources, domain_sources = data_sources
@@ -331,8 +358,10 @@ class MethodDannSmooth(MethodDannGS):
     """ MDAN Smooth method based on MethodDannGS since we want binary source = 1,
     target = 0 for the domain labels """
     def create_model(self):
+        num_source_domains = len(self.source_datasets)
         self.model = models.DannSmoothModel(self.num_classes, 2,
-            self.global_step, self.total_steps)
+            self.global_step, self.total_steps,
+            num_domain_classifiers=num_source_domains)
 
     def prepare_data(self, data_sources, data_target):
         """ Prepare a batch of source i with target data to run through each
@@ -356,20 +385,43 @@ class MethodDannSmooth(MethodDannGS):
 
         return x, task_y_true, domain_y_true
 
+    def prepare_data_eval(self, data):
+        """ Don't concatenate elements of the list like in the base class since
+        we want to handle all the source domains separately, to pass to the
+        right domain classifiers.
+
+        Note: during evaluation, target data will be fed through the first
+        domain classifier. Any would work since they're all trained with half
+        (some) source domain and half target domain data. """
+        x, y, domain = data
+
+        assert isinstance(x, list), \
+            "Must pass x=[...] even if only one domain for tf.function consistency"
+        assert isinstance(y, list), \
+            "Must pass y=[...] even if only one domain for tf.function consistency"
+        assert isinstance(domain, list), \
+            "Must pass domain=[...] even if only one domain for tf.function consistency"
+
+        return x, y, domain
+
     def call_model(self, x, **kwargs):
         """ Run each source-target pair through model separately, using the
-        corresponding domain classifier """
+        corresponding domain classifier. """
         task_y_pred = []
         domain_y_pred = []
         fe_output = []
 
-        # For each source domain
-        for i in range(len(self.source_datasets)):
+        # For each source domain (or during evaluation, for the target domain,
+        # which will be a list of size 1 here)
+        assert len(x) <= len(self.source_datasets), \
+            "Too many domains fed to model, should be <= number of source domains"
+
+        for i in range(len(x)):
             i_task_y_pred, i_domain_y_pred, i_fe_output = \
                 self.model(x[i], domain_classifier=i, **kwargs)
             task_y_pred.append(i_task_y_pred)
-            domain_y_pred.append(domain_y_pred)
-            fe_output.append(fe_output)
+            domain_y_pred.append(i_domain_y_pred)
+            fe_output.append(i_fe_output)
 
         return task_y_pred, domain_y_pred, fe_output
 
@@ -384,20 +436,41 @@ class MethodDannSmooth(MethodDannGS):
         task_losses = []
         domain_losses = []
 
-        for i in range(len(self.source_datasets)):
-            task_losses.append(self.task_loss(task_y_true[i], task_y_pred[i]))
+        # For each source domain (or during evaluation, for the target domain,
+        # which will be a list of size 1 here)
+        assert len(task_y_true) <= len(self.source_datasets), \
+            "Too many domains fed to model, should be <= number of source domains"
+
+        for i in range(len(task_y_true)):
+            # For task loss, ignore target data
+            nontarget = tf.where(tf.squeeze(tf.not_equal(domain_y_true[i], 0)))
+            i_task_y_true = tf.gather(task_y_true[i], nontarget)
+            i_task_y_pred = tf.gather(task_y_pred[i], nontarget)
+
+            # Their code does nll_loss(log_softmax(...)) which should be
+            # equivalent to cross entropy
+            task_losses.append(self.task_loss(i_task_y_true, i_task_y_pred))
             domain_losses.append(self.domain_loss(domain_y_true[i], domain_y_pred[i]))
 
-        # The defaults in their code?
-        #gamma = 10.0
-        #mu = 1e-2
-        # But, for now we'll use the DANN learning rate schedule and just
-        # set these to 1 for more direct comparison with DANN
-        gamma = 1
-        mu = 1
+        # Defaults were 10.0 and 1e-2, which appear to do about the same as the
+        # other methods. Seems like setting them to 1 does better though in some
+        # initial tests.
+        gamma = 1.0
+        mu = 1.0
 
         return tf.math.log(tf.reduce_sum(
-            tf.exp(gamma*(task_losses+mu*domain_losses))))/gamma
+            tf.exp(gamma*(task_losses+tf.multiply(mu, domain_losses)))))/gamma
+
+    def post_data_eval(self, task_y_true, task_y_pred, domain_y_true,
+            domain_y_pred):
+        """ After computing the losses, for evaluation we need to concatenate
+        the data from all domains """
+        task_y_true = tf.concat(task_y_true, axis=0)
+        task_y_pred = tf.concat(task_y_pred, axis=0)
+        domain_y_true = tf.concat(domain_y_true, axis=0)
+        domain_y_pred = tf.concat(domain_y_pred, axis=0)
+        return super().post_data_eval(task_y_true, task_y_pred, domain_y_true,
+            domain_y_pred)
 
     def compute_gradients(self, tape, losses):
         """ We have one loss, update everything with it """
@@ -423,7 +496,7 @@ class MethodDannDG(MethodDann):
             self.global_step, self.total_steps)
 
     @tf.function
-    def get_next_data(self):
+    def get_next_data(self, data_sources, data_target):
         """
         Shift down the domain labels so 0 is not source 1 since we don't have a
         target domain.
@@ -431,7 +504,8 @@ class MethodDannDG(MethodDann):
         Note: during evaluation, if target data is used, then the results will
         be wrong since target=0 and source #1=0 for the domain label.
         """
-        data_sources, data_target = super().get_next_data()
+        data_sources, data_target = super().get_next_data(
+            data_sources, data_target)
 
         if data_sources is not None:
             x_sources, y_sources, domain_sources = data_sources
@@ -472,7 +546,7 @@ class MethodSleepDG(MethodDannDG):
 
 
 def make_loss():
-    cce = tf.keras.losses.SparseCategoricalCrossentropy()
+    cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
     def loss(y_true, y_pred):
         return cce(y_true, y_pred)

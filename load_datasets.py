@@ -7,13 +7,13 @@ import tensorflow as tf
 from absl import app
 from absl import flags
 
-from datasets import datasets, inversions
+from datasets import datasets
 from datasets.tfrecord import tfrecord_filename
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("train_batch", 128, "Batch size for training")
-flags.DEFINE_integer("eval_batch", 4096, "Batch size for evaluation")
+flags.DEFINE_integer("train_batch", 32, "Batch size for training")
+flags.DEFINE_integer("eval_batch", 128, "Batch size for evaluation")
 flags.DEFINE_integer("shuffle_buffer", 60000, "Dataset shuffle buffer size")
 flags.DEFINE_integer("prefetch_buffer", 1, "Dataset prefetch buffer size (0 = autotune)")
 flags.DEFINE_boolean("tune_num_parallel_calls", False, "Autotune num_parallel_calls")
@@ -26,7 +26,7 @@ flags.DEFINE_integer("feature_subset", 0, "For testing RNN vs. CNN handling vary
 class Dataset:
     """ Load datasets from tfrecord files """
     def __init__(self, num_classes, class_labels, num_domains,
-            train_filenames, test_filenames, invert_name=None,
+            train_filenames, test_filenames,
             train_batch=None, eval_batch=None,
             shuffle_buffer=None, prefetch_buffer=None,
             eval_shuffle_seed=None, eval_max_examples=None,
@@ -45,7 +45,6 @@ class Dataset:
             "num_classes != len(class_labels)"
 
         # Set parameters
-        self.invert_name = invert_name  # either None or source_name
         self.num_classes = num_classes
         self.class_labels = class_labels
         self.num_domains = num_domains
@@ -56,13 +55,6 @@ class Dataset:
         self.eval_shuffle_seed = eval_shuffle_seed
         self.eval_max_examples = eval_max_examples
         self.tune_num_parallel_calls = tune_num_parallel_calls
-
-        # Check inversions exist
-        if invert_name is not None:
-            assert invert_name in inversions.map_to_source, \
-                "If invertible, must specify map_to_source() in datasets.inversions"
-            assert invert_name in inversions.map_to_target, \
-                "If invertible, must specify map_to_target() in datasets.inversions"
 
         # Set defaults if not specified
         if self.train_batch is None:
@@ -197,7 +189,6 @@ def load(dataset_name, num_domains, test=False, *args, **kwargs):
     # Get dataset information
     num_classes = datasets.datasets[dataset_name].num_classes
     class_labels = datasets.datasets[dataset_name].class_labels
-    invert_name = dataset_name if datasets.datasets[dataset_name].invertible else None
 
     # Get dataset tfrecord filenames
     def _path(filename):
@@ -223,7 +214,7 @@ def load(dataset_name, num_domains, test=False, *args, **kwargs):
     # Create all the train, test, evaluation, ... tf.data.Dataset objects within
     # a Dataset() class that stores them
     dataset = Dataset(num_classes, class_labels, num_domains,
-        train_filenames, test_filenames, invert_name, *args, **kwargs)
+        train_filenames, test_filenames, *args, **kwargs)
 
     return dataset
 

@@ -82,17 +82,13 @@ if [[ $method == "upper" ]]; then
     method="none"
     source="$target"
     target=""
-    #additional_args+=("--best_source")
 fi
-
-# For DG vs. DA always pass these for being more fair.
-additional_args+=("--best_source")
 
 # Training / model options
 steps=30000
 lr=0.0001
 model=fcn
-batch=64
+batch=32
 
 if [[ $method == "vrada" || $method == "rdann" ]]; then
     model="$method"
