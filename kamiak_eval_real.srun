@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-1499
+#SBATCH --array=0-1799
 
 # My computer
 #gpumem=4500
@@ -35,7 +35,7 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("dann_grl" "dann_grl_dg" "sleep_dg" "dann_grl_gs" "none")
+methods=("dann_smooth" "dann_grl" "dann_grl_dg" "sleep_dg" "dann_grl_gs" "none")
 #variants=("best" "last")
 variants=("best")
 # number of adaptation problems = 300

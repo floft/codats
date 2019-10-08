@@ -231,6 +231,10 @@ def load_da(dataset, sources, target, *args, **kwargs):
     Returns:
         [source1_dataset, source2_dataset, ...], target_dataset
     """
+    # Allow target blank meaning None as well
+    if target == "":
+        target = None
+
     # Get proper dataset names
     sources = [dataset+"_"+x for x in sources.split(",")]
 
@@ -250,7 +254,8 @@ def load_da(dataset, sources, target, *args, **kwargs):
     for s in sources:
         assert s in valid_names, "unknown source domain: "+s
 
-    assert target in valid_names, "unknown target domain: "+target
+    assert target is None or target in valid_names, \
+        "unknown target domain: "+target
 
     # Load each source
     source_datasets = []
