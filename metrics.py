@@ -340,7 +340,7 @@ class Metrics:
         self._reset_states(dataset)
 
         if self.target_domain:
-            target_datasets = self.target_train_eval_dataset
+            target_datasets = self.method.target_train_eval_dataset
         else:
             target_datasets = None
 

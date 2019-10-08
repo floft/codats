@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Check how similar two domain adaptation problems are using dynamic time warping
+Check how similar two domain adaptation problems
+
+TODO This file is out of date. It needs to be re-aligned with how things are
+done in main_eval.py.
 """
 import os
 import ot
@@ -14,6 +17,7 @@ from scipy.spatial.distance import cdist
 from sklearn.model_selection import train_test_split
 
 import models
+import methods
 import load_datasets
 
 from models import DomainAdaptationModel
@@ -21,16 +25,6 @@ from checkpoints import CheckpointManager
 from gpu_memory import set_gpu_memory
 
 FLAGS = flags.FLAGS
-
-# Copy from main.py
-methods = [
-    # Domain adaptation
-    "none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada",
-    "dann_shu", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada",
-
-    # Domain generalization
-    "dann_grl_dg", "sleep_dg",
-]
 
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
@@ -54,7 +48,7 @@ def get_model_args():
         "name should be one of source-target-model-method{,-num}"
 
     source, target, model_name, method_name = items[:4]
-    assert method_name in methods, "unknown method "+method_name
+    assert method_name in methods.names(), "unknown method "+method_name
 
     model_dir = FLAGS.modeldir
     assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)

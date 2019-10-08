@@ -83,7 +83,7 @@ def get_models_to_evaluate():
         target = str(config["target"])
         model_name = config["model"]
         method_name = config["method"]
-        assert method_name in methods, "Unknown method "+method_name
+        assert method_name in methods.names(), "Unknown method "+method_name
 
         model_dir = os.path.join(FLAGS.modeldir, log_dir.stem)
         assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)
