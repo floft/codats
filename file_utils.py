@@ -152,7 +152,8 @@ def get_config(log_dir):
     filename = os.path.join(log_dir, "config.yaml")
 
     with open(filename) as f:
-        config = yaml.load(f)
+        # See: https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
+        config = yaml.load(f, Loader=yaml.SafeLoader)
 
     return config
 
