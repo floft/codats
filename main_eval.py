@@ -80,7 +80,14 @@ def get_models_to_evaluate():
         dataset_name = config["dataset"]
         # We want the string versions of the sources and target, not integers
         sources = ",".join([str(x) for x in config["sources"]])
-        target = str(config["target"])
+        target = config["target"]
+
+        # Convert from int to string, but not if it's None
+        if target is None:
+            target = ""
+        else:
+            target = str(target)
+
         model_name = config["model"]
         method_name = config["method"]
         assert method_name in methods.names(), "Unknown method "+method_name
