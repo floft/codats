@@ -17,7 +17,7 @@ This requires the following packages:
 
     pip3 install --user --upgrade pip
     pip3 install --user numpy cython
-    pip3 install --user tensorflow-gpu pillow lxml jupyter matplotlib pandas sklearn scipy tensorboard rarfile POT pyyaml
+    pip3 install --user tensorflow-gpu pillow lxml jupyter matplotlib pandas sklearn scipy tensorboard rarfile POT tqdm pyyaml
 
 ## Training
 
