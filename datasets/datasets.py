@@ -339,9 +339,11 @@ class uWaveBase(Dataset):
       - To get all data: days=None, users=None
     (or specify any subset of those users/days)
     """
+    num_classes = 8
+    class_labels = list(range(num_classes))
     feature_names = ["accel_x", "accel_y", "accel_z"]
 
-    def __init__(self, days, users, num_classes, class_labels, target,
+    def __init__(self, days, users, num_classes, class_labels,
             *args, **kwargs):
         self.days = days
         self.users = users
@@ -491,15 +493,17 @@ class SleepBase(Dataset):
       - The RF data is complex, so we'll split the complex 5 features into
         the 5 real and then 5 imaginary components to end up with 10 features.
     """
+    num_classes = 6
+    class_labels = ["Awake", "N1", "N2", "N3", "Light N2", "REM"]
     feature_names = ["real1", "real2", "real3", "real4", "real5",
         "imag1", "imag2", "imag3", "imag4", "imag5"]
 
-    def __init__(self, days, users, num_classes, class_labels, target,
+    def __init__(self, days, users, num_classes, class_labels,
             *args, **kwargs):
         self.days = days
         self.users = users
-        super().__init__(num_classes, class_labels, None, None,
-            SleepBase.feature_names, *args, **kwargs)
+        super().__init__(SleepBase.num_classes, SleepBase.class_labels,
+            None, None, SleepBase.feature_names, *args, **kwargs)
 
     def download(self):
         (dataset_fp,) = self.download_dataset(["uWaveGestureLibrary.zip"],
@@ -603,7 +607,7 @@ class UciHarBase(Dataset):
         "sitting", "standing", "laying",
     ]
 
-    def __init__(self, users, target, *args, **kwargs):
+    def __init__(self, users, *args, **kwargs):
         self.users = users
         super().__init__(UciHarBase.num_classes, UciHarBase.class_labels,
             None, None, UciHarBase.feature_names, *args, **kwargs)
@@ -722,7 +726,7 @@ class UciHHarBase(Dataset):
     window_size = 128  # to be relatively similar to HAR
     window_overlap = False
 
-    def __init__(self, users, target, *args, **kwargs):
+    def __init__(self, users, *args, **kwargs):
         self.users = users
         super().__init__(UciHHarBase.num_classes, UciHHarBase.class_labels,
             UciHHarBase.window_size, UciHHarBase.window_overlap,
@@ -842,7 +846,7 @@ class UciHmBase(Dataset):
     window_size = 500  # 500 Hz, so 1 second
     window_overlap = False  # Note: using np.hsplit, so this has no effect
 
-    def __init__(self, users, target, split=True, pad=True, subsample=True,
+    def __init__(self, users, split=True, pad=True, subsample=True,
             *args, **kwargs):
         self.split = split
         # Only apply if split=False
@@ -960,28 +964,26 @@ class UciHmBase(Dataset):
 
 class WisdmBase(Dataset):
     """
-    Loads Actitracker dataset
-    http://www.cis.fordham.edu/wisdm/dataset.php#actitracker (note: click
-    on Actitracker link on left menu)
+    Base class for the WISDM datasets
+    http://www.cis.fordham.edu/wisdm/dataset.php
     """
     feature_names = [
         "acc_x", "acc_y", "acc_z",
     ]
-    num_classes = 6
-    class_labels = [
-        "Walking", "Jogging", "Stairs", "Sitting", "Standing", "LyingDown",
-    ]
     window_size = 128  # similar to HAR
     window_overlap = False
 
-    def __init__(self, users, target, *args, **kwargs):
+    def __init__(self, users, num_classes, class_labels, *args, **kwargs):
         self.users = users
-        super().__init__(WisdmBase.num_classes, WisdmBase.class_labels,
+        super().__init__(num_classes, class_labels,
             WisdmBase.window_size, WisdmBase.window_overlap,
             WisdmBase.feature_names, *args, **kwargs)
+        # Override and set these
+        #self.filename_prefix = ""
+        #self.download_filename = ""
 
     def download(self):
-        (dataset_fp,) = self.download_dataset(["WISDM_at_latest.tar.gz"],
+        (dataset_fp,) = self.download_dataset([self.download_filename],
             "http://www.cis.fordham.edu/wisdm/includes/datasets/latest/")
         return dataset_fp
 
@@ -996,11 +998,16 @@ class WisdmBase(Dataset):
 
             # For some reason there's blank rows in the data, e.g.
             # a bunch of lines like "577,,;"
-            if len(parts) != 6:
+            # Though, allow 7 since sometimes there's an extra comma at the end:
+            # "21,Jogging,117687701514000,3.17,9,1.23,;"
+            if len(parts) != 6 and len(parts) != 7:
                 continue
 
-            user, activity, timestamp, x, y, z = parts
-            user = int(user)
+            # Skip if x, y, or z is blank
+            if parts[3] == "" or parts[4] == "" or parts[5] == "":
+                continue
+
+            user = int(parts[0])
 
             # Skip users that may not have enough data
             if user in user_list:
@@ -1008,10 +1015,10 @@ class WisdmBase(Dataset):
 
                 # Skip users we don't care about
                 if user in self.users:
-                    x = float(x)
-                    y = float(y)
-                    z = float(z)
-                    label = self.class_labels.index(activity)  # name --> number
+                    x = float(parts[3])
+                    y = float(parts[4])
+                    z = float(parts[5])
+                    label = self.class_labels.index(parts[1])  # name --> number
 
                     data_x.append((x, y, z))
                     data_label.append(label)
@@ -1030,6 +1037,15 @@ class WisdmBase(Dataset):
 
         for line in lines:
             parts = line.strip().split(",")
+
+            # There's some lines without the right number of parts, e.g. blank
+            if len(parts) != 6 and len(parts) != 7:
+                continue
+
+            # Skip if x, y, or z is blank
+            if parts[3] == "" or parts[4] == "" or parts[5] == "":
+                continue
+
             uid = int(parts[0])
 
             # There are duplicates in the file for some reason (so, either the
@@ -1063,8 +1079,7 @@ class WisdmBase(Dataset):
 
     def get_lines(self, archive, name):
         """ Open and load file in tar file, get lines from file """
-        f = archive.extractfile(
-            "home/share/data/public_sets/WISDM_at_v2.0/WISDM_at_v2.0_"+name)
+        f = archive.extractfile(self.filename_prefix+name)
 
         if f is None:
             return None
@@ -1072,9 +1087,7 @@ class WisdmBase(Dataset):
         return f.read().decode("utf-8").strip().split("\n")
 
     def load_file(self, filename):
-        """
-        Load desired participants' data
-        """
+        """ Load desired participants' data """
         # Get data
         with tarfile.open(filename, "r") as archive:
             raw_data = self.get_lines(archive, "raw.txt")
@@ -1084,6 +1097,8 @@ class WisdmBase(Dataset):
         # have very little data, so skip them (e.g. one person only has 25
         # samples, which is only 0.5 seconds of data -- not useful).
         user_list = self.read_user_list(raw_data)
+
+        #print("Number of users:", len(user_list))
 
         # For now just use phone data since the positions may differ too much
         all_data, all_labels, all_subjects = self.read_data(raw_data, user_list)
@@ -1124,207 +1139,127 @@ class WisdmBase(Dataset):
         return train_data, train_labels, test_data, test_labels
 
 
-def make_uwave(days=None, users=None, target=False):
-    """ Make uWave dataset split on either days or users """
-    class uWaveGestures(uWaveBase):
-        num_classes = 8
-        class_labels = list(range(num_classes))
+class WisdmAtBase(WisdmBase):
+    """
+    Loads Actitracker dataset
+    http://www.cis.fordham.edu/wisdm/dataset.php#actitracker (note: click
+    on Actitracker link on left menu)
+    """
+    num_classes = 6
+    class_labels = [
+        "Walking", "Jogging", "Stairs", "Sitting", "Standing", "LyingDown",
+    ]
 
-        def __init__(self, *args, **kwargs):
-            super().__init__(
-                days, users,
-                uWaveGestures.num_classes,
-                uWaveGestures.class_labels,
-                target, *args, **kwargs)
-
-    return uWaveGestures
-
-
-def make_sleep(days=None, users=None, target=False):
-    """ Make RF sleep dataset split on either days or users """
-    class SleepDataset(SleepBase):
-        num_classes = 6
-        class_labels = ["Awake", "N1", "N2", "N3", "Light N2", "REM"]
-
-        def __init__(self, *args, **kwargs):
-            super().__init__(
-                days, users,
-                SleepDataset.num_classes,
-                SleepDataset.class_labels,
-                target, *args, **kwargs)
-
-    return SleepDataset
+    def __init__(self, users, *args, **kwargs):
+        self.filename_prefix = "home/share/data/public_sets/WISDM_at_v2.0/WISDM_at_v2.0_"
+        self.download_filename = "WISDM_at_latest.tar.gz"
+        super().__init__(users,
+            WisdmAtBase.num_classes, WisdmAtBase.class_labels, *args, **kwargs)
 
 
-def make_ucihar(users=None, target=False):
-    """ Make UCI HAR dataset split on users """
-    class UciHarDataset(UciHarBase):
-        def __init__(self, *args, **kwargs):
-            super().__init__(users, target, *args, **kwargs)
+class WisdmArBase(WisdmBase):
+    """
+    Loads WISDM Activity prediction/recognition dataset
+    http://www.cis.fordham.edu/wisdm/dataset.php
+    """
+    num_classes = 6
+    class_labels = [
+        "Walking", "Jogging", "Sitting", "Standing", "Upstairs", "Downstairs",
+    ]
 
-    return UciHarDataset
-
-
-def make_ucihhar(users=None, target=False):
-    """ Make UCI HHAR dataset split on users """
-    class UciHHarDataset(UciHHarBase):
-        def __init__(self, *args, **kwargs):
-            super().__init__(users, target, *args, **kwargs)
-
-    return UciHHarDataset
-
-
-def make_ucihm(users=None, target=False):
-    """ Make UCI HM dataset split on users """
-    # More examples but each is only 1 second
-    split = True
-
-    class UciHmDataset(UciHmBase):
-        def __init__(self, *args, **kwargs):
-            super().__init__(users, target, split, *args, **kwargs)
-
-    return UciHmDataset
+    def __init__(self, users, *args, **kwargs):
+        self.filename_prefix = "WISDM_ar_v1.1/WISDM_ar_v1.1_"
+        self.download_filename = "WISDM_ar_latest.tar.gz"
+        super().__init__(users,
+            WisdmArBase.num_classes, WisdmArBase.class_labels, *args, **kwargs)
 
 
-def make_ucihm_full(users=None, target=False):
-    """ Make UCI HM dataset split on users """
-    # Fewer examples, but each is the full hand motion
-    split = False
-
-    class UciHmDataset(UciHmBase):
-        def __init__(self, *args, **kwargs):
-            super().__init__(users, target, split, *args, **kwargs)
-
-    return UciHmDataset
+def zero_to_n(n):
+    """ Return [0, 1, 2, ..., n] """
+    return list(range(0, n+1))
 
 
-def make_wisdm(users=None, target=False):
-    """ Make WISDM Actitracker dataset split on users """
-    class WisdmDataset(WisdmBase):
-        def __init__(self, *args, **kwargs):
-            super().__init__(users, target, *args, **kwargs)
-
-    return WisdmDataset
+def one_to_n(n):
+    """ Return [1, 2, 3, ..., n] """
+    return list(range(1, n+1))
 
 
-# List of datasets, target separate from (multi-)source ones since the target
-# always has domain=0 whereas the others have domain=1,2,... for each source
-# See pick_multi_source.py
-datasets = {
-    "ucihar_1": make_ucihar(users=[1]),
-    "ucihar_2": make_ucihar(users=[2]),
-    "ucihar_3": make_ucihar(users=[3]),
-    "ucihar_4": make_ucihar(users=[4]),
-    "ucihar_5": make_ucihar(users=[5]),
-    "ucihar_6": make_ucihar(users=[6]),
-    "ucihar_7": make_ucihar(users=[7]),
-    "ucihar_8": make_ucihar(users=[8]),
-    "ucihar_9": make_ucihar(users=[9]),
-    "ucihar_10": make_ucihar(users=[10]),
-    "ucihar_11": make_ucihar(users=[11]),
-    "ucihar_12": make_ucihar(users=[12]),
-    "ucihar_13": make_ucihar(users=[13]),
-    "ucihar_14": make_ucihar(users=[14]),
-    "ucihar_15": make_ucihar(users=[15]),
-    "ucihar_16": make_ucihar(users=[16]),
-    "ucihar_17": make_ucihar(users=[17]),
-    "ucihar_18": make_ucihar(users=[18]),
-    "ucihar_19": make_ucihar(users=[19]),
-    "ucihar_20": make_ucihar(users=[20]),
-    "ucihar_21": make_ucihar(users=[21]),
-    "ucihar_22": make_ucihar(users=[22]),
-    "ucihar_23": make_ucihar(users=[23]),
-    "ucihar_24": make_ucihar(users=[24]),
-    "ucihar_25": make_ucihar(users=[25]),
-    "ucihar_26": make_ucihar(users=[26]),
-    "ucihar_27": make_ucihar(users=[27]),
-    "ucihar_28": make_ucihar(users=[28]),
-    "ucihar_29": make_ucihar(users=[29]),
-    "ucihar_30": make_ucihar(users=[30]),
-    "uwave_1": make_uwave(users=[1]),
-    "uwave_2": make_uwave(users=[2]),
-    "uwave_3": make_uwave(users=[3]),
-    "uwave_4": make_uwave(users=[4]),
-    "uwave_5": make_uwave(users=[5]),
-    "uwave_6": make_uwave(users=[6]),
-    "uwave_7": make_uwave(users=[7]),
-    "uwave_8": make_uwave(users=[8]),
-    "ucihhar_0": make_ucihhar(users=[0]),
-    "ucihhar_1": make_ucihhar(users=[1]),
-    "ucihhar_2": make_ucihhar(users=[2]),
-    "ucihhar_3": make_ucihhar(users=[3]),
-    "ucihhar_4": make_ucihhar(users=[4]),
-    "ucihhar_5": make_ucihhar(users=[5]),
-    "ucihhar_6": make_ucihhar(users=[6]),
-    "ucihhar_7": make_ucihhar(users=[7]),
-    "ucihhar_8": make_ucihhar(users=[8]),
-    "wisdm_0": make_wisdm(users=[0]),
-    "wisdm_1": make_wisdm(users=[1]),
-    "wisdm_2": make_wisdm(users=[2]),
-    "wisdm_3": make_wisdm(users=[3]),
-    "wisdm_4": make_wisdm(users=[4]),
-    "wisdm_5": make_wisdm(users=[5]),
-    "wisdm_6": make_wisdm(users=[6]),
-    "wisdm_7": make_wisdm(users=[7]),
-    "wisdm_8": make_wisdm(users=[8]),
-    "wisdm_9": make_wisdm(users=[9]),
-    "wisdm_10": make_wisdm(users=[10]),
-    "wisdm_11": make_wisdm(users=[11]),
-    "wisdm_12": make_wisdm(users=[12]),
-    "wisdm_13": make_wisdm(users=[13]),
-    "wisdm_14": make_wisdm(users=[14]),
-    "wisdm_15": make_wisdm(users=[15]),
-    "wisdm_16": make_wisdm(users=[16]),
-    "wisdm_17": make_wisdm(users=[17]),
-    "wisdm_18": make_wisdm(users=[18]),
-    "wisdm_19": make_wisdm(users=[19]),
-    "wisdm_20": make_wisdm(users=[20]),
-    "wisdm_21": make_wisdm(users=[21]),
-    "wisdm_22": make_wisdm(users=[22]),
-    "wisdm_23": make_wisdm(users=[23]),
-    "wisdm_24": make_wisdm(users=[24]),
-    "wisdm_25": make_wisdm(users=[25]),
-    "wisdm_26": make_wisdm(users=[26]),
-    "wisdm_27": make_wisdm(users=[27]),
-    "wisdm_28": make_wisdm(users=[28]),
-    "wisdm_29": make_wisdm(users=[29]),
-    "wisdm_30": make_wisdm(users=[30]),
-    "wisdm_31": make_wisdm(users=[31]),
-    "wisdm_32": make_wisdm(users=[32]),
-    "wisdm_33": make_wisdm(users=[33]),
-    "wisdm_34": make_wisdm(users=[34]),
-    "wisdm_35": make_wisdm(users=[35]),
-    "wisdm_36": make_wisdm(users=[36]),
-    "wisdm_37": make_wisdm(users=[37]),
-    "wisdm_38": make_wisdm(users=[38]),
-    "wisdm_39": make_wisdm(users=[39]),
-    "wisdm_40": make_wisdm(users=[40]),
-    "wisdm_41": make_wisdm(users=[41]),
-    "wisdm_42": make_wisdm(users=[42]),
-    "wisdm_43": make_wisdm(users=[43]),
-    "wisdm_44": make_wisdm(users=[44]),
-    "wisdm_45": make_wisdm(users=[45]),
-    "wisdm_46": make_wisdm(users=[46]),
-    "wisdm_47": make_wisdm(users=[47]),
-    "wisdm_48": make_wisdm(users=[48]),
-    "wisdm_49": make_wisdm(users=[49]),
-    "wisdm_50": make_wisdm(users=[50]),
+# Class names to generate datasets
+dataset_name_to_class = {
+    "uwave": uWaveBase,
+    "sleep": SleepBase,
+    "ucihar": UciHarBase,
+    "ucihhar": UciHHarBase,
+    "ucihm": UciHmBase,
+    "wisdm_at": WisdmAtBase,
+    "wisdm_ar": WisdmArBase,
+}
+
+# List of which users are available for each dataset
+dataset_users = {
+    "ucihar": one_to_n(30),  # 30 people
+    "uwave": one_to_n(8),  # 8 people
+    "ucihhar": zero_to_n(8),  # 9 people
+    "wisdm_at": zero_to_n(50),  # 51 people
+    "wisdm_ar": zero_to_n(32),  # 33 people
+
+    #"sleep": zero_to_n(25),  # 26 people
+    #"ucihm": zero_to_n(5),  # 6 people
+    #"ucihm_full": zero_to_n(5),  # 6 people
 }
 
 
 # Get datasets
-def load(name, *args, **kwargs):
+def load(dataset_name_to_load, *args, **kwargs):
     """ Load a dataset based on the name (must be one of datasets.names()) """
-    assert name in datasets.keys(), "Name specified not in datasets.names()"
-    return datasets[name](*args, **kwargs)
+    dataset_object = None
+
+    # Go through list of valid datasets, create the one this matches
+    for name, users in dataset_users.items():
+        for user in users:
+            dataset_name = name+"_"+str(user)
+
+            if dataset_name_to_load == dataset_name:
+                dataset_object = dataset_name_to_class[name](users=[user],
+                    *args, **kwargs)
+                break
+
+    if dataset_object is None:
+        raise NotImplementedError("unknown dataset "+dataset_name_to_load)
+
+    return dataset_object
 
 
-# Get names
+# Get attributes: num_classes, class_labels (required in load_datasets.py)
+def attributes(dataset_name_to_load):
+    """ Get num_classes, class_labels for dataset (must be one of datasets.names()) """
+    num_classes = None
+    class_labels = None
+
+    # Go through list of valid datasets, load attributes of the one this matches
+    for name, users in dataset_users.items():
+        for user in users:
+            dataset_name = name+"_"+str(user)
+
+            if dataset_name_to_load == dataset_name:
+                num_classes = dataset_name_to_class[name].num_classes
+                class_labels = dataset_name_to_class[name].class_labels
+                break
+
+    return num_classes, class_labels
+
+
+# List of all valid dataset names
 def names():
-    """
-    Returns list of all the available datasets to load with datasets.load(name)
-    """
-    return list(datasets.keys())
+    """ Returns list of all the available datasets to load with
+    datasets.load(name) """
+    datasets = []
+
+    for name, users in dataset_users.items():
+        for user in users:
+            datasets.append(name+"_"+str(user))
+
+    return datasets
 
 
 def main(argv):

@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-19
+#SBATCH --array=0-24
 
 # My computer
 #gpumem=4500
@@ -38,11 +38,11 @@ model=fcn
 methods=("upper")
 #variants=("best" "last")
 variants=("best")
-# number of adaptation problems = 20
-uids=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19)
-datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "wisdm" "wisdm" "wisdm" "wisdm" "wisdm")
-sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
-targets=("1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "1" "2" "3" "4" "5" "0" "1" "2" "3" "4")
+# number of adaptation problems = 25
+uids=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24)
+datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "0" "1" "2" "3" "4")
 
 # Make sure we're using the right number
 correct_min=0
@@ -102,7 +102,7 @@ echo "$dataset_name $source --> $target" >> "$out"
 cd "$remotedir"
 mkdir -p results
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.7.4
+module load cuda/10.0.130 cudnn/7.6.4.38_cuda10.0 python3/3.7.4
 { python3 main_eval.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
     --jobs=1 --gpus=1 --gpumem="$gpumem" \

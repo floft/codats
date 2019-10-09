@@ -183,12 +183,11 @@ def load(dataset_name, num_domains, test=False, *args, **kwargs):
     the "test" data (for use during training and hyperparameter tuning).
     """
     # Sanity checks
-    assert dataset_name in datasets.datasets, \
-        dataset_name + " not a supported dataset, only "+str(datasets.datasets)
+    assert dataset_name in datasets.names(), \
+        dataset_name + " not a supported dataset"
 
     # Get dataset information
-    num_classes = datasets.datasets[dataset_name].num_classes
-    class_labels = datasets.datasets[dataset_name].class_labels
+    num_classes, class_labels = datasets.attributes(dataset_name)
 
     # Get dataset tfrecord filenames
     def _path(filename):

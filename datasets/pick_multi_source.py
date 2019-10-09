@@ -7,15 +7,7 @@ the target user) 3 different times (so we can get mean +/- stdev).
 """
 import random
 
-
-def zero_to_n(n):
-    """ Return [0, 1, 2, ..., n] """
-    return list(range(0, n+1))
-
-
-def one_to_n(n):
-    """ Return [1, 2, 3, ..., n] """
-    return list(range(1, n+1))
+from datasets import dataset_users
 
 
 def other_users(users, skip_user):
@@ -94,37 +86,15 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
 
 
 if __name__ == "__main__":
-    # List of datasets and users in each
-    datasets = {
-        "ucihar": one_to_n(30),
-        "uwave": one_to_n(8),
-        "ucihhar": zero_to_n(8),
-        "wisdm": zero_to_n(50),
-
-        #"sleep": zero_to_n(25),
-        #"ucihm": zero_to_n(5),
-        #"ucihm_full": zero_to_n(5),
-    }
-
-    # Datasets for all users
-    for_tfrecords = []
-    for_datasets = []
-
-    for name, users in datasets.items():
-        for user in users:
-            dataset_name = name+"_"+str(user)
-            for_tfrecords.append("\"" + dataset_name + "\",")
-            for_datasets.append("\"" + dataset_name + "\": make_" + name
-                + "(users=[" + str(user) + "]),")
-
     # Sources-target pairs for training
     pairs = []
     uids = []
 
-    for name, users in datasets.items():
+    # Note: "dataset_users" is set in datasets.py
+    for name, users in dataset_users.items():
         # Since sources-target aren't stored in filename anymore (too long), we
         # would run into folder name conflicts if we didn't append a unique ID
-        # to each soruces-target pair
+        # to each sources-target pair
         uid = 0
 
         # For each value of n, from 1 (single-source domain adaptation) up to
@@ -149,16 +119,6 @@ if __name__ == "__main__":
             pairs += curr_pairs
 
     # Print
-    print("For generate_tfrecords.py:")
-    for r in for_tfrecords:
-        print("        "+r)
-    print()
-
-    print("For datasets.py:")
-    for r in for_datasets:
-        print("    "+r)
-    print()
-
     print("For kamiak_{train,eval}_real.srun:")
     dataset_names = []
     sources = []

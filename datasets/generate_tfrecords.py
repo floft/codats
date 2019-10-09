@@ -17,8 +17,6 @@ from sklearn.model_selection import train_test_split
 
 import datasets
 
-from datasets import calc_normalization, apply_normalization
-
 # Hack to import from ../pool.py
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from pool import run_job_pool
@@ -74,6 +72,18 @@ def valid_split(data, labels, seed=None, validation_size=1000):
 
 def save_dataset(dataset_name, seed=0):
     """ Save single dataset """
+    train_filename = tfrecord_filename(dataset_name, "train")
+    valid_filename = tfrecord_filename(dataset_name, "valid")
+    test_filename = tfrecord_filename(dataset_name, "test")
+
+    # Skip if they already exist
+    if os.path.exists(train_filename) \
+            and os.path.exists(valid_filename) \
+            and os.path.exists(test_filename):
+        #print("Skipping:", train_filename, valid_filename, test_filename,
+        #    "already exist")
+        return
+
     print("Saving dataset", dataset_name)
     dataset = datasets.load(dataset_name)
 
@@ -89,123 +99,24 @@ def save_dataset(dataset_name, seed=0):
 
     # Calculate normalization only on the training data
     if FLAGS.normalize != "none" and not already_normalized:
-        normalization = calc_normalization(train_data, FLAGS.normalize)
+        normalization = datasets.calc_normalization(train_data, FLAGS.normalize)
 
         # Apply the normalization to the training, validation, and testing data
-        train_data = apply_normalization(train_data, normalization)
-        valid_data = apply_normalization(valid_data, normalization)
-        test_data = apply_normalization(dataset.test_data, normalization)
+        train_data = datasets.apply_normalization(train_data, normalization)
+        valid_data = datasets.apply_normalization(valid_data, normalization)
+        test_data = datasets.apply_normalization(dataset.test_data, normalization)
     else:
         test_data = dataset.test_data
 
     # Saving
-    write(tfrecord_filename(dataset_name, "train"), train_data, train_labels)
-    write(tfrecord_filename(dataset_name, "valid"), valid_data, valid_labels)
-    write(tfrecord_filename(dataset_name, "test"), test_data, dataset.test_labels)
+    write(train_filename, train_data, train_labels)
+    write(valid_filename, valid_data, valid_labels)
+    write(test_filename, test_data, dataset.test_labels)
 
 
 def main(argv):
-    # See pick_multi_source.py
-    adaptation_problems = [
-        "ucihar_1",
-        "ucihar_2",
-        "ucihar_3",
-        "ucihar_4",
-        "ucihar_5",
-        "ucihar_6",
-        "ucihar_7",
-        "ucihar_8",
-        "ucihar_9",
-        "ucihar_10",
-        "ucihar_11",
-        "ucihar_12",
-        "ucihar_13",
-        "ucihar_14",
-        "ucihar_15",
-        "ucihar_16",
-        "ucihar_17",
-        "ucihar_18",
-        "ucihar_19",
-        "ucihar_20",
-        "ucihar_21",
-        "ucihar_22",
-        "ucihar_23",
-        "ucihar_24",
-        "ucihar_25",
-        "ucihar_26",
-        "ucihar_27",
-        "ucihar_28",
-        "ucihar_29",
-        "ucihar_30",
-        "uwave_1",
-        "uwave_2",
-        "uwave_3",
-        "uwave_4",
-        "uwave_5",
-        "uwave_6",
-        "uwave_7",
-        "uwave_8",
-        "ucihhar_0",
-        "ucihhar_1",
-        "ucihhar_2",
-        "ucihhar_3",
-        "ucihhar_4",
-        "ucihhar_5",
-        "ucihhar_6",
-        "ucihhar_7",
-        "ucihhar_8",
-        "wisdm_0",
-        "wisdm_1",
-        "wisdm_2",
-        "wisdm_3",
-        "wisdm_4",
-        "wisdm_5",
-        "wisdm_6",
-        "wisdm_7",
-        "wisdm_8",
-        "wisdm_9",
-        "wisdm_10",
-        "wisdm_11",
-        "wisdm_12",
-        "wisdm_13",
-        "wisdm_14",
-        "wisdm_15",
-        "wisdm_16",
-        "wisdm_17",
-        "wisdm_18",
-        "wisdm_19",
-        "wisdm_20",
-        "wisdm_21",
-        "wisdm_22",
-        "wisdm_23",
-        "wisdm_24",
-        "wisdm_25",
-        "wisdm_26",
-        "wisdm_27",
-        "wisdm_28",
-        "wisdm_29",
-        "wisdm_30",
-        "wisdm_31",
-        "wisdm_32",
-        "wisdm_33",
-        "wisdm_34",
-        "wisdm_35",
-        "wisdm_36",
-        "wisdm_37",
-        "wisdm_38",
-        "wisdm_39",
-        "wisdm_40",
-        "wisdm_41",
-        "wisdm_42",
-        "wisdm_43",
-        "wisdm_44",
-        "wisdm_45",
-        "wisdm_46",
-        "wisdm_47",
-        "wisdm_48",
-        "wisdm_49",
-        "wisdm_50",
-    ]
+    # Get all possible datasets we can generate
+    adaptation_problems = datasets.names()
 
     # Save tfrecord files for each of the adaptation problems
     if FLAGS.parallel:
