@@ -1,6 +1,7 @@
 """
 Methods
 """
+import numpy as np
 import tensorflow as tf
 
 from absl import flags
@@ -490,6 +491,10 @@ class MethodDannDG(MethodDann):
     - compute_losses: don't throw out domain 0 data since domain 0 is no longer
       the target
     """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.num_source_domains = len(self.source_datasets)
+
     def create_model(self):
         num_source_domains = len(self.source_datasets)
         self.model = models.DannModel(self.num_classes, num_source_domains,
@@ -545,8 +550,119 @@ class MethodSleepDG(MethodDannDG):
             self.global_step, self.total_steps)
 
 
-def make_loss():
-    cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+class MethodAflacDG(MethodDannDG):
+    """ AFLAC uses KL divergence rather than GRL
+
+    Domain classifier's output probabilities should match P(d|y) for each
+    known label y. For example, if an example in the dataset is y=0 then
+    the domain classifier should output the probability of being in each domain
+    such that it matches the probability of being in that domain out of the
+    examples that have that label in the source domain training data (i.e.
+    P(d|y)). At least, that's how I understand it.
+
+    Based on:
+    https://github.com/akuzeee/AFLAC/blob/master/learner.py
+    https://github.com/akuzeee/AFLAC/blob/master/DAN.py
+    https://github.com/akuzeee/AFLAC/blob/master/AFLAC.py
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The 3rd from MethodDann is now "KL" not "domain"
+        self.loss_names[2] = "kl"
+        # Needed for computing the loss
+        self.mle_for_p_d_given_y()
+
+    def mle_for_p_d_given_y(self):
+        """ Compute P(d|y)
+        https://github.com/akuzeee/AFLAC/blob/master/AFLAC.py#L14 """
+        # Get lists of all labels and domains so we can compute how many there
+        # are of each
+        ys = []
+        ds = []
+
+        # The domain is 0 for source 0, 1 for source 1, etc.
+        # Note: we use the "eval" train dataset since it doesn't repeat infinitely
+        for d, dataset in enumerate(self.source_train_eval_datasets):
+            for _, y in dataset:
+                ys.append(y)
+                ds.append(tf.ones_like(y)*d)
+
+        # Fix Tensorflow bug / problem: expand, transpose, concat, then squeeze
+        # Expected concatenating dimensions in the range [0, 0)
+        ys = [tf.transpose(tf.expand_dims(x, axis=0)) for x in ys]
+        ds = [tf.transpose(tf.expand_dims(x, axis=0)) for x in ds]
+        y = tf.cast(tf.squeeze(tf.concat(ys, axis=0)), dtype=tf.int32)
+        d = tf.cast(tf.squeeze(tf.concat(ds, axis=0)), dtype=tf.int32)
+
+        # Convert to numpy to ease converting the AFLAC code
+        y = y.numpy()
+        d = d.numpy()
+
+        num_y_keys = len(np.unique(y))
+        num_d_keys = len(np.unique(d))
+        assert num_y_keys == self.num_classes
+        assert num_d_keys == self.num_source_domains
+
+        p_d_given_y = np.zeros((self.num_classes, self.num_source_domains),
+            dtype=np.float32)
+
+        # Classes are numbered 0, 1, ..., num_classes-1
+        for y_key in range(self.num_classes):
+            indices = np.where(y == y_key)
+            d_given_key = d[indices]
+            d_keys, d_counts = np.unique(d_given_key, return_counts=True)
+            p_d_given_key = np.zeros((self.num_source_domains,))
+            p_d_given_key[d_keys] = d_counts
+            p_d_given_y[y_key] = p_d_given_key
+
+        # Normalize so for each class, the domain counts sum to one
+        p_d_given_y = tf.constant(p_d_given_y, dtype=tf.float32)
+        p_d_given_y /= tf.reduce_sum(tf.math.abs(p_d_given_y), axis=1, keepdims=True)
+
+        self.p_d_given_y = p_d_given_y
+
+    def create_model(self):
+        num_source_domains = len(self.source_datasets)
+        self.model = models.FcnModelBase(self.num_classes, num_source_domains)
+
+    def create_losses(self):
+        super().create_losses()
+        # Note: for consistency with the AFLAC code, we'll pass through softmax
+        # first rather than using logits directly. Also, needs to be one-hot
+        # (i.e. not sparse) since the "true" value is a probability distribution
+        # now and not actually one-hot.
+        self.cross_entropy_loss = make_non_sparse_loss(from_logits=False)
+
+    def kl_loss(self, q, p):
+        """ See: https://github.com/akuzeee/AFLAC/blob/master/utils.py#L183
+        Note: q and p must be normalized already (e.g. softmax) """
+        return - self.cross_entropy_loss(q, q) + self.cross_entropy_loss(q, p)
+
+    def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training):
+        task_loss = self.task_loss(task_y_true, task_y_pred)
+
+        # p_d_given_y is already normalized, but domain_y_pred is just "logits",
+        # so pass through softmax before computing KL divergence.
+        # Gather the P(d|y) for the true y's for each example
+        d_true = tf.gather(self.p_d_given_y, tf.cast(task_y_true, dtype=tf.int32))
+        kl_loss = self.kl_loss(d_true, tf.nn.softmax(domain_y_pred))
+
+        total_loss = task_loss + kl_loss
+        return [total_loss, task_loss, kl_loss]
+
+
+def make_loss(from_logits=True):
+    cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=from_logits)
+
+    def loss(y_true, y_pred):
+        return cce(y_true, y_pred)
+
+    return loss
+
+
+def make_non_sparse_loss(from_logits=True):
+    cce = tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits)
 
     def loss(y_true, y_pred):
         return cce(y_true, y_pred)
@@ -574,7 +690,7 @@ methods = {
     # Domain generalization
     "dann_dg": MethodDannDG,
     "sleep_dg": MethodSleepDG,
-    #"aflac_dg": MethodAflacDG,
+    "aflac_dg": MethodAflacDG,
     #"ciddg_dg": MethodCiddgDG,
 }
 
