@@ -635,29 +635,37 @@ class MethodAflacDG(MethodDannDG):
         num_source_domains = len(self.source_datasets)
         self.model = models.FcnModelBase(self.num_classes, num_source_domains)
 
-    def create_losses(self):
-        super().create_losses()
-        # Note: for consistency with the AFLAC code, we'll pass through softmax
-        # first rather than using logits directly. Also, needs to be one-hot
-        # (i.e. not sparse) since the "true" value is a probability distribution
-        # now and not actually one-hot.
-        self.cross_entropy_loss = make_non_sparse_loss(from_logits=False)
-
-    def kl_loss(self, q, p):
-        """ See: https://github.com/akuzeee/AFLAC/blob/master/utils.py#L183
-        Note: q and p must be normalized already (e.g. softmax) """
-        return - self.cross_entropy_loss(q, q) + self.cross_entropy_loss(q, p)
-
     def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         task_loss = self.task_loss(task_y_true, task_y_pred)
         d_loss = self.domain_loss(domain_y_true, domain_y_pred)
 
-        # p_d_given_y is already normalized, but domain_y_pred is just "logits",
-        # so pass through softmax before computing KL divergence.
-        # Gather the P(d|y) for the true y's for each example
+        # Gather the P(d|y) for the true y's for each example.
         d_true = tf.gather(self.p_d_given_y, tf.cast(task_y_true, dtype=tf.int32))
-        kl_loss = self.kl_loss(d_true, tf.nn.softmax(domain_y_pred))
+
+        # p_d_given_y (above, now d_true) is already normalized, but
+        # domain_y_pred is just "logits" (no softmax in model), so pass the
+        # domain_y_pred through softmax before computing KLD.
+        #
+        # Also, we could implement KL divergence as done in
+        # https://github.com/akuzeee/AFLAC/blob/master/utils.py#L183 with
+        # something like:
+        #   cce = tf.keras.losses.CategoricalCrossentropy()
+        #   kl_d = -cce(q, q) + cce(q, p)
+        # However, it's equivalent to using the KLD function, so we'll just use
+        # that.
+        #
+        # Pf: -cce(q,q) + cce(q,p)
+        #   = sum_i^D q_i log q_i - sum_i^D q_i log p_i (for D domains)
+        #   = sum_i^D q_i * (log q_i - log p_i)
+        #   = sum_i^D q_i log(q_i/p_i)
+        #   = D_KL(q||p)
+        # (then of course, this is done for each example in the batch)
+        #
+        # See:
+        # https://en.wikipedia.org/wiki/Cross_entropy
+        # https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence
+        kl_loss = tf.keras.losses.KLD(d_true, tf.nn.softmax(domain_y_pred))
 
         # Looking at Figure 2 -- https://arxiv.org/pdf/1904.12543.pdf
         # They backpropagate the task and KL (weighted by alpha) losses to FE
@@ -668,9 +676,9 @@ class MethodAflacDG(MethodDannDG):
         # https://github.com/akuzeee/AFLAC/blob/master/AFLAC.py#L158
         # Note that y_optimizer only updates FE and TC and d_optimizer only
         # updates DC. Rather than putting in GradMultiplyLayerF into network,
-        # I'll just calculate alpha here and weight the KL loss by it since we're
-        # ignoring the gradient throughout DC anyway, don't need it to be weighted
-        # only through part of the network.
+        # I'll just calculate alpha here and weight the KL loss by it since
+        # we're ignoring the gradient throughout DC anyway, don't need it to be
+        # weighted only through part of the network.
         alpha = self.grl_schedule(self.global_step)
         fe_tc_loss = task_loss + alpha*kl_loss
 
@@ -690,15 +698,6 @@ class MethodAflacDG(MethodDannDG):
 
 def make_loss(from_logits=True):
     cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=from_logits)
-
-    def loss(y_true, y_pred):
-        return cce(y_true, y_pred)
-
-    return loss
-
-
-def make_non_sparse_loss(from_logits=True):
-    cce = tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits)
 
     def loss(y_true, y_pred):
         return cce(y_true, y_pred)
