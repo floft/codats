@@ -553,12 +553,18 @@ class MethodSleepDG(MethodDannDG):
 class MethodAflacDG(MethodDannDG):
     """ AFLAC uses KL divergence rather than GRL
 
-    Domain classifier's output probabilities should match P(d|y) for each
-    known label y. For example, if an example in the dataset is y=0 then
-    the domain classifier should output the probability of being in each domain
-    such that it matches the probability of being in that domain out of the
-    examples that have that label in the source domain training data (i.e.
-    P(d|y)). At least, that's how I understand it.
+    The domain classifier is updated to correctly classify the domain. The task
+    classifier to correctly classify the task. However, the feature extractor is
+    updated with a combination of making the task classifier correct while also
+    wanting the domain classifier's output probabilities to match P(d|y) for
+    each known label y.
+
+    For example, if an example in the dataset is y=0 then the domain classifier
+    should output the probability of being in each domain such that it matches
+    the probability of being in that domain out of the examples that have that
+    label 0 in the source domain training data (i.e. P(d|y)).
+
+    At least, that's how I understand it.
 
     Based on:
     https://github.com/akuzeee/AFLAC/blob/master/learner.py
@@ -567,14 +573,18 @@ class MethodAflacDG(MethodDannDG):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # The 3rd from MethodDann is now "KL" not "domain"
-        self.loss_names[2] = "kl"
-        # Needed for computing the loss
+        self.loss_names = ["fe_tc", "domain", "task", "kl"]
         self.mle_for_p_d_given_y()
+        # Not fed to the model, but used in the loss
+        self.grl_schedule = models.DannGrlSchedule(self.total_steps)
 
     def mle_for_p_d_given_y(self):
         """ Compute P(d|y)
-        https://github.com/akuzeee/AFLAC/blob/master/AFLAC.py#L14 """
+        https://github.com/akuzeee/AFLAC/blob/master/AFLAC.py#L14
+
+        Note: doing this rather than mle_for_p_d() since default is "dependent_y"
+        in their code https://github.com/akuzeee/AFLAC/blob/master/run.py#L138
+        """
         # Get lists of all labels and domains so we can compute how many there
         # are of each
         ys = []
@@ -588,7 +598,7 @@ class MethodAflacDG(MethodDannDG):
                 ds.append(tf.ones_like(y)*d)
 
         # Fix Tensorflow bug / problem: expand, transpose, concat, then squeeze
-        # Expected concatenating dimensions in the range [0, 0)
+        # Error: "Expected concatenating dimensions in the range [0, 0)"
         ys = [tf.transpose(tf.expand_dims(x, axis=0)) for x in ys]
         ds = [tf.transpose(tf.expand_dims(x, axis=0)) for x in ds]
         y = tf.cast(tf.squeeze(tf.concat(ys, axis=0)), dtype=tf.int32)
@@ -641,6 +651,7 @@ class MethodAflacDG(MethodDannDG):
     def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         task_loss = self.task_loss(task_y_true, task_y_pred)
+        d_loss = self.domain_loss(domain_y_true, domain_y_pred)
 
         # p_d_given_y is already normalized, but domain_y_pred is just "logits",
         # so pass through softmax before computing KL divergence.
@@ -648,8 +659,33 @@ class MethodAflacDG(MethodDannDG):
         d_true = tf.gather(self.p_d_given_y, tf.cast(task_y_true, dtype=tf.int32))
         kl_loss = self.kl_loss(d_true, tf.nn.softmax(domain_y_pred))
 
-        total_loss = task_loss + kl_loss
-        return [total_loss, task_loss, kl_loss]
+        # Looking at Figure 2 -- https://arxiv.org/pdf/1904.12543.pdf
+        # They backpropagate the task and KL (weighted by alpha) losses to FE
+        # (and task... but KL doesn't matter for updating the task classifier).
+        # They backpropagate the domain loss for updating DC.
+        #
+        # Their code:
+        # https://github.com/akuzeee/AFLAC/blob/master/AFLAC.py#L158
+        # Note that y_optimizer only updates FE and TC and d_optimizer only
+        # updates DC. Rather than putting in GradMultiplyLayerF into network,
+        # I'll just calculate alpha here and weight the KL loss by it since we're
+        # ignoring the gradient throughout DC anyway, don't need it to be weighted
+        # only through part of the network.
+        alpha = self.grl_schedule(self.global_step)
+        fe_tc_loss = task_loss + alpha*kl_loss
+
+        return [fe_tc_loss, d_loss, task_loss, kl_loss]
+
+    def compute_gradients(self, tape, losses):
+        fe_tc_loss, d_loss, _, _ = losses
+        grad = tape.gradient(fe_tc_loss, self.model.trainable_variables_task)
+        d_grad = tape.gradient(d_loss, self.model.trainable_variables_domain)
+        return [grad, d_grad]
+
+    def apply_gradients(self, gradients):
+        grad, d_grad = gradients
+        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task))
+        self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
 
 
 def make_loss(from_logits=True):
