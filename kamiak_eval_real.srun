@@ -35,8 +35,7 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("dann_smooth" "dann" "dann_dg" "sleep_dg" "dann_gs" "none")
-#methods=("dann" "dann_dg" "dann_gs")
+methods=("dann_smooth" "dann" "dann_dg" "sleep_dg" "aflac_dg" "dann_gs" "none")
 #variants=("best" "last")
 variants=("best")
 # number of adaptation problems = 375
