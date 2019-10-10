@@ -597,8 +597,10 @@ class MethodAflacDG(MethodDannDG):
                 ys.append(y)
                 ds.append(tf.ones_like(y)*d)
 
-        # Fix Tensorflow bug / problem: expand, transpose, concat, then squeeze
-        # Error: "Expected concatenating dimensions in the range [0, 0)"
+        # Fix Tensorflow bug / problem: expand, transpose, concat, then squeeze.
+        # What I wanted to do is just tf.concat(ys, axis=0)... since ys is an
+        # array of 1D tensors. But, it gives an error:
+        # "Expected concatenating dimensions in the range [0, 0)"
         ys = [tf.transpose(tf.expand_dims(x, axis=0)) for x in ys]
         ds = [tf.transpose(tf.expand_dims(x, axis=0)) for x in ds]
         y = tf.cast(tf.squeeze(tf.concat(ys, axis=0)), dtype=tf.int32)
