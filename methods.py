@@ -632,8 +632,11 @@ class MethodAflacDG(MethodDannDG):
 
         num_y_keys = len(np.unique(y))
         num_d_keys = len(np.unique(d))
-        assert num_y_keys == self.num_classes
-        assert num_d_keys == self.num_source_domains
+        # Note: do <= not == since sometimes a person doesn't perform any of
+        # a certain class, so it may be less. Though, for domains it really
+        # should be equal unless one of the domains has no data.
+        assert num_y_keys <= self.num_classes
+        assert num_d_keys <= self.num_source_domains
 
         # Note: using domain_outputs not num_source_domains, since we have an
         # extra domain label if there's only one source domain.
