@@ -213,7 +213,7 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
 
     # Print which step we're loading the model for
     print(log_dir + ";" + dataset_name + ";" + sources + ";" + target + ";"
-        + method_name + ";" + model_name + ";"
+        + model_name + ";" + method_name + ";"
         + str(max_accuracy_step) + ";" + str(max_accuracy))
 
     # If not found, give up
