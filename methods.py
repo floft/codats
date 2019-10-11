@@ -491,13 +491,33 @@ class MethodDannDG(MethodDann):
     - compute_losses: don't throw out domain 0 data since domain 0 is no longer
       the target
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.num_source_domains = len(self.source_datasets)
+    def __init__(self, source_datasets, target_dataset, *args, **kwargs):
+        self.num_source_domains = len(source_datasets)
+
+        # SparseCategoricalCrossentropy gives an error if there's only one class.
+        # Thus, throw in an extra, unused class (so softmax output always has 2).
+        # Really, why would anybody do DG if there's only one domain...
+        #
+        # a=tf.constant([[.9, .05, .05], [.5, .89, .6], [.05, .01, .94],
+        #   [0.1, 0.6, 0.3]])
+        # t=tf.constant([0,1,2,1])
+        # cce(t,a)  ## works
+        #
+        # b=tf.constant([[1.0], [1.0], [1.0], [1.0]])
+        # t=tf.constant([0,0,0,0])
+        # cce(t,b)  ## errors:
+        #   "ValueError: Shape mismatch: The shape of labels (received (342,))
+        #   should equal the shape of logits except for the last dimension
+        #   (received (1, 4))."
+        if self.num_source_domains == 1:
+            self.domain_outputs = 2
+        else:
+            self.domain_outputs = self.num_source_domains
+
+        super().__init__(source_datasets, target_dataset, *args, **kwargs)
 
     def create_model(self):
-        num_source_domains = len(self.source_datasets)
-        self.model = models.DannModel(self.num_classes, num_source_domains,
+        self.model = models.DannModel(self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps)
 
     @tf.function
@@ -546,7 +566,7 @@ class MethodSleepDG(MethodDannDG):
     """ Same as DANN-DG but uses sleep model that feeds task classifier output
     to domain classifier """
     def create_model(self):
-        self.model = models.SleepModel(self.num_classes, self.num_domains,
+        self.model = models.SleepModel(self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps)
 
 
@@ -615,7 +635,9 @@ class MethodAflacDG(MethodDannDG):
         assert num_y_keys == self.num_classes
         assert num_d_keys == self.num_source_domains
 
-        p_d_given_y = np.zeros((self.num_classes, self.num_source_domains),
+        # Note: using domain_outputs not num_source_domains, since we have an
+        # extra domain label if there's only one source domain.
+        p_d_given_y = np.zeros((self.num_classes, self.domain_outputs),
             dtype=np.float32)
 
         # Classes are numbered 0, 1, ..., num_classes-1
@@ -634,8 +656,7 @@ class MethodAflacDG(MethodDannDG):
         self.p_d_given_y = p_d_given_y
 
     def create_model(self):
-        num_source_domains = len(self.source_datasets)
-        self.model = models.FcnModelBase(self.num_classes, num_source_domains)
+        self.model = models.FcnModelBase(self.num_classes, self.domain_outputs)
 
     def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
