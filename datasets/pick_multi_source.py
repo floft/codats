@@ -154,7 +154,7 @@ if __name__ == "__main__":
         targets_unique_target.append(target)
 
     print("# number of adaptation problems =", len(targets_unique))
-    print("uids=(", " ".join([str(x) for x in targets_unique_uids]), ")", sep="")
+    print("uids=(", " ".join(["u"+str(x) for x in targets_unique_uids]), ")", sep="")
     print("datasets=(", " ".join(targets_unique_dataset), ")", sep="")
     print("sources=(", " ".join(sources_blank), ")", sep="")
     print("targets=(", " ".join(targets_unique_target), ")", sep="")

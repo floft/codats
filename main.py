@@ -27,7 +27,7 @@ flags.DEFINE_enum("method", None, methods.names(), "What method of domain adapta
 flags.DEFINE_string("dataset", None, "What dataset to use (e.g. \"ucihar\")")
 flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
 flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")
-flags.DEFINE_integer("uid", None, "A unique ID saved in the log/model folder names to avoid conflicts")
+flags.DEFINE_string("uid", None, "A unique ID saved in the log/model folder names to avoid conflicts")
 flags.DEFINE_integer("steps", 30000, "Number of training steps to run")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 4000, "Save the model every so many steps")
@@ -48,7 +48,7 @@ flags.mark_flag_as_required("uid")
 
 def get_directory_names():
     """ Figure out the log and model directory names """
-    prefix = FLAGS.dataset+"-"+str(FLAGS.uid)+"-"+FLAGS.method
+    prefix = FLAGS.dataset+"-"+FLAGS.uid+"-"+FLAGS.method
 
     # Use the number specified on the command line (higher precedence than --debug)
     if FLAGS.debugnum >= 0:

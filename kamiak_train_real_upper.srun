@@ -45,7 +45,7 @@ model=fcn
 methods=("upper")
 debugnums=(1 2 3)
 # number of adaptation problems = 25
-uids=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24)
+uids=(u0 u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 u16 u17 u18 u19 u20 u21 u22 u23 u24)
 datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
 sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
 targets=("1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "0" "1" "2" "3" "4")
@@ -110,5 +110,5 @@ python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
     --model="$model" --steps="$steps" --train_batch=$batch --lr="$lr" \
     --method="$method" --dataset="$dataset_name" --sources="$source" \
-    --target="$target" --uid=$uid --debugnum="$debugnum" \
+    --target="$target" --uid="$uid" --debugnum="$debugnum" \
     --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error

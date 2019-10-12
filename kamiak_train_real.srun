@@ -103,5 +103,5 @@ python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
     --model="$model" --steps="$steps" --train_batch=$batch --lr="$lr" \
     --method="$method" --dataset="$dataset_name" --sources="$source" \
-    --target="$target" --uid=$uid --debugnum="$debugnum" \
+    --target="$target" --uid="$uid" --debugnum="$debugnum" \
     --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error
