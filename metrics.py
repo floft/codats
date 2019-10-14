@@ -63,7 +63,9 @@ class Metrics:
         # Just take from first one since they were checked earlier that they're
         # all the same
         self.num_classes = source_datasets[0].num_classes
-        self.num_domains = source_datasets[0].num_domains
+        # We could get the source dataset num_domains, but really we want the
+        # number of softmax outputs of the method's domain classifier.
+        self.domain_outputs = method.domain_outputs
 
         self.datasets = ["training", "validation"]
         self.target_domain = target_domain  # whether we have just source or both
@@ -140,7 +142,7 @@ class Metrics:
         task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses = results
 
         # Since we are now using sparse
-        domain_y_true = tf.one_hot(tf.cast(domain_y_true, tf.int32), self.num_domains)
+        domain_y_true = tf.one_hot(tf.cast(domain_y_true, tf.int32), self.domain_outputs)
 
         domain_names = [
             "accuracy_domain/%s/%s",

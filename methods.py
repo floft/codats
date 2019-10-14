@@ -22,6 +22,7 @@ class MethodBase:
         self.target_dataset = target_dataset
 
         # Support multiple targets when we add that functionality
+        self.num_source_domains = len(source_datasets)
         self.num_domains = len(source_datasets)
 
         if target_dataset is not None:
@@ -33,6 +34,9 @@ class MethodBase:
                 raise NotImplementedError("target_dataset should be either one "
                     "load_datasets.Dataset() or a list of them, "
                     "but is "+str(target_dataset))
+
+        # How to calculate the number of domain outputs
+        self.domain_outputs = self.calculate_domain_outputs()
 
         # We need to know the num_classes for creating the model
         # We'll just pick the first source since we have to have at least one
@@ -54,6 +58,13 @@ class MethodBase:
         # Names of the losses returned in compute_losses
         self.loss_names = ["total"]
 
+    def calculate_domain_outputs(self):
+        """ Calculate the number of outputs for the domain classifier. By
+        default it's the number of domains. However, for example, in domain
+        generalization we ignore the target, so it'll actually be the number of
+        source domains only, in which case override this function. """
+        return self.num_domains
+
     def create_iterators(self):
         """ Get the source/target train/eval datasets """
         self.source_train_iterators = [iter(x.train) for x in self.source_datasets]
@@ -74,7 +85,7 @@ class MethodBase:
         self.checkpoint_variables["opt"] = self.opt
 
     def create_model(self):
-        self.model = models.FcnModelBase(self.num_classes, self.num_domains)
+        self.model = models.FcnModelBase(self.num_classes, self.domain_outputs)
 
     def create_losses(self):
         self.task_loss = make_loss()
@@ -269,7 +280,7 @@ class MethodDann(MethodBase):
         self.loss_names += ["task", "domain"]
 
     def create_model(self):
-        self.model = models.DannModel(self.num_classes, self.num_domains,
+        self.model = models.DannModel(self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps)
 
     def create_optimizers(self):
@@ -305,7 +316,7 @@ class MethodDann(MethodBase):
 
     def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
-        nontarget = tf.where(tf.squeeze(tf.not_equal(domain_y_true, 0)))
+        nontarget = tf.where(tf.not_equal(domain_y_true, 0))
         task_y_true = tf.gather(task_y_true, nontarget)
         task_y_pred = tf.gather(task_y_pred, nontarget)
 
@@ -330,10 +341,9 @@ class MethodDann(MethodBase):
 class MethodDannGS(MethodDann):
     """ Same as DANN but only has 2 domains, any source is domain 1 (i.e. group
     them) and the target is still domain 0 """
-    def create_model(self):
+    def calculate_domain_outputs(self):
         assert self.num_domains > 1, "cannot do GS-DANN with only 1 domain"
-        self.model = models.DannModel(self.num_classes, 2,
-            self.global_step, self.total_steps)
+        return 2
 
     @tf.function
     def get_next_data(self, data_sources, data_target):
@@ -359,10 +369,10 @@ class MethodDannSmooth(MethodDannGS):
     """ MDAN Smooth method based on MethodDannGS since we want binary source = 1,
     target = 0 for the domain labels """
     def create_model(self):
-        num_source_domains = len(self.source_datasets)
-        self.model = models.DannSmoothModel(self.num_classes, 2,
+        self.model = models.DannSmoothModel(
+            self.num_classes, self.domain_outputs,  # Note: domain_outputs=2
             self.global_step, self.total_steps,
-            num_domain_classifiers=num_source_domains)
+            num_domain_classifiers=self.num_source_domains)
 
     def prepare_data(self, data_sources, data_target):
         """ Prepare a batch of source i with target data to run through each
@@ -444,7 +454,7 @@ class MethodDannSmooth(MethodDannGS):
 
         for i in range(len(task_y_true)):
             # For task loss, ignore target data
-            nontarget = tf.where(tf.squeeze(tf.not_equal(domain_y_true[i], 0)))
+            nontarget = tf.where(tf.not_equal(domain_y_true[i], 0))
             i_task_y_true = tf.gather(task_y_true[i], nontarget)
             i_task_y_pred = tf.gather(task_y_pred[i], nontarget)
 
@@ -485,15 +495,13 @@ class MethodDannDG(MethodDann):
     """
     DANN but to make it generalization rather than adaptation:
 
-    - create_model: don't include a softmax output for the target domain
+    - calculate_domain_outputs: don't include a softmax output for the target domain
     - get_next_data: shift down the domain labels so 0 is now source 1
-    - prepare_data: ignore the target domain when preparing the data
+    - prepare_data: ignore the target domain when preparing the data for training
     - compute_losses: don't throw out domain 0 data since domain 0 is no longer
       the target
     """
-    def __init__(self, source_datasets, target_dataset, *args, **kwargs):
-        self.num_source_domains = len(source_datasets)
-
+    def calculate_domain_outputs(self):
         # SparseCategoricalCrossentropy gives an error if there's only one class.
         # Thus, throw in an extra, unused class (so softmax output always has 2).
         # Really, why would anybody do DG if there's only one domain...
@@ -510,15 +518,11 @@ class MethodDannDG(MethodDann):
         #   should equal the shape of logits except for the last dimension
         #   (received (1, 4))."
         if self.num_source_domains == 1:
-            self.domain_outputs = 2
+            domain_outputs = 2
         else:
-            self.domain_outputs = self.num_source_domains
+            domain_outputs = self.num_source_domains
 
-        super().__init__(source_datasets, target_dataset, *args, **kwargs)
-
-    def create_model(self):
-        self.model = models.DannModel(self.num_classes, self.domain_outputs,
-            self.global_step, self.total_steps)
+        return domain_outputs
 
     @tf.function
     def get_next_data(self, data_sources, data_target):
@@ -538,7 +542,8 @@ class MethodDannDG(MethodDann):
             new_domain_sources = []
 
             for domain in domain_sources:
-                new_domain_sources.append(domain - 1)
+                # But, if domain=0 already, don't let it go negative.
+                new_domain_sources.append(tf.maximum(domain - 1, 0))
 
             data_sources = (x_sources, y_sources, new_domain_sources)
 
