@@ -79,8 +79,7 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
                 continue
 
             source_users = ",".join([str(x) for x in source_users])
-            target_user = str(target_user)
-            pairs.append((dataset_name, source_users, target_user))
+            pairs.append((dataset_name, source_users, str(target_user)))
 
     return pairs
 
@@ -117,6 +116,12 @@ if __name__ == "__main__":
                 uid += 1
 
             pairs += curr_pairs
+
+    # Check that these make sense
+    print("List of adaptations we'll perform:")
+    for dataset_name, source, target in pairs:
+        print("    ", dataset_name, source, "to", target)
+    print()
 
     # Print
     print("For kamiak_{train,eval}_real.srun:")
