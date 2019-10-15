@@ -272,7 +272,13 @@ def main(argv):
 
     # Also prints which models we load
     print("Log Dir;Dataset;Sources;Target;Model;Method;Best Step;Accuracy at Step")
-    results = run_job_pool(process_model, commands, cores=jobs)
+    if jobs == 1:  # Eases debugging, printing even if it errors
+        results = []
+
+        for c in commands:
+            results.append(process_model(*c))
+    else:
+        results = run_job_pool(process_model, commands, cores=jobs)
 
     # Print results, averages, etc.
     print_results(results)
