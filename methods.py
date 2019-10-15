@@ -98,8 +98,8 @@ class MethodBase:
         data_target = next(self.target_train_iterator) \
             if self.target_train_iterator is not None else None
 
-        data_sources = self.get_next_data_multiple(data_sources, is_target=False)
-        data_target = self.get_next_data_single(data_target, is_target=True)
+        data_sources = self.get_next_batch_multiple(data_sources, is_target=False)
+        data_target = self.get_next_batch_single(data_target, is_target=True)
         return data_sources, data_target
 
     def domain_label(self, index, is_target):

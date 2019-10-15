@@ -396,7 +396,7 @@ class Metrics:
     def plots(self, global_step):
         """ Log plots """
         # Get first batch of source(s) and target data
-        data_a, _ = self.method.get_next_batch_multiple([
+        data_a = self.method.get_next_batch_multiple([
             next(iter(x)) for x in self.method.source_test_eval_datasets],
             is_target=False)
 
