@@ -353,7 +353,12 @@ def get_results(results, average=False):
         # indexed by dataset, i.e. one plot per dataset (averaged over multiple
         # targets).
         if not average:
-            target = dataset_name + " " + params["target"]
+            # For the upper bound, we don't have a target, but set the source
+            # as the target
+            if method == "upper":
+                target = dataset_name + " " + params["sources"]
+            else:
+                target = dataset_name + " " + params["target"]
             dataset_name = target
 
         mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
@@ -473,7 +478,17 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
             y = method_data[:, 2]*100
             std = method_data[:, 3]*100
             method_name = nice_method_names[methods[i]]
-            plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+method_lines[methods[i]], alpha=0.8)
+            p = plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+method_lines[methods[i]], alpha=0.8)
+
+            # Make a horizontal line at the upper bound since it doesn't matter
+            # what "n" is for this method (ignores the sources, only trains
+            # on target)
+            if methods[i] == "upper":
+                # xmin=1 since the upper bound is 1 source in a sense
+                assert method_lines[methods[i]] == "-.", \
+                    "change linestyles in hlines to match that of method_lines[\"upper\"]"
+                ax.hlines(y=y, xmin=1, xmax=max_x, colors=p[0].get_color(),
+                    linestyles="dashdot")
 
         if show_title:
             plt.title("Adaptation and Generalization Methods on "+dataset_name)
