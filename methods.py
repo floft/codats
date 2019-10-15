@@ -108,6 +108,22 @@ class MethodBase:
             if target_iterator is not None else None
         return self.get_next_data(data_sources, data_target)
 
+    def domain_label(self, source_index=None, target_index=None):
+        """ Default domain labeling. Indexes should be in [0,+inf) and integers.
+        0 = target
+        1 = source #0
+        2 = source #1
+        3 = source #2
+        ...
+        """
+        assert source_index is not None ^ target_index is not None, \
+            "Only one of {source,target}_index should be specified"
+
+        if source_index is not None:
+            return source_index+1
+        else:
+            return 0
+
     @tf.function
     def get_next_data(self, data_sources, data_target):
         """
@@ -135,7 +151,7 @@ class MethodBase:
             # Domain numbers: for now we'll use 0 = target, 1 = source #1,
             # 2 = source #2, 3 = source #3, etc.
             for i, (x, y) in enumerate(data_sources):
-                d = tf.ones_like(y)*(i+1)
+                d = tf.ones_like(y)*self.domain_label(source_index=i)
                 x_sources.append(x)
                 y_sources.append(y)
                 domain_sources.append(d)
@@ -147,7 +163,8 @@ class MethodBase:
         # If there's a target domain, it'll have domain label 0
         if data_target is not None:
             x_target, y_target = data_target
-            domain_target = tf.zeros_like(y_target)
+            # target_index=0 since there's only one target
+            domain_target = tf.ones_like(y_target)*self.domain_label(target_index=0)
             data_target = (x_target, y_target, domain_target)
         else:
             data_target = None
@@ -160,7 +177,7 @@ class MethodBase:
         """ Prepare the data for the model, e.g. by concatenating all sources
         together. Note: do not put code in here that changes the domain labels
         since you presumably want that during evaluation too. Put that in
-        get_next_data() """
+        domain_label() """
         # By default (e.g. for no adaptation or domain generalization), ignore
         # the target data
         x_a, y_a, domain_a = data_sources
@@ -345,24 +362,25 @@ class MethodDannGS(MethodDann):
         assert self.num_domains > 1, "cannot do GS-DANN with only 1 domain"
         return 2
 
-    @tf.function
-    def get_next_data(self, data_sources, data_target):
-        """ Replace all source domains' domain labels with 1, i.e. group all
-        sources together """
-        data_sources, data_target = super().get_next_data(
-            data_sources, data_target)
+    def domain_label(self, source_index=None, target_index=None):
+        """
+        Replace all source domains' domain labels with 1, i.e. group all
+        sources together
 
-        if data_sources is not None:
-            x_sources, y_sources, domain_sources = data_sources
+        New domain labeling:
+        0 = target
+        1 = source #0
+        1 = source #1
+        1 = source #2
+        ...
+        """
+        assert source_index is not None ^ target_index is not None, \
+            "Only one of {source,target}_index should be specified"
 
-            new_domain_sources = []
-
-            for domain in domain_sources:
-                new_domain_sources.append(tf.ones_like(domain))
-
-            data_sources = (x_sources, y_sources, new_domain_sources)
-
-        return data_sources, data_target
+        if source_index is not None:
+            return 1
+        else:
+            return 0
 
 
 class MethodDannSmooth(MethodDannGS):
@@ -524,30 +542,28 @@ class MethodDannDG(MethodDann):
 
         return domain_outputs
 
-    @tf.function
-    def get_next_data(self, data_sources, data_target):
+    def domain_label(self, source_index=None, target_index=None):
         """
         Shift down the domain labels so 0 is not source 1 since we don't have a
         target domain.
 
         Note: during evaluation, if target data is used, then the results will
         be wrong since target=0 and source #1=0 for the domain label.
+
+        New domain labeling:
+        0 = target
+        0 = source #0
+        1 = source #1
+        2 = source #2
+        ...
         """
-        data_sources, data_target = super().get_next_data(
-            data_sources, data_target)
+        assert source_index is not None ^ target_index is not None, \
+            "Only one of {source,target}_index should be specified"
 
-        if data_sources is not None:
-            x_sources, y_sources, domain_sources = data_sources
-
-            new_domain_sources = []
-
-            for domain in domain_sources:
-                # But, if domain=0 already, don't let it go negative.
-                new_domain_sources.append(tf.maximum(domain - 1, 0))
-
-            data_sources = (x_sources, y_sources, new_domain_sources)
-
-        return data_sources, data_target
+        if source_index is not None:
+            return source_index
+        else:
+            return 0
 
     def prepare_data(self, data_sources, data_target):
         # Ignore target domain data when doing domain generalization
