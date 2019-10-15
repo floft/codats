@@ -97,18 +97,12 @@ class MethodBase:
         data_sources = [next(x) for x in self.source_train_iterators]
         data_target = next(self.target_train_iterator) \
             if self.target_train_iterator is not None else None
-        return self.get_next_data(data_sources, data_target)
 
-    def get_next_batch(self, source_iterators, target_iterator):
-        """ Get next batch of data, same as get_next_train_batch()
-        except allows you to pass in your own iterators """
-        data_sources = [next(x) for x in source_iterators] \
-            if source_iterators is not None else None
-        data_target = next(target_iterator) \
-            if target_iterator is not None else None
-        return self.get_next_data(data_sources, data_target)
+        data_sources = self.get_next_data_multiple(data_sources, is_target=False)
+        data_target = self.get_next_data_single(data_target, is_target=True)
+        return data_sources, data_target
 
-    def domain_label(self, source_index=None, target_index=None):
+    def domain_label(self, index, is_target):
         """ Default domain labeling. Indexes should be in [0,+inf) and integers.
         0 = target
         1 = source #0
@@ -116,60 +110,64 @@ class MethodBase:
         3 = source #2
         ...
         """
-        assert source_index is not None ^ target_index is not None, \
-            "Only one of {source,target}_index should be specified"
-
-        if source_index is not None:
-            return source_index+1
-        else:
+        if is_target:
             return 0
+        else:
+            return index+1
 
     @tf.function
-    def get_next_data(self, data_sources, data_target):
+    def get_next_batch_multiple(self, data, is_target):
         """
-        Get next set of training data. Note: needs to handle when either one of
-        data_sources or data_target is None, which is used during evaluation to
-        evaluate the datasets separately.
+        Get next set of training data. data should be a list of data (probably
+        something like [next(x) for x in iterators]).
 
-        Returns:
-            data_sources, data_target
-
-        where data_sources = (
+        Returns: (
             [x_a1, x_a2, x_a3, ...],
             [y_a1, y_a2, y_a3, ...],
             [domain_a1, domain_a2, domain_a3, ...]
-        ) or None if no source domains
-        and data_target = (x_b, y_b, domain_b) or None if no target domain
+        )
         """
-        if data_sources is not None:
-            # Don't concatenate/stack here since different methods may handle the
-            # domains' data differently.
-            x_sources = []
-            y_sources = []
-            domain_sources = []
+        if data is None:
+            return None
 
-            # Domain numbers: for now we'll use 0 = target, 1 = source #1,
-            # 2 = source #2, 3 = source #3, etc.
-            for i, (x, y) in enumerate(data_sources):
-                d = tf.ones_like(y)*self.domain_label(source_index=i)
-                x_sources.append(x)
-                y_sources.append(y)
-                domain_sources.append(d)
+        assert not is_target or len(data) == 1, \
+            "only support one target at present"
 
-            data_sources = (x_sources, y_sources, domain_sources)
-        else:
-            data_sources = None
+        xs = []
+        ys = []
+        ds = []
 
-        # If there's a target domain, it'll have domain label 0
-        if data_target is not None:
-            x_target, y_target = data_target
-            # target_index=0 since there's only one target
-            domain_target = tf.ones_like(y_target)*self.domain_label(target_index=0)
-            data_target = (x_target, y_target, domain_target)
-        else:
-            data_target = None
+        for i, (x, y) in enumerate(data):
+            xs.append(x)
+            ys.append(y)
+            ds.append(tf.ones_like(y)*self.domain_label(index=i,
+                is_target=is_target))
 
-        return data_sources, data_target
+        return (xs, ys, ds)
+
+    @tf.function
+    def get_next_batch_single(self, data, is_target, index=0):
+        """
+        Get next set of training data. data should be a single batch (probably
+        something like next(iterator)). When processing target data, index
+        must be 0 since we only support one target at the moment. However,
+        during evaluation we evaluate each source's data individually so if
+        is_target is False, then index can be whichever source domain was
+        passed.
+
+        Returns: (x, y, domain)
+        """
+        if data is None:
+            return None
+
+        assert not is_target or index == 0, \
+            "only support one target at present"
+
+        x, y = data
+        d = tf.ones_like(y)*self.domain_label(index=index, is_target=is_target)
+        data_target = (x, y, d)
+
+        return data_target
 
     # Allow easily overriding each part of the train_step() function, without
     # having to override train_step() in its entirety
@@ -362,7 +360,7 @@ class MethodDannGS(MethodDann):
         assert self.num_domains > 1, "cannot do GS-DANN with only 1 domain"
         return 2
 
-    def domain_label(self, source_index=None, target_index=None):
+    def domain_label(self, index, is_target):
         """
         Replace all source domains' domain labels with 1, i.e. group all
         sources together
@@ -374,13 +372,10 @@ class MethodDannGS(MethodDann):
         1 = source #2
         ...
         """
-        assert source_index is not None ^ target_index is not None, \
-            "Only one of {source,target}_index should be specified"
-
-        if source_index is not None:
-            return 1
-        else:
+        if is_target:
             return 0
+        else:
+            return 1
 
 
 class MethodDannSmooth(MethodDannGS):
@@ -514,7 +509,7 @@ class MethodDannDG(MethodDann):
     DANN but to make it generalization rather than adaptation:
 
     - calculate_domain_outputs: don't include a softmax output for the target domain
-    - get_next_data: shift down the domain labels so 0 is now source 1
+    - domain_label: don't include target as domain 0, so start sources at 0
     - prepare_data: ignore the target domain when preparing the data for training
     - compute_losses: don't throw out domain 0 data since domain 0 is no longer
       the target
@@ -542,7 +537,7 @@ class MethodDannDG(MethodDann):
 
         return domain_outputs
 
-    def domain_label(self, source_index=None, target_index=None):
+    def domain_label(self, index, is_target):
         """
         Shift down the domain labels so 0 is not source 1 since we don't have a
         target domain.
@@ -557,13 +552,10 @@ class MethodDannDG(MethodDann):
         2 = source #2
         ...
         """
-        assert source_index is not None ^ target_index is not None, \
-            "Only one of {source,target}_index should be specified"
-
-        if source_index is not None:
-            return source_index
-        else:
+        if is_target:
             return 0
+        else:
+            return index
 
     def prepare_data(self, data_sources, data_target):
         # Ignore target domain data when doing domain generalization

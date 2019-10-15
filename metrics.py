@@ -273,23 +273,25 @@ class Metrics:
         if data_a is not None:
             source_iterators = [iter(x) for x in data_a]
 
-            # TODO This breaks on the *smallest* source domain. Though, during
-            # evaluation, if we have enough data, we take the same number of
-            # samples from each, so it won't matter. However, if we don't have
-            # enough, then we take 20% which will differ between domains.
-            while True:
-                try:
-                    data, _ = self.method.get_next_batch(source_iterators, None)
-                    self._run_single_batch(data, dataset, "source")
-                except StopIteration:
-                    break
+            # Do each source domain individually since they may have different
+            # amounts of data and this loop will break as soon as the smallest
+            # one has no data.
+            for i, source_iter in enumerate(source_iterators):
+                while True:
+                    try:
+                        data = self.method.get_next_batch_single(
+                            next(source_iter), is_target=False, index=i)
+                        self._run_single_batch(data, dataset, "source")
+                    except StopIteration:
+                        break
 
         if self.target_domain and data_b is not None:
-            target_iterator = iter(data_b)
+            target_iter = iter(data_b)
 
             while True:
                 try:
-                    _, data = self.method.get_next_batch(None, target_iterator)
+                    data = self.method.get_next_batch_single(
+                        next(target_iter), is_target=True)
                     self._run_single_batch(data, dataset, "target")
                 except StopIteration:
                     break
@@ -394,14 +396,16 @@ class Metrics:
     def plots(self, global_step):
         """ Log plots """
         # Get first batch of source(s) and target data
-        data_a, _ = self.method.get_next_batch([
-            iter(x) for x in self.method.source_test_eval_datasets], None)
+        data_a, _ = self.method.get_next_batch_multiple([
+            next(iter(x)) for x in self.method.source_test_eval_datasets],
+            is_target=False)
 
         if not self.target_domain:
             data_b = None
         else:
-            _, data_b = self.method.get_next_batch(None,
-                iter(self.method.target_test_eval_dataset))
+            data_b = self.method.get_next_batch_single(
+                next(iter(self.method.target_test_eval_dataset)),
+                is_target=True)
 
         # We'll only plot the real plots once since they don't change
         step = int(global_step)
