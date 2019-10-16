@@ -97,10 +97,7 @@ class MethodBase:
         data_sources = [next(x) for x in self.source_train_iterators]
         data_target = next(self.target_train_iterator) \
             if self.target_train_iterator is not None else None
-
-        data_sources = self.get_next_batch_multiple(data_sources, is_target=False)
-        data_target = self.get_next_batch_single(data_target, is_target=True)
-        return data_sources, data_target
+        return self.get_next_batch_both(data_sources, data_target)
 
     def domain_label(self, index, is_target):
         """ Default domain labeling. Indexes should be in [0,+inf) and integers.
@@ -114,6 +111,14 @@ class MethodBase:
             return 0
         else:
             return index+1
+
+    @tf.function
+    def get_next_batch_both(self, data_sources, data_target):
+        """ Speeds up running when compiled with tf.function since both can
+        run simultaneously -- I think? """
+        data_sources = self.get_next_batch_multiple(data_sources, is_target=False)
+        data_target = self.get_next_batch_single(data_target, is_target=True)
+        return data_sources, data_target
 
     @tf.function
     def get_next_batch_multiple(self, data, is_target):
