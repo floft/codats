@@ -131,7 +131,7 @@ def main(argv):
             print(int(global_step), t, sep=",")
             continue  # skip evaluation, checkpointing, etc. when timing
 
-        if i%100 == 0:
+        if i%1000 == 0:
             logging.info("step %d took %f seconds", int(global_step), t)
 
         # Metrics on training/validation data
