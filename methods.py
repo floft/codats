@@ -114,13 +114,12 @@ class MethodBase:
 
     @tf.function
     def get_next_batch_both(self, data_sources, data_target):
-        """ Speeds up running when compiled with tf.function since both can
-        run simultaneously -- I think? """
+        """ Compile for training. Don't for evaluation (called directly,
+        not this _both function). """
         data_sources = self.get_next_batch_multiple(data_sources, is_target=False)
         data_target = self.get_next_batch_single(data_target, is_target=True)
         return data_sources, data_target
 
-    @tf.function
     def get_next_batch_multiple(self, data, is_target):
         """
         Get next set of training data. data should be a list of data (probably
@@ -150,7 +149,6 @@ class MethodBase:
 
         return (xs, ys, ds)
 
-    @tf.function
     def get_next_batch_single(self, data, is_target, index=0):
         """
         Get next set of training data. data should be a single batch (probably
@@ -266,7 +264,7 @@ class MethodBase:
 
         return self.eval_step_list((x, y, domain))
 
-    @tf.function
+    #@tf.function  # faster not to compile
     def eval_step_list(self, data):
         """ Override preparation in prepare_data_eval() """
         x, task_y_true, domain_y_true = self.prepare_data_eval(data)
