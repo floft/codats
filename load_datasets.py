@@ -12,8 +12,9 @@ from datasets.tfrecord import tfrecord_filename
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_integer("train_batch", 32, "Batch size for training")
-flags.DEFINE_integer("eval_batch", 128, "Batch size for evaluation")
+flags.DEFINE_integer("train_batch", 128, "Batch size for training")
+flags.DEFINE_integer("eval_batch", 2048, "Batch size for evaluation")
+flags.DEFINE_enum("batch_division", "all", ["none", "sources", "all"], "Batch size options (e.g. 32): none - 32 for each source and target; sources - 32/n for n sources, 32 for target; all - 32/(n+1) for n sources and 1 target")
 flags.DEFINE_integer("shuffle_buffer", 60000, "Dataset shuffle buffer size")
 flags.DEFINE_integer("prefetch_buffer", 1, "Dataset prefetch buffer size (0 = autotune)")
 flags.DEFINE_boolean("tune_num_parallel_calls", False, "Autotune num_parallel_calls")
@@ -283,11 +284,39 @@ def load_da(dataset, sources, target, *args, **kwargs):
     if target is not None:
         assert target in valid_names, "unknown target domain: "+target
 
+    # Determine batch sizes
+    source_train_batch = None
+    target_train_batch = None
+
+    # Divide among sources, so batch_size/num_sources. Keep target the normal
+    # batch size. Though, we must at least have one sample from each domain,
+    # so take max of the division and 1.
+    #
+    # Note: we don't need to change eval_batch since that data is fed in
+    # per-domain anyway in metrics.py. Thus, there's no point in decreasing
+    # the batch size since it's not affected by the number of domains.
+    assert FLAGS.train_batch > 0, "must have positive train_batch size"
+    if FLAGS.batch_division == "sources":
+        source_train_batch = max(FLAGS.train_batch // len(sources), 1)
+        target_train_batch = FLAGS.train_batch
+    # Divide among all, so batch_size/num_domains. Set for both sources/target.
+    elif FLAGS.batch_division == "all":
+        batch_size = max(FLAGS.train_batch // num_domains, 1)
+        source_train_batch = batch_size
+        target_train_batch = batch_size
+    else:
+        source_train_batch = FLAGS.train_batch
+        target_train_batch = FLAGS.train_batch
+
+    print("Source batch size:", source_train_batch, "for", len(sources), "sources")
+    print("Target batch size:", target_train_batch)
+
     # Load each source
     source_datasets = []
 
     for s in sources:
-        source_datasets.append(load(s, num_domains, *args, **kwargs))
+        source_datasets.append(load(s, num_domains,
+            train_batch=source_train_batch, *args, **kwargs))
 
     # Check that they all have the same number of classes as the first one
     for i in range(1, len(source_datasets)):
@@ -306,6 +335,7 @@ def load_da(dataset, sources, target, *args, **kwargs):
             eval_max_examples = FLAGS.max_target_examples
 
         target_dataset = load(target, num_domains,
+            train_batch=target_train_batch,
             train_max_examples=train_max_examples,
             eval_max_examples=eval_max_examples, *args, **kwargs)
 

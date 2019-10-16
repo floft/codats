@@ -96,8 +96,7 @@ def main(argv):
 
     # Load datasets
     source_datasets, target_dataset = load_datasets.load_da(FLAGS.dataset,
-        FLAGS.sources, FLAGS.target, test=FLAGS.test,
-        train_batch=FLAGS.train_batch)
+        FLAGS.sources, FLAGS.target, test=FLAGS.test)
 
     # Need to know which iteration for learning rate schedule
     global_step = tf.Variable(0, name="global_step", trainable=False)
