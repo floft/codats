@@ -17,8 +17,6 @@ from absl import flags
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
-# flags.DEFINE_boolean("similarity", False, "Similarity on x axis rather than number of source domains")
-# flags.DEFINE_string("similarity_filename", "similarity.txt", "File containing similarity")
 
 
 # Use nice names for the plot
@@ -55,30 +53,6 @@ method_lines = {
     "aflac_dg": "--",
     "ciddg_dg": "--",
 }
-
-
-# def get_similarity():
-#     """ Returns dictionary indexed by target then source and lists the
-#     train mean +/- stdev then test mean +/- stdev similarity """
-#     similarity = {}
-
-#     with open(FLAGS.similarity_filename) as f:
-#         for line in f:
-#             parts = line.split(";")
-#             assert len(parts) == 10
-#             _, _, source, target, _, _, \
-#                 distance_train_mean, distance_train_std, \
-#                 distance_test_mean, distance_test_std = parts
-
-#             if target not in similarity:
-#                 similarity[target] = {}
-
-#             similarity[target][source] = (
-#                 distance_train_mean, distance_train_std,
-#                 distance_test_mean, distance_test_std
-#             )
-
-#     return similarity
 
 
 def get_tuning_files(dir_name, prefix):
@@ -364,21 +338,6 @@ def get_results(results, average=False):
         mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
         std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
 
-        # if FLAGS.similarity:
-        #     # The raw values, not pretty versions
-        #     if raw_target in similarity and raw_sources in similarity[raw_target]:
-        #         result_similarity = similarity[raw_target][raw_sources]
-
-        #         # Use the mean training value
-        #         result_similarity = result_similarity[0]
-        #     else:
-        #         print("Warning: skipping", raw_sources, "to",
-        #             raw_target, "if not target, then probably update",
-        #             FLAGS.similarity_filename)
-        #         continue
-        # else:
-        result_similarity = 0.0
-
         # For upper bound, we set the source to the target
         if method == "upper":
             mean = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
@@ -392,7 +351,7 @@ def get_results(results, average=False):
             ms_results[dataset_name][method] = {}
         if n not in ms_results[dataset_name][method]:
             ms_results[dataset_name][method][n] = []
-        ms_results[dataset_name][method][n].append((n, result_similarity, mean, std))
+        ms_results[dataset_name][method][n].append((n, mean, std))
 
     return ms_results
 
@@ -413,22 +372,17 @@ def average_over_n(ms_results):
                     # All the 0th elements should be the same n
                     # Then recompute the mean/stdev from the accuracy values in 1th column
                     new_values.append((int(ms_values[0, 0]),
-                        float(ms_values[0, 1]), ms_values[:, 2].mean(),
-                        ms_values[:, 2].std(ddof=0)))
+                        ms_values[:, 1].mean(), ms_values[:, 1].std(ddof=0)))
                 elif len(ms_values) == 1:
                     # Leave as is if there's only one
                     #assert new_values == [], "upper bound has multiple runs?"
                     ms_values = np.array(ms_values, dtype=np.float32)
                     new_values.append((int(ms_values[0, 0]),
-                        float(ms_values[0, 1]), ms_values[0, 2],
-                        ms_values[0, 3]))
+                        ms_values[0, 1], ms_values[0, 2]))
                 else:
                     raise NotImplementedError("must be several or one run")
 
-            # Sort on n or similarity
-            #if FLAGS.similarity:
-            #    new_values.sort(key=lambda x: x[1])
-            #else:
+            # Sort on n
             new_values.sort(key=lambda x: x[0])
 
             ms_results[dataset][method] = new_values
@@ -469,14 +423,9 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
 
         for i in range(len(data)):
             method_data = np.array(data[i])
-
-            #if FLAGS.similarity:
-            #    x = method_data[:, 1]  # don't jitter since x means something
-            #else:
             x = method_data[:, 0] + jitter[i]
-
-            y = method_data[:, 2]*100
-            std = method_data[:, 3]*100
+            y = method_data[:, 1]*100
+            std = method_data[:, 2]*100
             method_name = nice_method_names[methods[i]]
             p = plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+method_lines[methods[i]], alpha=0.8)
 
@@ -493,12 +442,7 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         if show_title:
             plt.title("Adaptation and Generalization Methods on "+dataset_name)
 
-        #if FLAGS.similarity:
-        #    xaxis = "Feature-level Wasserstein distance between source(s) and target"
-        #else:
-        xaxis = "Number of source domains"
-
-        ax.set_xlabel(xaxis)
+        ax.set_xlabel("Number of source domains")
         ax.set_ylabel("Target Domain Accuracy (%)")
 
         if legend_separate:
@@ -530,11 +474,6 @@ def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
     results = all_stats(files)
     ms_results = average_over_n(get_results(results, average=False))
     ms_averages = average_over_n(get_results(results, average=True))
-
-    # if FLAGS.similarity:
-    #     prefix = "similarity"
-    #     similarity = get_similarity()
-
     generate_plots(ms_results, "multisource", save_plot, show_title,
         legend_separate, suffix)
     generate_plots(ms_averages, "multisource_average", save_plot, show_title,

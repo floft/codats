@@ -10,8 +10,7 @@ to="$localdir"
 
 # Logs, models, images
 rsync -Pahuv \
-    --include="results/" --include="results/results_*.txt" \
-    --include="results/similarity_*.txt" --include="*.pickle" \
+    --include="results/" --include="results/results_*.txt" --include="*.pickle" \
     --exclude="*" "$from" "$to"
     #--include="slurm_logs/" --include="slurm_logs/*" \
     #--include="$logFolder*/" --include="$logFolder*/*" --include="$logFolder*/*/*" \
