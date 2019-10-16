@@ -18,9 +18,12 @@ flags.DEFINE_integer("shuffle_buffer", 60000, "Dataset shuffle buffer size")
 flags.DEFINE_integer("prefetch_buffer", 1, "Dataset prefetch buffer size (0 = autotune)")
 flags.DEFINE_boolean("tune_num_parallel_calls", False, "Autotune num_parallel_calls")
 flags.DEFINE_integer("eval_shuffle_seed", 0, "Evaluation shuffle seed for repeatability")
+flags.DEFINE_integer("train_max_examples", 0, "Max number of examples to use for training (default 0, i.e. all)")
+flags.DEFINE_integer("max_target_examples", 0, "Max number of target examples to use during training (default 0, i.e. all; overrides train_max_examples for target)")
 flags.DEFINE_integer("eval_max_examples", 0, "Max number of examples to evaluate for validation (default 0, i.e. all)")
 flags.DEFINE_integer("trim_time_steps", 0, "For testing RNN vs. CNN handling varying time series length, allow triming to set size (default 0, i.e. use all data)")
 flags.DEFINE_integer("feature_subset", 0, "For testing RNN vs. CNN handling varying numbers of features, allow only using a subset of the features (default 0, i.e. all the features")
+flags.DEFINE_boolean("cache", True, "Cache datasets in memory to reduce filesystem usage")
 
 
 class Dataset:
@@ -29,7 +32,8 @@ class Dataset:
             train_filenames, test_filenames,
             train_batch=None, eval_batch=None,
             shuffle_buffer=None, prefetch_buffer=None,
-            eval_shuffle_seed=None, eval_max_examples=None,
+            eval_shuffle_seed=None, cache=None,
+            train_max_examples=None, eval_max_examples=None,
             tune_num_parallel_calls=None):
         """
         Initialize dataset
@@ -53,7 +57,9 @@ class Dataset:
         self.shuffle_buffer = shuffle_buffer
         self.prefetch_buffer = prefetch_buffer
         self.eval_shuffle_seed = eval_shuffle_seed
+        self.cache = cache
         self.eval_max_examples = eval_max_examples
+        self.train_max_examples = train_max_examples
         self.tune_num_parallel_calls = tune_num_parallel_calls
 
         # Set defaults if not specified
@@ -67,8 +73,12 @@ class Dataset:
             self.prefetch_buffer = FLAGS.prefetch_buffer
         if self.eval_shuffle_seed is None:
             self.eval_shuffle_seed = FLAGS.eval_shuffle_seed
+        if self.cache is None:
+            self.cache = FLAGS.cache
         if self.eval_max_examples is None:
             self.eval_max_examples = FLAGS.eval_max_examples
+        if self.train_max_examples is None:
+            self.train_max_examples = FLAGS.train_max_examples
         if self.tune_num_parallel_calls is None:
             self.tune_num_parallel_calls = FLAGS.tune_num_parallel_calls
 
@@ -79,7 +89,6 @@ class Dataset:
     def load_tfrecords(self, filenames, batch_size, count=False, evaluation=False):
         """
         Load data from .tfrecord files (requires less memory but more disk space)
-        max_examples=0 -- no limit on the number of examples
         """
         if len(filenames) == 0:
             return None
@@ -126,19 +135,17 @@ class Dataset:
             lambda x: tf.data.TFRecordDataset(x, compression_type='GZIP').prefetch(100),
             cycle_length=len(filenames), block_length=1)
 
-        # TODO maybe use .cache() or .cache(filename)
-        # See: https://www.tensorflow.org/beta/tutorials/load_data/images
-
-        # If desired, take the first max_examples examples
-        if evaluation and self.eval_max_examples != 0:
-            dataset = dataset.take(self.eval_max_examples)
-
-        if count:  # only count, so no need to shuffle
-            pass
-        elif evaluation:  # don't repeat since we want to evaluate entire set
-            dataset = dataset.shuffle(self.shuffle_buffer, seed=self.eval_shuffle_seed)
-        else:  # repeat and shuffle
-            dataset = dataset.shuffle(self.shuffle_buffer).repeat()
+        # If desired, take the first max_examples examples. Note: this is the
+        # first so-many examples, but we shuffled before putting into the
+        # tfrecord file (train_test_split in datasets.py), so it is a random set
+        # essentially. We do this so we consistently use the same data between
+        # runs.
+        if evaluation:
+            if self.eval_max_examples != 0:
+                dataset = dataset.take(self.eval_max_examples)
+        else:
+            if self.train_max_examples != 0:
+                dataset = dataset.take(self.train_max_examples)
 
         # Whether to do autotuning of prefetch or num_parallel_calls
         prefetch_buffer = self.prefetch_buffer
@@ -148,8 +155,29 @@ class Dataset:
         if self.prefetch_buffer == 0:
             prefetch_buffer = tf.data.experimental.AUTOTUNE
 
-        dataset = dataset.map(_parse_example_function,
-            num_parallel_calls=num_parallel_calls)
+        # Use .cache() or .cache(filename) to reduce loading over the network
+        # https://www.tensorflow.org/guide/data_performance#map_and_cache
+        # Example: https://www.tensorflow.org/tutorials/load_data/images
+        if self.cache:
+            # Map before caching so we don't have to keep doing this over and over
+            # again -- drastically reduces CPU usage.
+            dataset = dataset.map(_parse_example_function,
+                num_parallel_calls=num_parallel_calls)
+
+            dataset = dataset.cache()
+
+        if count:  # only count, so no need to shuffle
+            pass
+        elif evaluation:  # don't repeat since we want to evaluate entire set
+            dataset = dataset.shuffle(self.shuffle_buffer, seed=self.eval_shuffle_seed)
+        else:  # repeat and shuffle
+            dataset = dataset.shuffle(self.shuffle_buffer).repeat()
+
+        # If not caching, then it's faster to map right next to batch
+        if not self.cache:
+            dataset = dataset.map(_parse_example_function,
+                num_parallel_calls=num_parallel_calls)
+
         dataset = dataset.batch(batch_size)
         dataset = dataset.prefetch(prefetch_buffer)
 
@@ -268,7 +296,18 @@ def load_da(dataset, sources, target, *args, **kwargs):
 
     # Load target
     if target is not None:
-        target_dataset = load(target, num_domains, *args, **kwargs)
+        train_max_examples = None
+        eval_max_examples = None
+
+        # If desired, only use the a limited number of target examples for
+        # training/evaluation
+        if FLAGS.max_target_examples != 0:
+            train_max_examples = FLAGS.max_target_examples
+            eval_max_examples = FLAGS.max_target_examples
+
+        target_dataset = load(target, num_domains,
+            train_max_examples=train_max_examples,
+            eval_max_examples=eval_max_examples, *args, **kwargs)
 
         # Check that the target has the same number of classes as the first
         # source (since we already verified all sources have the same)
