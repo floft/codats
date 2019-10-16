@@ -2,7 +2,7 @@
 #SBATCH --job-name=train_real
 #SBATCH --output=slurm_logs/train_%A_%a.out
 #SBATCH --error=slurm_logs/train_%A_%a.err
-#SBATCH --cpus-per-task=3
+#SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
@@ -88,7 +88,7 @@ fi
 steps=30000
 lr=0.0001
 model=fcn
-batch=32
+batch=128
 
 if [[ $method == "vrada" || $method == "rdann" ]]; then
     model="$method"
