@@ -47,37 +47,76 @@ class CheckpointManager:
             checkpoint, directory=model_dir, max_to_keep=FLAGS.latest_checkpoints)
 
         # Keeps track of our best model for use after training
-        best_model_dir = os.path.join(model_dir, "best")
-        self.best_manager = tf.train.CheckpointManager(
-            checkpoint, directory=best_model_dir, max_to_keep=FLAGS.best_checkpoints)
+        #
+        # For backwards consistency at the moment, if "best_source" doesn't
+        # exist, then look for "best" directory as well since that's what it was
+        # previously named. TODO remove this ..._old one eventually
+        best_model_dir_source = os.path.join(model_dir, "best_source")
+        best_model_dir_source_old = os.path.join(model_dir, "best")
+
+        if not os.path.exists(best_model_dir_source) and \
+                os.path.exists(best_model_dir_source_old):
+            best_model_dir_source = best_model_dir_source_old
+
+        self.best_manager_source = tf.train.CheckpointManager(
+            checkpoint, directory=best_model_dir_source,
+            max_to_keep=FLAGS.best_checkpoints)
+
+        best_model_dir_target = os.path.join(model_dir, "best_target")
+        self.best_manager_target = tf.train.CheckpointManager(
+            checkpoint, directory=best_model_dir_target,
+            max_to_keep=FLAGS.best_checkpoints)
 
         # Restore best from file or if no file yet, set it to zero
-        self.best_validation = get_best_valid_accuracy(self.log_dir)
-        self.found = True
+        self.best_validation_source = get_best_valid_accuracy(self.log_dir,
+            filename="best_valid_accuracy_source.txt")
+        self.best_validation_target = get_best_valid_accuracy(self.log_dir,
+            filename="best_valid_accuracy_target.txt")
 
-        if self.best_validation is None:
-            self.found = False
-            self.best_validation = 0.0
+        # Do we have these checkpoints -- used to verify we were able to load
+        # the previous or best checkpoint during evaluation
+        self.found_last = len(self.latest_manager.checkpoints) != 0
+        self.found_best_source = True
+        self.found_best_target = True
+
+        if self.best_validation_source is None:
+            self.found_best_source = False
+            self.best_validation_source = 0.0
+
+        if self.best_validation_target is None:
+            self.found_best_target = False
+            self.best_validation_target = 0.0
 
     def restore_latest(self):
         """ Restore the checkpoint from the latest one """
         self.checkpoint.restore(self.latest_manager.latest_checkpoint).expect_partial()
 
-    def restore_best(self):
-        """ Restore the checkpoint from the best one """
+    def restore_best_source(self):
+        """ Restore the checkpoint from the best one on the source valid data """
         # Note: using expect_partial() so we don't get warnings about loading
         # only some of the weights
-        self.checkpoint.restore(self.best_manager.latest_checkpoint).expect_partial()
+        self.checkpoint.restore(self.best_manager_source.latest_checkpoint).expect_partial()
+
+    def restore_best_target(self):
+        """ Restore the checkpoint from the best one on the target valid data """
+        # Note: using expect_partial() so we don't get warnings about loading
+        # only some of the weights
+        self.checkpoint.restore(self.best_manager_target.latest_checkpoint).expect_partial()
 
     def latest_step(self):
         """ Return the step number from the latest checkpoint. Returns None if
         no checkpoints. """
         return self._get_step_from_manager(self.latest_manager)
 
-    def best_step(self):
-        """ Return the step number from the best checkpoint. Returns None if
-        no checkpoints. """
-        return self._get_step_from_manager(self.best_manager)
+    def best_step_source(self):
+        """ Return the step number from the best source checkpoint. Returns None
+        if no checkpoints. """
+        return self._get_step_from_manager(self.best_manager_source)
+
+    def best_step_target(self):
+        """ Return the step number from the best target checkpoint. Returns None
+        if no checkpoints. """
+        return self._get_step_from_manager(self.best_manager_target)
 
     def _get_step_from_manager(self, manager):
         # If no checkpoints found
@@ -93,15 +132,26 @@ class CheckpointManager:
 
         return step
 
-    def save(self, step, validation_accuracy=None):
-        """ Save the latest model. If validation_accuracy specified and higher
+    def save(self, step, validation_accuracy_source=None,
+            validation_accuracy_target=None):
+        """ Save the latest model. If validation_accuracy_* specified and higher
         than the previous best, also save this model as the new best one. """
         # Always save the latest
         self.latest_manager.save(checkpoint_number=step)
 
         # Only save the "best" if it's better than the previous best
-        if validation_accuracy is not None:
-            if validation_accuracy > self.best_validation:
-                self.best_manager.save(checkpoint_number=step)
-                self.best_validation = validation_accuracy
-                write_best_valid_accuracy(self.log_dir, self.best_validation)
+        if validation_accuracy_source is not None:
+            if validation_accuracy_source > self.best_validation_source:
+                self.best_manager_source.save(checkpoint_number=step)
+                self.best_validation_source = validation_accuracy_source
+                write_best_valid_accuracy(self.log_dir,
+                    self.best_validation_source,
+                    filename="best_valid_accuracy_source.txt")
+
+        if validation_accuracy_target is not None:
+            if validation_accuracy_target > self.best_validation_target:
+                self.best_manager_target.save(checkpoint_number=step)
+                self.best_validation_target = validation_accuracy_target
+                write_best_valid_accuracy(self.log_dir,
+                    self.best_validation_target,
+                    filename="best_valid_accuracy_target.txt")

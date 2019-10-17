@@ -37,8 +37,6 @@ from plots import generate_plots
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_boolean("best_source", True, "Calculate \"best\" model based on source (vs. target) validation data")
-
 
 class Metrics:
     """
@@ -359,7 +357,7 @@ class Metrics:
 
         Note: leave off step if evaluation=True
 
-        Returns: source task validation accuracy
+        Returns: source task validation accuracy, target task validation accuracy
         """
         dataset = "validation"
         self._reset_states(dataset)
@@ -374,16 +372,11 @@ class Metrics:
             target_datasets, dataset)
 
         # We use the validation accuracy to save the best model
-        #
-        # If best_source then use source validation accuracy (so we never look)
-        # at labeled target data. However, as is commonly done, another approach
-        # is tuning based on 1000 random labeled target samples.
-        if FLAGS.best_source:
-            acc = self.batch_metrics["validation"]["accuracy_task/source/validation"]
-        else:
-            acc = self.batch_metrics["validation"]["accuracy_task/target/validation"]
+        acc_source = self.batch_metrics["validation"]["accuracy_task/source/validation"]
+        acc_target = self.batch_metrics["validation"]["accuracy_task/target/validation"]
 
-        validation_accuracy = float(acc.result())
+        validation_accuracy_source = float(acc_source.result())
+        validation_accuracy_target = float(acc_target.result())
         t = time.time() - t
 
         if not evaluation:
@@ -391,7 +384,7 @@ class Metrics:
             step = int(step)
             self._write_data(step, dataset, t)
 
-        return validation_accuracy
+        return validation_accuracy_source, validation_accuracy_target
 
     def plots(self, global_step):
         """ Log plots """

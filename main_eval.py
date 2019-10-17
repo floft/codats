@@ -40,7 +40,7 @@ flags.DEFINE_float("gpumem", 8140, "GPU memory to let TensorFlow use, in MiB (di
 flags.DEFINE_string("match", "*-*-*", "String matching to determine which logs/models to process")
 flags.DEFINE_integer("jobs", 4, "Number of TensorFlow jobs to run at once")
 flags.DEFINE_integer("gpus", 1, "Split jobs between GPUs -- overrides jobs (1 == run multiple jobs on first GPU)")
-flags.DEFINE_boolean("last", False, "Use last model rather than one with best validation set performance")
+flags.DEFINE_enum("selection", "best_source", ["last", "best_source", "best_target"], "Which model to select")
 
 
 def get_gpus():
@@ -202,14 +202,23 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
     checkpoint = tf.train.Checkpoint(**method.checkpoint_variables)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
 
-    if FLAGS.last:
+    if FLAGS.selection == "last":
         checkpoint_manager.restore_latest()
         max_accuracy_step = checkpoint_manager.latest_step()
         max_accuracy = 0  # We don't really care...
+        found = checkpoint_manager.found_last
+    elif FLAGS.selection == "best_source":
+        checkpoint_manager.restore_best_source()
+        max_accuracy_step = checkpoint_manager.best_step_source()
+        max_accuracy = checkpoint_manager.best_validation_source
+        found = checkpoint_manager.found_best_source
+    elif FLAGS.selection == "best_target":
+        checkpoint_manager.restore_best_target()
+        max_accuracy_step = checkpoint_manager.best_step_target()
+        max_accuracy = checkpoint_manager.best_validation_target
+        found = checkpoint_manager.found_best_target
     else:
-        checkpoint_manager.restore_best()
-        max_accuracy_step = checkpoint_manager.best_step()
-        max_accuracy = checkpoint_manager.best_validation
+        raise NotImplementedError("unknown --selection argument")
 
     # Print which step we're loading the model for
     print(log_dir + ";" + dataset_name + ";" + sources + ";" + target + ";"
@@ -217,7 +226,7 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
         + str(max_accuracy_step) + ";" + str(max_accuracy))
 
     # If not found, give up
-    if not checkpoint_manager.found:
+    if not found:
         return log_dir, dataset_name, sources, target, model_name, method_name, \
             None, None, None, None
 

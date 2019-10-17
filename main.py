@@ -141,14 +141,16 @@ def main(argv):
         # Evaluate every log_val_steps but also at the last step
         validation_accuracy = None
         if i%FLAGS.log_val_steps == 0 or i == FLAGS.steps:
-            validation_accuracy = metrics.test(global_step)
+            validation_accuracy_source, validation_accuracy_target \
+                = metrics.test(global_step)
 
         # Checkpoints -- Save either if at the right model step or if we found
         # a new validation accuracy. If this is better than the previous best
         # model, we need to make a new checkpoint so we can restore from this
         # step with the best accuracy.
         if i%FLAGS.model_steps == 0 or validation_accuracy is not None:
-            checkpoint_manager.save(int(global_step-1), validation_accuracy)
+            checkpoint_manager.save(int(global_step-1),
+                validation_accuracy_source, validation_accuracy_target)
 
         # Plots
         if i%FLAGS.log_plots_steps == 0:
