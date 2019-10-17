@@ -70,6 +70,12 @@ class CheckpointManager:
         # Restore best from file or if no file yet, set it to zero
         self.best_validation_source = get_best_valid_accuracy(self.log_dir,
             filename="best_valid_accuracy_source.txt")
+
+        # TODO remove this eventually, but for now if new name failed, try old
+        # name
+        if self.best_validation_source is None:
+            self.best_validation_source = get_best_valid_accuracy(self.log_dir)
+
         self.best_validation_target = get_best_valid_accuracy(self.log_dir,
             filename="best_valid_accuracy_target.txt")
 
