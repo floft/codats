@@ -84,6 +84,7 @@ def main(argv):
     set_gpu_memory(FLAGS.gpumem)
 
     # Figure out the log and model directory filenames
+    assert FLAGS.uid != "", "uid cannot be an empty string"
     model_dir, log_dir = get_directory_names()
 
     if not os.path.exists(model_dir):

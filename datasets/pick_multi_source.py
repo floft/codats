@@ -84,10 +84,37 @@ def generate_multi_source(dataset_name, users, n, repeat=3, max_users=5):
     return pairs
 
 
+def get_tuning_params():
+    """ Parameters we vary during hyperparameter tuning
+    batch_division - divide batch evenly among all domains or have same amount
+        of source and target data
+    lr - three values, 0.0001 is what we used in previous paper
+    batch - three values, centered around what we used in previous paper
+    """
+    tuning_params = []
+
+    for division in ["sources", "all"]:
+        for lr in [0.01, 0.001, 0.0001]:
+            for batch in [64, 128, 256]:
+                params = {
+                    "batch_division": division,
+                    "train_batch": batch,
+                    "lr": lr,
+                }
+                tuning_params.append(params)
+
+    return tuning_params
+
+
 if __name__ == "__main__":
     # Sources-target pairs for training
     pairs = []
     uids = []
+
+    # Hyperparameter tuning
+    tuning = []
+    tuning_params = get_tuning_params()
+    tuning_uid = 0
 
     # Note: "dataset_users" is set in datasets.py
     for name, users in dataset_users.items():
@@ -98,7 +125,9 @@ if __name__ == "__main__":
 
         # For each value of n, from 1 (single-source domain adaptation) up to
         # the full number of users - 1 (since we have one for the target)
-        for n in generate_n_with_max(len(users), 5):
+        options = generate_n_with_max(len(users), 5)
+
+        for i, n in enumerate(options):
             # Make this repeatable even if we change which datasets, how many
             # n's we use, etc. Also nice since we end up using a subset of
             # n's source domains as (n-1)'s source domains. For example,
@@ -111,9 +140,16 @@ if __name__ == "__main__":
             random.seed(42)
             curr_pairs = generate_multi_source(name, users, n)
 
-            for i in range(len(curr_pairs)):
+            for _ in range(len(curr_pairs)):
                 uids.append(uid)
                 uid += 1
+
+            # Save highest one for hyperparameter tuning
+            if i == len(options)-1:
+                for pair in curr_pairs:
+                    for params in tuning_params:
+                        tuning.append((tuning_uid, params, pair))
+                        tuning_uid += 1
 
             pairs += curr_pairs
 
@@ -163,3 +199,27 @@ if __name__ == "__main__":
     print("datasets=(", " ".join(targets_unique_dataset), ")", sep="")
     print("sources=(", " ".join(sources_blank), ")", sep="")
     print("targets=(", " ".join(targets_unique_target), ")", sep="")
+    print()
+
+    print("For kamiak_{train,eval}_tune.srun:")
+    uids = []
+    dataset_names = []
+    sources = []
+    targets = []
+    other_params = []
+    for tuning_uid, params, (dataset_name, source, target) in tuning:
+        hyper_params = " ".join(["--"+k+"="+str(v) for k, v in params.items()])
+
+        uids.append(tuning_uid)
+        dataset_names.append("\""+dataset_name+"\"")
+        sources.append("\""+source+"\"")
+        targets.append("\""+target+"\"")
+        other_params.append(("\""+hyper_params+"\""))
+
+    print("# number of adaptation problems =", len(sources))
+    print("uids=(", " ".join([str(x) for x in uids]), ")", sep="")
+    print("datasets=(", " ".join(dataset_names), ")", sep="")
+    print("sources=(", " ".join(sources), ")", sep="")
+    print("targets=(", " ".join(targets), ")", sep="")
+    print("other_params=(", " ".join(other_params), ")", sep="")
+    print()
