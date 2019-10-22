@@ -18,3 +18,4 @@ trivial/
 *_TRAIN
 *_TEST
 *.pdf
+*.yaml

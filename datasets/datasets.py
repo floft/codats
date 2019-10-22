@@ -307,12 +307,18 @@ class Dataset:
         """
         if len(data.shape) == 2:
             current_length = data.shape[0]
-            assert current_length <= desired_length, "Cannot shrink size by padding"
+            assert current_length <= desired_length, \
+                "Cannot shrink size by padding, current length " \
+                + str(current_length) + " vs. desired_length " \
+                + str(desired_length)
             return np.pad(data, [(0, desired_length - current_length), (0, 0)],
                     mode="constant", constant_values=0)
         elif len(data.shape) == 3:
             current_length = data.shape[1]
-            assert current_length <= desired_length, "Cannot shrink size by padding"
+            assert current_length <= desired_length, \
+                "Cannot shrink size by padding, current length " \
+                + str(current_length) + " vs. desired_length " \
+                + str(desired_length)
             return np.pad(data, [(0, 0), (0, desired_length - current_length), (0, 0)],
                     mode="constant", constant_values=0)
         else:
