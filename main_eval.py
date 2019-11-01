@@ -41,6 +41,7 @@ flags.DEFINE_string("match", "*-*-*", "String matching to determine which logs/m
 flags.DEFINE_integer("jobs", 4, "Number of TensorFlow jobs to run at once")
 flags.DEFINE_integer("gpus", 1, "Split jobs between GPUs -- overrides jobs (1 == run multiple jobs on first GPU)")
 flags.DEFINE_enum("selection", "best_source", ["last", "best_source", "best_target"], "Which model to select")
+flags.DEFINE_boolean("test", True, "Whether to evaluate on the true test set or if --notest, then the validation set")
 
 
 def get_gpus():
@@ -188,7 +189,7 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
 
     # Load datasets
     source_datasets, target_dataset = load_datasets.load_da(dataset_name,
-        sources, target, test=True)
+        sources, target, test=FLAGS.test)
 
     # Load the method, model, etc.
     # Note: {global,num}_step are for training, so it doesn't matter what

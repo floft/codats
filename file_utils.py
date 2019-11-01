@@ -151,11 +151,12 @@ def get_config(log_dir):
     """ Get config file containing dataset name, sources, target, etc. """
     filename = os.path.join(log_dir, "config.yaml")
 
+    if not os.path.exists(filename):
+        return None
+
     with open(filename) as f:
         # See: https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
-        config = yaml.load(f, Loader=yaml.SafeLoader)
-
-    return config
+        return yaml.load(f, Loader=yaml.SafeLoader)
 
 
 def write_config_from_args(log_dir):

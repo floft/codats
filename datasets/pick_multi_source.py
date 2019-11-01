@@ -10,6 +10,56 @@ import random
 from datasets import dataset_users
 
 
+# ./hyperparameters.py --selection=best_source
+hyperparameters = {
+    "ucihar": {
+        "aflac_dg": "--batch_division=all --train_batch=256 --lr=0.0001",
+        "dann_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_gs": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.001",
+        "dann": "--batch_division=all --train_batch=256 --lr=0.01",
+        "none": "--batch_division=all --train_batch=256 --lr=0.001",
+        "sleep_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
+    },
+    "ucihhar": {
+        "aflac_dg": "--batch_division=sources --train_batch=256 --lr=0.001",
+        "dann_dg": "--batch_division=all --train_batch=256 --lr=0.01",
+        "dann_gs": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "none": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "sleep_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
+    },
+    "uwave": {
+        "aflac_dg": "--batch_division=sources --train_batch=64 --lr=0.0001",
+        "dann_dg": "--batch_division=all --train_batch=64 --lr=0.01",
+        "dann_gs": "--batch_division=sources --train_batch=64 --lr=0.0001",
+        "dann_smooth": "--batch_division=sources --train_batch=128 --lr=0.0001",
+        "dann": "--batch_division=all --train_batch=128 --lr=0.01",
+        "none": "--batch_division=sources --train_batch=64 --lr=0.001",
+        "sleep_dg": "--batch_division=all --train_batch=128 --lr=0.0001",
+    },
+    "wisdm_ar": {
+        "aflac_dg": "--batch_division=sources --train_batch=64 --lr=0.01",
+        "dann_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_gs": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_smooth": "--batch_division=sources --train_batch=64 --lr=0.001",
+        "dann": "--batch_division=sources --train_batch=64 --lr=0.01",
+        "none": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "sleep_dg": "--batch_division=sources --train_batch=64 --lr=0.01",
+    },
+    "wisdm_at": {
+        "aflac_dg": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann_dg": "--batch_division=all --train_batch=256 --lr=0.01",
+        "dann_gs": "--batch_division=all --train_batch=256 --lr=0.01",
+        "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.0001",
+        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "none": "--batch_division=sources --train_batch=256 --lr=0.0001",
+        "sleep_dg": "--batch_division=all --train_batch=256 --lr=0.01",
+    },
+}
+
+
 def other_users(users, skip_user):
     """ From the list of users, throw out skip_user """
     new_users = []
@@ -159,8 +209,52 @@ if __name__ == "__main__":
         print("    ", dataset_name, source, "to", target)
     print()
 
-    # Print
-    print("For kamiak_{train,eval}_real.srun:")
+    #
+    # kamiak_train_real.srun
+    #
+    # List of methods (excluding "upper", which is run separately)
+    # We need to unwrap the methods dimension from the slurm array because we
+    # have to specify different hyperparameters for each dataset-method pair.
+    method_list = [
+        "dann_smooth",
+        "dann",
+        "dann_dg",
+        "sleep_dg",
+        "aflac_dg",
+        "dann_gs",
+        "none"
+    ]
+
+    print("For kamiak_train_real.srun:")
+    dataset_names = []
+    methods = []
+    sources = []
+    targets = []
+    dataset_target_pairs = []
+    other_params = []
+    for method in method_list:
+        for dataset_name, source, target in pairs:
+            methods.append("\""+method+"\"")
+            dataset_names.append("\""+dataset_name+"\"")
+            sources.append("\""+source+"\"")
+            targets.append("\""+target+"\"")
+            dataset_target_pairs.append(("\""+dataset_name+"\"", "\""+target+"\""))
+            other_params.append(("\""+hyperparameters[dataset_name][method]+"\""))
+
+    print("# number of adaptation problems =", len(sources))
+    print("methods=(", " ".join(methods), ")", sep="")
+    print("uids=(", " ".join([str(x) for x in uids]), ")", sep="")
+    print("datasets=(", " ".join(dataset_names), ")", sep="")
+    print("sources=(", " ".join(sources), ")", sep="")
+    print("targets=(", " ".join(targets), ")", sep="")
+    print("other_params=(", " ".join(other_params), ")", sep="")
+    print()
+
+    #
+    # kamiak_eval_real.srun (same as above, but don't need to unwrap method
+    # and don't need other_params)
+    #
+    print("For kamiak_eval_real.srun:")
     dataset_names = []
     sources = []
     targets = []
@@ -178,6 +272,9 @@ if __name__ == "__main__":
     print("targets=(", " ".join(targets), ")", sep="")
     print()
 
+    #
+    # kamiak_{train,eval}_real_upper.srun
+    #
     print("For kamiak_{train,eval}_real_upper.srun:")
     targets_unique = list(set(dataset_target_pairs))
     targets_unique.sort()
@@ -201,7 +298,10 @@ if __name__ == "__main__":
     print("targets=(", " ".join(targets_unique_target), ")", sep="")
     print()
 
-    print("For kamiak_{train,eval}_tune.srun:")
+    #
+    # kamiak_{train,eval}_tune.srun
+    #
+    print("For kamiak_{train,eval}_tune.srun (skip other_params in eval script though):")
     uids = []
     dataset_names = []
     sources = []

@@ -13,10 +13,12 @@ from absl import app
 from absl import flags
 # from scipy import stats
 
+from pool import run_job_pool
+from file_utils import get_config
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
+flags.DEFINE_integer("jobs", 0, "Number of jobs to use for processing files (0 == number of cores)")
 
 
 # Use nice names for the plot
@@ -95,6 +97,7 @@ def parse_file(filename):
     averages_header = "Dataset;Avg;Std"
 
     # Config information
+    log_dir = None
     dataset_name = None
     sources = None
     num_domains = None
@@ -111,6 +114,10 @@ def parse_file(filename):
             elif line == "Error occurred -- exiting":
                 print("Found:", line, "in", filename, file=sys.stderr)
                 exit(1)
+            elif beginning_match("Source batch size: ", line) or \
+                    beginning_match("Target batch size: ", line):
+                # Forgot that I print out {Source,Target} batch size: ...
+                pass
             elif beginning_match(valid_header, line):
                 in_validation = True
                 in_traintest = False
@@ -141,6 +148,9 @@ def parse_file(filename):
                     validation.append((values[0], values[1], values[2],
                         values[3], values[4], values[5],
                         int(values[6]), float(values[7])))
+
+                    # Doesn't really matter which one... just get one of them
+                    log_dir = values[0]
 
                     # Get data, make sure it's not conflicting with previous
                     # values
@@ -188,7 +198,14 @@ def parse_file(filename):
         method = "upper"
 
     # Create params
-    assert num_domains is not None, "could not find config information in file"
+    assert num_domains is not None, \
+        "could not find config information in file (probably no runs): " \
+        + filename
+
+    # If the config file exists, add it to the parameters. We assume all the
+    # runs have the same-ish config (you average over them, so those parts
+    # may be different)
+    config = get_config(log_dir)
 
     params = {
         "dataset": dataset_name,
@@ -197,6 +214,7 @@ def parse_file(filename):
         "target": target,
         "model": model,
         "method": method,
+        "config": config,
     }
 
     return validation, traintest, averages, params
@@ -226,35 +244,51 @@ def compute_eval_stats(df, filename):
     return pd.DataFrame(data=data, columns=["Dataset", "Avg", "Std"])
 
 
-def all_stats(files, recompute_averages=True):
-    results = []
+def _all_stats(name, file, recompute_averages):
+    parse_result = parse_file(file)
 
-    for name, file in files:
-        parse_result = parse_file(file)
+    if parse_result is None:
+        print("Warning: no data, skipping", file, file=sys.stderr)
+        return
 
-        if parse_result is None:
-            print("Warning: no data, skipping", file, file=sys.stderr)
-            continue
+    validation, traintest, averages, params = parse_result
 
-        validation, traintest, averages, params = parse_result
+    if recompute_averages:
+        averages = compute_eval_stats(traintest, name)
 
-        if recompute_averages:
-            averages = compute_eval_stats(traintest, name)
+    validavg = compute_val_stats(validation, name)
 
-        validavg = compute_val_stats(validation, name)
+    return {
+        "name": name,
+        "parameters": params,
+        "file": file,
+        "validation": validation,
+        "traintest": traintest,
+        "averages": averages,
+        "validavg": validavg,
+    }
 
-        results.append({
-            "name": name,
-            "parameters": params,
-            "file": file,
-            "validation": validation,
-            "traintest": traintest,
-            "averages": averages,
-            "validavg": validavg,
-        })
+
+def all_stats(files, recompute_averages=True, sort=False):
+    """ Process all files, but since we may have many, many thousands, do it
+    with multiple cores by default """
+    if FLAGS.jobs == 1:
+        results = []
+
+        for name, file in files:
+            results.append(_all_stats(name, file, recompute_averages))
+    else:
+        commands = []
+
+        for name, file in files:
+            commands.append((name, file, recompute_averages))
+
+        jobs = FLAGS.jobs if FLAGS.jobs != 0 else None
+        results = run_job_pool(_all_stats, commands, cores=jobs)
 
     # Sort by name
-    results.sort(key=lambda x: x["name"])
+    if sort:
+        results.sort(key=lambda x: x["name"])
 
     return results
 
@@ -467,27 +501,29 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         plt.show()
 
 
-def plot_multisource(dataset, variant="best", save_plot=True, show_title=False,
+def plot_multisource(dataset, variant, save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf"):
     """ Generate plots of target accuracy vs. number of source domains """
     files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant+"-")
     results = all_stats(files)
     ms_results = average_over_n(get_results(results, average=False))
     ms_averages = average_over_n(get_results(results, average=True))
-    generate_plots(ms_results, "multisource", save_plot, show_title,
+    generate_plots(ms_results, "multisource_"+variant, save_plot, show_title,
         legend_separate, suffix)
-    generate_plots(ms_averages, "multisource_average", save_plot, show_title,
-        legend_separate, suffix)
+    generate_plots(ms_averages, "multisource_average_"+variant, save_plot,
+        show_title, legend_separate, suffix)
 
 
 def main(argv):
     datasets = [
-        "test3",
+        "test2",
     ]
 
-    for dataset in datasets:
-        plot_multisource(dataset, save_plot=True, show_title=True,
-            legend_separate=False, suffix="png")
+    for variant in ["best_source", "best_target"]:
+        for dataset in datasets:
+            plot_multisource(dataset, variant,
+                save_plot=True, show_title=True,
+                legend_separate=False, suffix="png")
 
 
 if __name__ == "__main__":
