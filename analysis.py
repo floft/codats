@@ -305,14 +305,14 @@ def gen_jitter(length, amount=0.04):
     return np.array(x, dtype=np.float32)
 
 
-def export_legend(legend, filename="key.pdf", expand=[-5, -5, 5, 5]):
+def export_legend(legend, dir_name=".", filename="key.pdf", expand=[-5, -5, 5, 5]):
     """ See: https://stackoverflow.com/a/47749903 """
     fig = legend.figure
     fig.canvas.draw()
     bbox = legend.get_window_extent()
     bbox = bbox.from_extents(*(bbox.extents + np.array(expand)))
     bbox = bbox.transformed(fig.dpi_scale_trans.inverted())
-    fig.savefig(filename, dpi="figure", bbox_inches=bbox)
+    fig.savefig(os.path.join(dir_name, filename), dpi="figure", bbox_inches=bbox)
 
 
 def make_replacements(s, replacements):
@@ -483,7 +483,7 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
             legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-            export_legend(legend, filename=prefix+"_key."+suffix)
+            export_legend(legend, dir_name, filename=prefix+"_key."+suffix)
             legend.remove()
         else:
             # Put legend outside the graph http://stackoverflow.com/a/4701285
@@ -515,9 +515,15 @@ def plot_multisource(dataset, variant, save_plot=True, show_title=False,
 
 
 def main(argv):
-    plot_multisource("vary_n_best_source", "best_source",
+    # png files for Google Docs
+    plot_multisource("googledocs_vary_n_best_source", "best_source",
         save_plot=True, show_title=True,
         legend_separate=False, suffix="png")
+
+    # pdf files with separate key for paper
+    plot_multisource("vary_n_best_source", "best_source",
+        save_plot=True, show_title=True,
+        legend_separate=True, suffix="pdf")
 
 
 if __name__ == "__main__":
