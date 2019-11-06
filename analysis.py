@@ -515,15 +515,9 @@ def plot_multisource(dataset, variant, save_plot=True, show_title=False,
 
 
 def main(argv):
-    datasets = [
-        "test2",
-    ]
-
-    for variant in ["best_source", "best_target"]:
-        for dataset in datasets:
-            plot_multisource(dataset, variant,
-                save_plot=True, show_title=True,
-                legend_separate=False, suffix="png")
+    plot_multisource("vary_n_best_source", "best_source",
+        save_plot=True, show_title=True,
+        legend_separate=False, suffix="png")
 
 
 if __name__ == "__main__":

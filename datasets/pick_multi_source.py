@@ -11,51 +11,103 @@ from datasets import dataset_users
 
 
 # ./hyperparameters.py --selection=best_source
-hyperparameters = {
+hyperparameters_source = {
     "ucihar": {
-        "aflac_dg": "--batch_division=all --train_batch=256 --lr=0.0001",
+        "aflac_dg": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann": "--batch_division=sources --train_batch=128 --lr=0.01",
         "dann_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
-        "dann_gs": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann_gs": "--batch_division=sources --train_batch=256 --lr=0.01",
         "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.001",
-        "dann": "--batch_division=all --train_batch=256 --lr=0.01",
         "none": "--batch_division=all --train_batch=256 --lr=0.001",
         "sleep_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
     },
     "ucihhar": {
         "aflac_dg": "--batch_division=sources --train_batch=256 --lr=0.001",
+        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
         "dann_dg": "--batch_division=all --train_batch=256 --lr=0.01",
         "dann_gs": "--batch_division=sources --train_batch=256 --lr=0.01",
         "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.01",
-        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
         "none": "--batch_division=sources --train_batch=256 --lr=0.01",
         "sleep_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
     },
     "uwave": {
-        "aflac_dg": "--batch_division=sources --train_batch=64 --lr=0.0001",
-        "dann_dg": "--batch_division=all --train_batch=64 --lr=0.01",
-        "dann_gs": "--batch_division=sources --train_batch=64 --lr=0.0001",
-        "dann_smooth": "--batch_division=sources --train_batch=128 --lr=0.0001",
-        "dann": "--batch_division=all --train_batch=128 --lr=0.01",
-        "none": "--batch_division=sources --train_batch=64 --lr=0.001",
-        "sleep_dg": "--batch_division=all --train_batch=128 --lr=0.0001",
+        "aflac_dg": "--batch_division=all --train_batch=128 --lr=0.0001",
+        "dann": "--batch_division=all --train_batch=64 --lr=0.01",
+        "dann_dg": "--batch_division=sources --train_batch=64 --lr=0.01",
+        "dann_gs": "--batch_division=sources --train_batch=64 --lr=0.01",
+        "dann_smooth": "--batch_division=all --train_batch=64 --lr=0.0001",
+        #"dann_smooth": "--batch_division=all --train_batch=256 --lr=0.0001",
+        "none": "--batch_division=sources --train_batch=128 --lr=0.001",
+        #"none": "--batch_division=all --train_batch=256 --lr=0.001",
+        "sleep_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
     },
     "wisdm_ar": {
         "aflac_dg": "--batch_division=sources --train_batch=64 --lr=0.01",
-        "dann_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
-        "dann_gs": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_dg": "--batch_division=sources --train_batch=64 --lr=0.01",
+        "dann_gs": "--batch_division=all --train_batch=128 --lr=0.01",
         "dann_smooth": "--batch_division=sources --train_batch=64 --lr=0.001",
-        "dann": "--batch_division=sources --train_batch=64 --lr=0.01",
-        "none": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "none": "--batch_division=all --train_batch=256 --lr=0.01",
         "sleep_dg": "--batch_division=sources --train_batch=64 --lr=0.01",
     },
     "wisdm_at": {
         "aflac_dg": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
         "dann_dg": "--batch_division=all --train_batch=256 --lr=0.01",
         "dann_gs": "--batch_division=all --train_batch=256 --lr=0.01",
         "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.0001",
-        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
-        "none": "--batch_division=sources --train_batch=256 --lr=0.0001",
+        "none": "--batch_division=all --train_batch=256 --lr=0.001",
         "sleep_dg": "--batch_division=all --train_batch=256 --lr=0.01",
+    },
+}
+
+# ./hyperparameters.py --selection=best_target
+hyperparameters_target = {
+    "ucihar": {
+        "aflac_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_gs": "--batch_division=sources --train_batch=256 --lr=0.001",
+        "dann_smooth": "--batch_division=sources --train_batch=128 --lr=0.001",
+        "dann": "--batch_division=all --train_batch=128 --lr=0.001",
+        "none": "--batch_division=sources --train_batch=128 --lr=0.01",
+        "sleep_dg": "--batch_division=sources --train_batch=64 --lr=0.001",
+    },
+    "ucihhar": {
+        "aflac_dg": "--batch_division=all --train_batch=64 --lr=0.01",
+        "dann_dg": "--batch_division=sources --train_batch=64 --lr=0.0001",
+        "dann_gs": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann_smooth": "--batch_division=all --train_batch=256 --lr=0.0001",
+        "dann": "--batch_division=all --train_batch=256 --lr=0.0001",
+        "none": "--batch_division=all --train_batch=64 --lr=0.0001",
+        "sleep_dg": "--batch_division=all --train_batch=64 --lr=0.0001",
+    },
+    "uwave": {
+        "aflac_dg": "--batch_division=all --train_batch=64 --lr=0.001",
+        "dann_dg": "--batch_division=all --train_batch=64 --lr=0.01",
+        "dann_gs": "--batch_division=sources --train_batch=256 --lr=0.0001",
+        #"dann_gs": "--batch_division=all --train_batch=64 --lr=0.0001",
+        "dann_smooth": "--batch_division=sources --train_batch=128 --lr=0.0001",
+        "dann": "--batch_division=all --train_batch=64 --lr=0.0001",
+        "none": "--batch_division=sources --train_batch=64 --lr=0.001",
+        "sleep_dg": "--batch_division=sources --train_batch=64 --lr=0.001",
+    },
+    "wisdm_ar": {
+        "aflac_dg": "--batch_division=all --train_batch=128 --lr=0.001",
+        "dann_dg": "--batch_division=all --train_batch=64 --lr=0.0001",
+        "dann_gs": "--batch_division=all --train_batch=64 --lr=0.001",
+        "dann_smooth": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann": "--batch_division=all --train_batch=256 --lr=0.0001",
+        "none": "--batch_division=all --train_batch=64 --lr=0.0001",
+        "sleep_dg": "--batch_division=sources --train_batch=128 --lr=0.001",
+    },
+    "wisdm_at": {
+        "aflac_dg": "--batch_division=sources --train_batch=128 --lr=0.01",
+        "dann_dg": "--batch_division=all --train_batch=128 --lr=0.0001",
+        "dann_gs": "--batch_division=all --train_batch=64 --lr=0.001",
+        "dann_smooth": "--batch_division=all --train_batch=128 --lr=0.0001",
+        "dann": "--batch_division=all --train_batch=256 --lr=0.0001",
+        "none": "--batch_division=sources --train_batch=128 --lr=0.001",
+        "sleep_dg": "--batch_division=all --train_batch=128 --lr=0.0001",
     },
 }
 
@@ -210,7 +262,7 @@ if __name__ == "__main__":
     print()
 
     #
-    # kamiak_train_real.srun
+    # kamiak_train_real_{source,target}.srun
     #
     # List of methods (excluding "upper", which is run separately)
     # We need to unwrap the methods dimension from the slurm array because we
@@ -225,25 +277,50 @@ if __name__ == "__main__":
         "none"
     ]
 
-    print("For kamiak_train_real.srun:")
-    dataset_names = []
+    print("For kamiak_train_real_source.srun:")
     methods = []
+    print_uids = []
+    dataset_names = []
     sources = []
     targets = []
-    dataset_target_pairs = []
     other_params = []
     for method in method_list:
-        for dataset_name, source, target in pairs:
+        for i, (dataset_name, source, target) in enumerate(pairs):
             methods.append("\""+method+"\"")
+            print_uids.append(str(uids[i]))
             dataset_names.append("\""+dataset_name+"\"")
             sources.append("\""+source+"\"")
             targets.append("\""+target+"\"")
-            dataset_target_pairs.append(("\""+dataset_name+"\"", "\""+target+"\""))
-            other_params.append(("\""+hyperparameters[dataset_name][method]+"\""))
+            other_params.append(("\""+hyperparameters_source[dataset_name][method]+"\""))
 
     print("# number of adaptation problems =", len(sources))
     print("methods=(", " ".join(methods), ")", sep="")
-    print("uids=(", " ".join([str(x) for x in uids]), ")", sep="")
+    print("uids=(", " ".join(print_uids), ")", sep="")
+    print("datasets=(", " ".join(dataset_names), ")", sep="")
+    print("sources=(", " ".join(sources), ")", sep="")
+    print("targets=(", " ".join(targets), ")", sep="")
+    print("other_params=(", " ".join(other_params), ")", sep="")
+    print()
+
+    print("For kamiak_train_real_target.srun:")
+    methods = []
+    print_uids = []
+    dataset_names = []
+    sources = []
+    targets = []
+    other_params = []
+    for method in method_list:
+        for i, (dataset_name, source, target) in enumerate(pairs):
+            methods.append("\""+method+"\"")
+            print_uids.append(str(uids[i]))
+            dataset_names.append("\""+dataset_name+"\"")
+            sources.append("\""+source+"\"")
+            targets.append("\""+target+"\"")
+            other_params.append(("\""+hyperparameters_target[dataset_name][method]+"\""))
+
+    print("# number of adaptation problems =", len(sources))
+    print("methods=(", " ".join(methods), ")", sep="")
+    print("uids=(", " ".join(print_uids), ")", sep="")
     print("datasets=(", " ".join(dataset_names), ")", sep="")
     print("sources=(", " ".join(sources), ")", sep="")
     print("targets=(", " ".join(targets), ")", sep="")
@@ -258,11 +335,12 @@ if __name__ == "__main__":
     dataset_names = []
     sources = []
     targets = []
-    dataset_target_pairs = []
+    dataset_target_pairs = []  # for upper bounds
     for dataset_name, source, target in pairs:
         dataset_names.append("\""+dataset_name+"\"")
         sources.append("\""+source+"\"")
         targets.append("\""+target+"\"")
+        # for upper bounds
         dataset_target_pairs.append(("\""+dataset_name+"\"", "\""+target+"\""))
 
     print("# number of adaptation problems =", len(sources))

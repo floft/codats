@@ -36,7 +36,7 @@ def params_to_str(params):
 def main(argv):
     dataset = "tune2"
     variant = FLAGS.selection
-    files = get_tuning_files("results/tune2_bak", prefix="results_"+dataset+"_"+variant+"-")
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant+"-")
     tuning_results = all_stats(files)
 
     # Group by [dataset][method][hyperparams] since we want to select the best
@@ -59,8 +59,9 @@ def main(argv):
 
     # Average over the runs for each set of parameters, then pick the one with
     # the highest source or target accuracy. Also, output the target accuracy
-    # we would get using these parameters. Hopefully it doesn't change much from
-    # the hyperparameters picked with source vs. target accuracy.
+    # we would get using these parameters (note: on target valid set, not test
+    # set). Hopefully it doesn't change much from the hyperparameters picked
+    # with source vs. target accuracy.
     print("Dataset;Method;BestAccuracy;TargetAccuracy;BestHyperParameters")
     final_params = {}
 
