@@ -147,7 +147,8 @@ class CheckpointManager:
 
         # Only save the "best" if it's better than the previous best
         if validation_accuracy_source is not None:
-            if validation_accuracy_source > self.best_validation_source:
+            if validation_accuracy_source > self.best_validation_source \
+                    or not self.found_best_source:
                 self.best_manager_source.save(checkpoint_number=step)
                 self.best_validation_source = validation_accuracy_source
                 write_best_valid_accuracy(self.log_dir,
@@ -155,7 +156,8 @@ class CheckpointManager:
                     filename="best_valid_accuracy_source.txt")
 
         if validation_accuracy_target is not None:
-            if validation_accuracy_target > self.best_validation_target:
+            if validation_accuracy_target > self.best_validation_target \
+                    or not self.found_best_target:
                 self.best_manager_target.save(checkpoint_number=step)
                 self.best_validation_target = validation_accuracy_target
                 write_best_valid_accuracy(self.log_dir,
