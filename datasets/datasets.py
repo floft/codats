@@ -1180,6 +1180,42 @@ class WisdmArBase(WisdmBase):
             WisdmArBase.num_classes, WisdmArBase.class_labels, *args, **kwargs)
 
 
+class WatchBase(Dataset):
+    """
+    Our watch dataset
+
+    Doesn't actually load the dataset, since we create the tfrecord files in
+    watch-protobuf/process/*.py (see separate git repo). This just provides
+    the information about it.
+    """
+    num_classes = 7
+    class_labels = [
+        "Cook", "Eat", "Hygiene", "Work", "Exercise", "Travel", "Other",
+    ]
+    feature_names = [
+        "roll", "pitch", "yaw",
+        "rot_rate_x", "rot_rate_y", "rot_rate_z",
+        "user_acc_x", "user_acc_y", "user_acc_z",
+        "grav_x", "grav_y", "grav_z",
+        "heading",
+        "acc_x", "acc_y", "acc_z",
+        "long", "lat",
+        "horiz_acc", "alt", "vert_acc",
+        "course", "speed", "floor",
+    ]
+    window_size = 128  # similar to HAR
+    window_overlap = False
+
+    def __init__(self, users, *args, **kwargs):
+        self.users = users
+        super().__init__(WatchBase.num_classes, WatchBase.class_labels,
+            WatchBase.window_size, WatchBase.window_overlap,
+            WatchBase.feature_names, *args, **kwargs)
+
+    def load(self):
+        return None, None, None, None
+
+
 def zero_to_n(n):
     """ Return [0, 1, 2, ..., n] """
     return list(range(0, n+1))
@@ -1199,6 +1235,7 @@ dataset_name_to_class = {
     "ucihm": UciHmBase,
     "wisdm_at": WisdmAtBase,
     "wisdm_ar": WisdmArBase,
+    "watch": WatchBase,
 }
 
 # List of which users are available for each dataset
@@ -1208,6 +1245,7 @@ dataset_users = {
     "ucihhar": zero_to_n(8),  # 9 people
     "wisdm_at": zero_to_n(50),  # 51 people
     "wisdm_ar": zero_to_n(32),  # 33 people
+    "watch": one_to_n(15),  # 15 people
 
     #"sleep": zero_to_n(25),  # 26 people
     #"ucihm": zero_to_n(5),  # 6 people
