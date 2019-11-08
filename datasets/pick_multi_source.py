@@ -328,10 +328,10 @@ if __name__ == "__main__":
     print()
 
     #
-    # kamiak_eval_real.srun (same as above, but don't need to unwrap method
-    # and don't need other_params)
+    # kamiak_eval_real_{source,target}.srun (same as above, but don't need to
+    # unwrap method and don't need other_params)
     #
-    print("For kamiak_eval_real.srun:")
+    print("For kamiak_eval_real_{source,target}.srun:")
     dataset_names = []
     sources = []
     targets = []

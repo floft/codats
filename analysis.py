@@ -515,13 +515,11 @@ def plot_multisource(dataset, variant, save_plot=True, show_title=False,
 
 
 def main(argv):
-    # png files for Google Docs
-    plot_multisource("googledocs_vary_n_best_source", "best_source",
-        save_plot=True, show_title=True,
-        legend_separate=False, suffix="png")
-
-    # pdf files with separate key for paper
     plot_multisource("vary_n_best_source", "best_source",
+        save_plot=True, show_title=True,
+        legend_separate=True, suffix="pdf")
+
+    plot_multisource("vary_n_best_target", "best_target",
         save_plot=True, show_title=True,
         legend_separate=True, suffix="pdf")
 
