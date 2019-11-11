@@ -5,6 +5,7 @@ Generates the list of which multi-source adaptation problems to perform
 For each dataset, for each target user, pick n random source users (excluding
 the target user) 3 different times (so we can get mean +/- stdev).
 """
+import re
 import random
 
 from datasets import dataset_users
@@ -208,6 +209,26 @@ def get_tuning_params():
     return tuning_params
 
 
+def atof(text):
+    """ https://stackoverflow.com/a/5967539 """
+    try:
+        retval = float(text)
+    except ValueError:
+        retval = text
+    return retval
+
+
+def natural_keys(text):
+    """
+    https://stackoverflow.com/a/5967539
+    http://nedbatchelder.com/blog/200712/human_sorting.html
+    (See Toothy's implementation in the comments)
+    float regex comes from https://stackoverflow.com/a/12643073/190597
+    """
+    text = text[0] + text[1]  # we actually are sorting tuples of strings
+    return [atof(c) for c in re.split(r'[+-]?([0-9]+(?:[.][0-9]*)?|[.][0-9]+)', text)]
+
+
 if __name__ == "__main__":
     # Sources-target pairs for training
     pairs = []
@@ -240,11 +261,36 @@ if __name__ == "__main__":
             # "sleep", "17,13,10", "0"
             # "sleep", "17,13,10,20", "0"
             random.seed(42)
-            curr_pairs = generate_multi_source(name, users, n)
 
-            for _ in range(len(curr_pairs)):
-                uids.append(uid)
-                uid += 1
+            # Allows extra max_users for some datasets without changin uid's
+            #
+            # TODO get rid of all this confusing code once we decide what number
+            # to set max_users to. If we don't need to change max_users, then
+            # we can just increment uid's like before.
+            bonus_uid = 0
+
+            if name == "wisdm_at":
+                max_users = 10  # Note: we only used 5 for tuning though
+            else:
+                max_users = 5
+
+            curr_pairs = generate_multi_source(name, users, n,
+                max_users=max_users)
+
+            for dataset_name, source_users, target_user in curr_pairs:
+                # We want to allow increasing the number of max_users for
+                # wisdm_at and watch without changing the uid's of the 0-4
+                # targets for backwards compatibility (otherwise we have to move
+                # all the models around...)
+                set_of_five = int(target_user) // 5
+
+                # before we had 0-4 (or 1-5), so do as before
+                if max_users == 5 or set_of_five == 0:
+                    uids.append(uid)
+                    uid += 1
+                else:
+                    uids.append(str(uid)+"_"+str(bonus_uid))
+                    bonus_uid += 1
 
             # Save highest one for hyperparameter tuning
             if i == len(options)-1:
@@ -257,8 +303,8 @@ if __name__ == "__main__":
 
     # Check that these make sense
     print("List of adaptations we'll perform:")
-    for dataset_name, source, target in pairs:
-        print("    ", dataset_name, source, "to", target)
+    for i, (dataset_name, source, target) in enumerate(pairs):
+        print("    ", dataset_name, source, "to", target, "uid", uids[i])
     print()
 
     #
@@ -286,6 +332,14 @@ if __name__ == "__main__":
     other_params = []
     for method in method_list:
         for i, (dataset_name, source, target) in enumerate(pairs):
+            if dataset_name not in hyperparameters_source:
+                #print("Warning: skipping dataset", dataset_name, "since no hyperparameters")
+                continue
+
+            # TODO remove
+            if "watch" not in dataset_name and "wisdm_at" not in dataset_name:
+                continue
+
             methods.append("\""+method+"\"")
             print_uids.append(str(uids[i]))
             dataset_names.append("\""+dataset_name+"\"")
@@ -302,6 +356,7 @@ if __name__ == "__main__":
     print("other_params=(", " ".join(other_params), ")", sep="")
     print()
 
+    # Note: difference from above is different hyperparameters
     print("For kamiak_train_real_target.srun:")
     methods = []
     print_uids = []
@@ -311,6 +366,14 @@ if __name__ == "__main__":
     other_params = []
     for method in method_list:
         for i, (dataset_name, source, target) in enumerate(pairs):
+            if dataset_name not in hyperparameters_target:
+                #print("Warning: skipping dataset", dataset_name, "since no hyperparameters")
+                continue
+
+            # TODO remove
+            if "watch" not in dataset_name and "wisdm_at" not in dataset_name:
+                continue
+
             methods.append("\""+method+"\"")
             print_uids.append(str(uids[i]))
             dataset_names.append("\""+dataset_name+"\"")
@@ -333,18 +396,32 @@ if __name__ == "__main__":
     #
     print("For kamiak_eval_real_{source,target}.srun:")
     dataset_names = []
+    print_uids = []
     sources = []
     targets = []
-    dataset_target_pairs = []  # for upper bounds
-    for dataset_name, source, target in pairs:
+    dataset_target_pairs = {}  # for upper bounds
+    for i, (dataset_name, source, target) in enumerate(pairs):
+        # If we didn't train them, then don't evaluate it either
+        if dataset_name not in hyperparameters_source \
+                and dataset_name not in hyperparameters_target:
+            continue
+
+        # TODO remove
+        if "watch" not in dataset_name and "wisdm_at" not in dataset_name:
+            continue
+
         dataset_names.append("\""+dataset_name+"\"")
+        print_uids.append(str(uids[i]))
         sources.append("\""+source+"\"")
         targets.append("\""+target+"\"")
+
         # for upper bounds
-        dataset_target_pairs.append(("\""+dataset_name+"\"", "\""+target+"\""))
+        pair_name = ("\""+dataset_name+"\"", "\""+target+"\"")
+        if pair_name not in dataset_target_pairs:
+            dataset_target_pairs[pair_name] = str(uids[i])
 
     print("# number of adaptation problems =", len(sources))
-    print("uids=(", " ".join([str(x) for x in uids]), ")", sep="")
+    print("uids=(", " ".join(print_uids), ")", sep="")
     print("datasets=(", " ".join(dataset_names), ")", sep="")
     print("sources=(", " ".join(sources), ")", sep="")
     print("targets=(", " ".join(targets), ")", sep="")
@@ -354,8 +431,8 @@ if __name__ == "__main__":
     # kamiak_{train,eval}_real_upper.srun
     #
     print("For kamiak_{train,eval}_real_upper.srun:")
-    targets_unique = list(set(dataset_target_pairs))
-    targets_unique.sort()
+    targets_unique = list(set(dataset_target_pairs.keys()))
+    targets_unique.sort(key=natural_keys)
     sources_blank = ["\"\""]*len(targets_unique)
 
     uid = 0
@@ -364,7 +441,8 @@ if __name__ == "__main__":
     targets_unique_target = []
 
     for dataset_name, target in targets_unique:
-        targets_unique_uids.append(uid)
+        # Uses first uid from dataset_name-target
+        targets_unique_uids.append(dataset_target_pairs[(dataset_name, target)])
         uid += 1
         targets_unique_dataset.append(dataset_name)
         targets_unique_target.append(target)
@@ -386,6 +464,10 @@ if __name__ == "__main__":
     targets = []
     other_params = []
     for tuning_uid, params, (dataset_name, source, target) in tuning:
+        # TODO remove
+        if "watch" not in dataset_name:
+            continue
+
         hyper_params = " ".join(["--"+k+"="+str(v) for k, v in params.items()])
 
         uids.append(tuning_uid)
