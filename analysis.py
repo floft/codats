@@ -501,10 +501,13 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         plt.show()
 
 
-def plot_multisource(dataset, variant, save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf"):
+def plot_multisource(dataset, variant, variant_match=None, save_plot=True,
+        show_title=False, legend_separate=True, suffix="pdf"):
     """ Generate plots of target accuracy vs. number of source domains """
-    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant+"-")
+    if variant_match is None:
+        variant_match = variant
+
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
     results = all_stats(files)
     ms_results = average_over_n(get_results(results, average=False))
     ms_averages = average_over_n(get_results(results, average=True))
@@ -519,7 +522,11 @@ def main(argv):
         save_plot=True, show_title=True,
         legend_separate=True, suffix="pdf")
 
-    plot_multisource("vary_n_best_target", "best_target",
+    # We pass variant=best_target, but match * variant since for the upper bound
+    # there isn't a "target" (since target is passed as source), but we all the
+    # others we evaluate only with best_target, so we can match all to get the
+    # best_source only for the upper bound.
+    plot_multisource("vary_n_best_target", "best_target", "*",
         save_plot=True, show_title=True,
         legend_separate=True, suffix="pdf")
 
