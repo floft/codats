@@ -24,8 +24,10 @@ the best hyperparameters and update the
 
     sbatch -J tune kamiak_train_tune.srun tune
     sbatch -J tune_eval kamiak_eval_tune.srun tune
-    ./hyperparameters.py  # then, update params in pick_multi_source.py
-    datasets/pick_multi_source.py  # then, update values in kamiak_{train,eval}_real.srun
+    # Update hyperparameter_{source,target} in pick_multi_source.py
+    ./hyperparameters.py --selection=best_source
+    ./hyperparameters.py --selection=best_target
+    datasets/pick_multi_source.py  # then, update kamiak_{train,eval}_real.srun
 
 ## Training
 
