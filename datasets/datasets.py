@@ -1188,10 +1188,6 @@ class WatchBase(Dataset):
     watch-protobuf/process/*.py (see separate git repo). This just provides
     the information about it.
     """
-    num_classes = 7
-    class_labels = [
-        "Cook", "Eat", "Hygiene", "Work", "Exercise", "Travel", "Other",
-    ]
     feature_names = [
         "roll", "pitch", "yaw",
         "rot_rate_x", "rot_rate_y", "rot_rate_z",
@@ -1206,14 +1202,36 @@ class WatchBase(Dataset):
     window_size = 128  # similar to HAR
     window_overlap = False
 
-    def __init__(self, users, *args, **kwargs):
+    def __init__(self, users, num_classes, class_labels, *args, **kwargs):
         self.users = users
-        super().__init__(WatchBase.num_classes, WatchBase.class_labels,
+        super().__init__(num_classes, class_labels,
             WatchBase.window_size, WatchBase.window_overlap,
             WatchBase.feature_names, *args, **kwargs)
 
     def load(self):
         return None, None, None, None
+
+
+class WatchWithOther(WatchBase):
+    num_classes = 7
+    class_labels = [
+        "Cook", "Eat", "Hygiene", "Work", "Exercise", "Travel", "Other",
+    ]
+
+    def __init__(self, users, *args, **kwargs):
+        super().__init__(users, WatchWithOther.num_classes,
+            WatchWithOther.class_labels, *args, **kwargs)
+
+
+class WatchWithoutOther(WatchBase):
+    num_classes = 6
+    class_labels = [
+        "Cook", "Eat", "Hygiene", "Work", "Exercise", "Travel",
+    ]
+
+    def __init__(self, users, *args, **kwargs):
+        super().__init__(users, WatchWithoutOther.num_classes,
+            WatchWithoutOther.class_labels, *args, **kwargs)
 
 
 def zero_to_n(n):
@@ -1235,7 +1253,8 @@ dataset_name_to_class = {
     "ucihm": UciHmBase,
     "wisdm_at": WisdmAtBase,
     "wisdm_ar": WisdmArBase,
-    "watch": WatchBase,
+    "watch": WatchWithOther,
+    "watch_noother": WatchWithoutOther,
 }
 
 # List of which users are available for each dataset
@@ -1246,6 +1265,7 @@ dataset_users = {
     "wisdm_at": zero_to_n(50),  # 51 people
     "wisdm_ar": zero_to_n(32),  # 33 people
     "watch": one_to_n(15),  # 15 people
+    "watch_noother": one_to_n(15),  # 15 people
 
     #"sleep": zero_to_n(25),  # 26 people
     #"ucihm": zero_to_n(5),  # 6 people

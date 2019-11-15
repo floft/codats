@@ -218,12 +218,6 @@ def load(dataset_name, num_domains, test=False, *args, **kwargs):
     # Get dataset information
     num_classes, class_labels = datasets.attributes(dataset_name)
 
-    # Reformat from watch_1 to watch001 if the "watch" dataset
-    if "watch_" in dataset_name:
-        _, num = dataset_name.split("_")
-        num = int(num)
-        dataset_name = "watch%03d"%num
-
     # Get dataset tfrecord filenames
     def _path(filename):
         """ Files are in datasets/ subdirectory. If the file exists, return it
