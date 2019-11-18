@@ -436,7 +436,11 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
     markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
         "1", "2", "3", "4", "+", "x"]
 
-    for dataset_name, dataset_values in ms_results.items():
+    sorted_dataset_names = list(ms_results.keys())
+    sorted_dataset_names.sort()
+
+    for dataset_name in sorted_dataset_names:
+        dataset_values = ms_results[dataset_name]
         methods = list(dataset_values.keys())
         data = list(dataset_values.values())
 
