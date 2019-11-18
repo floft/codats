@@ -60,15 +60,6 @@ hyperparameters_source = {
         "none": "--batch_division=all --train_batch=256 --lr=0.001",
         "sleep_dg": "--batch_division=all --train_batch=256 --lr=0.01",
     },
-    "watch": {
-        "aflac_dg": "--batch_division=sources --train_batch=256 --lr=0.001",
-        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
-        "dann_dg": "--batch_division=all --train_batch=256 --lr=0.01",
-        "dann_gs": "--batch_division=all --train_batch=256 --lr=0.001",
-        "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.001",
-        "none": "--batch_division=all --train_batch=256 --lr=0.001",
-        "sleep_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
-    },
 }
 
 # ./hyperparameters.py --selection=best_target
@@ -119,15 +110,6 @@ hyperparameters_target = {
         "dann_smooth": "--batch_division=all --train_batch=128 --lr=0.0001",
         "none": "--batch_division=sources --train_batch=64 --lr=0.01",
         "sleep_dg": "--batch_division=sources --train_batch=128 --lr=0.01",
-    },
-    "watch": {
-        "aflac_dg": "--batch_division=all --train_batch=64 --lr=0.001",
-        "dann": "--batch_division=all --train_batch=64 --lr=0.001",
-        "dann_dg": "--batch_division=all --train_batch=64 --lr=0.001",
-        "dann_gs": "--batch_division=all --train_batch=64 --lr=0.01",
-        "dann_smooth": "--batch_division=all --train_batch=128 --lr=0.01",
-        "none": "--batch_division=all --train_batch=64 --lr=0.001",
-        "sleep_dg": "--batch_division=sources --train_batch=64 --lr=0.0001",
     },
 }
 
@@ -260,6 +242,10 @@ if __name__ == "__main__":
 
     # Note: "dataset_users" is set in datasets.py
     for name, users in dataset_users.items():
+        # Tune on "watch_noother" not "watch"
+        if name == "watch":
+            continue
+
         # Since sources-target aren't stored in filename anymore (too long), we
         # would run into folder name conflicts if we didn't append a unique ID
         # to each sources-target pair
@@ -356,8 +342,7 @@ if __name__ == "__main__":
                 continue
 
             # TODO remove
-            #if "watch" not in dataset_name and "wisdm_at" not in dataset_name:
-            if "watch" in dataset_name or "wisdm_at" not in dataset_name:
+            if "watch" not in dataset_name:
                 continue
 
             methods.append("\""+method+"\"")
@@ -387,12 +372,11 @@ if __name__ == "__main__":
     for method in method_list:
         for i, (dataset_name, source, target) in enumerate(pairs):
             if dataset_name not in hyperparameters_target:
-                print("Warning: skipping dataset", dataset_name, "since no hyperparameters")
+                #print("Warning: skipping dataset", dataset_name, "since no hyperparameters")
                 continue
 
             # TODO remove
-            #if "watch" not in dataset_name and "wisdm_at" not in dataset_name:
-            if "watch" in dataset_name:  # or "wisdm_at" not in dataset_name:
+            if "watch" not in dataset_name:
                 continue
 
             methods.append("\""+method+"\"")
@@ -428,12 +412,7 @@ if __name__ == "__main__":
             continue
 
         # TODO remove
-        #if "watch" not in dataset_name and "wisdm_at" not in dataset_name:
-        # Source
-        #if "watch" in dataset_name or "wisdm_at" not in dataset_name:
-        #    continue
-        # Target
-        if "watch" in dataset_name:  # or "wisdm_at" not in dataset_name:
+        if "watch" not in dataset_name:
             continue
 
         dataset_names.append("\""+dataset_name+"\"")
