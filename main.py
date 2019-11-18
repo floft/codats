@@ -8,7 +8,6 @@ import tensorflow as tf
 
 from absl import app
 from absl import flags
-from absl import logging
 
 import methods
 import file_utils
@@ -53,7 +52,7 @@ def get_directory_names():
     # Use the number specified on the command line (higher precedence than --debug)
     if FLAGS.debugnum >= 0:
         attempt = FLAGS.debugnum
-        logging.info("Debugging attempt: %s", attempt)
+        print("Debugging attempt:", attempt)
 
         prefix += "-"+str(attempt)
         model_dir = os.path.join(FLAGS.modeldir, prefix)
@@ -62,7 +61,7 @@ def get_directory_names():
     elif FLAGS.debug:
         attempt = file_utils.last_modified_number(FLAGS.logdir, prefix+"*")
         attempt = attempt+1 if attempt is not None else 1
-        logging.info("Debugging attempt: %s", attempt)
+        print("Debugging attempt:", attempt)
 
         prefix += "-"+str(attempt)
         model_dir = os.path.join(FLAGS.modeldir, prefix)
@@ -133,7 +132,7 @@ def main(argv):
             continue  # skip evaluation, checkpointing, etc. when timing
 
         if i%1000 == 0:
-            logging.info("step %d took %f seconds", int(global_step), t)
+            print("step %d took %f seconds"%(int(global_step), t))
 
         # Metrics on training/validation data
         if i%FLAGS.log_train_steps == 0:
