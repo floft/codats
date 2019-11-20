@@ -60,6 +60,15 @@ hyperparameters_source = {
         "none": "--batch_division=all --train_batch=256 --lr=0.001",
         "sleep_dg": "--batch_division=all --train_batch=256 --lr=0.01",
     },
+    "watch_noother": {
+        "aflac_dg": "--batch_division=sources --train_batch=256 --lr=0.001",
+        "dann": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_dg": "--batch_division=sources --train_batch=256 --lr=0.01",
+        "dann_gs": "--batch_division=all --train_batch=256 --lr=0.001",
+        "dann_smooth": "--batch_division=sources --train_batch=256 --lr=0.001",
+        "none": "--batch_division=all --train_batch=256 --lr=0.001",
+        "sleep_dg": "--batch_division=all --train_batch=256 --lr=0.01",
+    },
 }
 
 # ./hyperparameters.py --selection=best_target
@@ -109,6 +118,15 @@ hyperparameters_target = {
         "dann_gs": "--batch_division=all --train_batch=64 --lr=0.0001",
         "dann_smooth": "--batch_division=all --train_batch=128 --lr=0.0001",
         "none": "--batch_division=sources --train_batch=64 --lr=0.01",
+        "sleep_dg": "--batch_division=sources --train_batch=128 --lr=0.01",
+    },
+    "watch_noother": {
+        "aflac_dg": "--batch_division=all --train_batch=64 --lr=0.001",
+        "dann": "--batch_division=sources --train_batch=128 --lr=0.01",
+        "dann_dg": "--batch_division=all --train_batch=64 --lr=0.001",
+        "dann_gs": "--batch_division=all --train_batch=64 --lr=0.001",
+        "dann_smooth": "--batch_division=all --train_batch=128 --lr=0.001",
+        "none": "--batch_division=sources --train_batch=128 --lr=0.001",
         "sleep_dg": "--batch_division=sources --train_batch=128 --lr=0.01",
     },
 }
@@ -469,10 +487,6 @@ if __name__ == "__main__":
     targets = []
     other_params = []
     for tuning_uid, params, (dataset_name, source, target) in tuning:
-        # TODO remove
-        if "watch" not in dataset_name:
-            continue
-
         hyper_params = " ".join(["--"+k+"="+str(v) for k, v in params.items()])
 
         uids.append(tuning_uid)
