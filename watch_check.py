@@ -28,7 +28,7 @@ def check_not_none(value):
 def main(argv):
     # We use test=True so we concat the validation data into the training data.
     # Otherwise, we never check/count the real test data.
-    sources, target = load_da("watch", "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15", "1",
+    sources, target = load_da("watch_noother", "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15", "1",
         test=True)
     train_count = 0
     test_count = 0
