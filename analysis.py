@@ -61,7 +61,7 @@ method_types = {
     "upper": "upper",
 
     "dann": "MS-DA",
-    "dann_gs": "MS-Da",
+    "dann_gs": "MS-DA",
     "dann_smooth": "MS-DA",
 
     "dann_dg": "DG",
@@ -451,7 +451,8 @@ def average_over_n(ms_results):
 
 
 def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf", dir_name="results", error_bars=True):
+        legend_separate=True, suffix="pdf", dir_name="results",
+        error_bars=True, figsize=(10, 4.1)):
     # See: https://matplotlib.org/3.1.1/api/markers_api.html
     markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
         "1", "2", "3", "4", "+", "x"]
@@ -482,7 +483,7 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         # "dodge" points so they don't overlap
         jitter = gen_jitter(len(data), amount=0.01*x_range)
 
-        fig, ax = plt.subplots(1, 1, figsize=(10, 4.1), dpi=100)
+        fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=100)
 
         for i in range(len(data)):
             method_data = np.array(data[i])
@@ -559,7 +560,7 @@ def plot_multisource(dataset, variant, variant_match=None, save_plot=True,
     generate_plots(ms_averages, "multisource_average_"+variant, save_plot,
         show_title, legend_separate, suffix)
     generate_plots(ms_method_averages, "multisource_methodaverage_"+variant, save_plot,
-        show_title, legend_separate, suffix, error_bars=False)
+        show_title, legend_separate, suffix, error_bars=False, figsize=(10, 3))
 
 
 def main(argv):
