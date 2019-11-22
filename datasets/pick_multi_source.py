@@ -292,7 +292,7 @@ if __name__ == "__main__":
             # we can just increment uid's like before.
             bonus_uid = 0
 
-            if name == "wisdm_at":
+            if name == "wisdm_at" or name == "watch_noother":
                 max_users = 10  # Note: we only used 5 for tuning though
             else:
                 max_users = 5
@@ -305,7 +305,12 @@ if __name__ == "__main__":
                 # wisdm_at and watch without changing the uid's of the 0-4
                 # targets for backwards compatibility (otherwise we have to move
                 # all the models around...)
-                set_of_five = int(target_user) // 5
+                if users[0] == 1:  # subtract 1 if doesn't start at zer0
+                    set_of_five = (int(target_user) - 1) // 5
+                elif users[0] == 0:
+                    set_of_five = int(target_user) // 5
+                else:
+                    raise NotImplementedError("users doesn't start at 0 or 1?")
 
                 # before we had 0-4 (or 1-5), so do as before
                 if max_users == 5 or set_of_five == 0:
