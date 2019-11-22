@@ -56,6 +56,20 @@ method_lines = {
     "ciddg_dg": "--",
 }
 
+method_types = {
+    "none": "none",
+    "upper": "upper",
+
+    "dann": "MS-DA",
+    "dann_gs": "MS-Da",
+    "dann_smooth": "MS-DA",
+
+    "dann_dg": "DG",
+    "sleep_dg": "DG",
+    "aflac_dg": "DG",
+    "ciddg_dg": "DG",
+}
+
 
 def get_tuning_files(dir_name, prefix):
     """ Get all the hyperparameter evaluation result files """
@@ -329,6 +343,7 @@ def make_replacements(s, replacements):
 def pretty_dataset_name(dataset):
     """ Make dataset name look good for plots """
     replacements = [
+        ("watch_noother", "CASAS AR"),
         ("ucihar", "HAR"),
         ("ucihhar", "HHAR"),
         ("ucihm", "HM"),
@@ -342,11 +357,12 @@ def pretty_dataset_name(dataset):
     return make_replacements(dataset, replacements)
 
 
-def get_results(results, average=False):
+def get_results(results, average=False, method_average=False):
     """ Get results - get the test on target mean and standard deviation values,
     indexed by,
-    if average=False: ms_results[dataset_name + " " + target][method][n]
+    if average*=False: ms_results[dataset_name + " " + target][method][n]
     if average=True:  ms_results[dataset_name][method][n]
+    if method_average=True: ms_results[...][method_type (MS-DA, DG, ...)][n]
     """
     ms_results = {}
 
@@ -376,6 +392,10 @@ def get_results(results, average=False):
         if method == "upper":
             mean = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
             std = avgs[avgs["Dataset"] == "Test A"]["Std"].values[0]
+
+        # Group by types, average over all methods of that type
+        if method_average:
+            method = method_types[method]
 
         #print(target, method, seqlen, mean, std, sep=";")
 
@@ -431,7 +451,7 @@ def average_over_n(ms_results):
 
 
 def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf", dir_name="results"):
+        legend_separate=True, suffix="pdf", dir_name="results", error_bars=True):
     # See: https://matplotlib.org/3.1.1/api/markers_api.html
     markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
         "1", "2", "3", "4", "+", "x"]
@@ -469,8 +489,21 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
             x = method_data[:, 0] + jitter[i]
             y = method_data[:, 1]*100
             std = method_data[:, 2]*100
-            method_name = nice_method_names[methods[i]]
-            p = plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+method_lines[methods[i]], alpha=0.8)
+
+            if methods[i] in nice_method_names:
+                method_name = nice_method_names[methods[i]]
+            else:
+                method_name = methods[i]
+
+            if methods[i] in method_lines:
+                line_type = method_lines[methods[i]]
+            else:
+                line_type = "-"
+
+            if error_bars:
+                p = plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+line_type, alpha=0.8)
+            else:
+                p = plt.plot(x, y, markers[i]+line_type, label=method_name, alpha=0.8)
 
             # Make a horizontal line at the upper bound since it doesn't matter
             # what "n" is for this method (ignores the sources, only trains
@@ -518,17 +551,20 @@ def plot_multisource(dataset, variant, variant_match=None, save_plot=True,
 
     files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
     results = all_stats(files)
-    ms_results = average_over_n(get_results(results, average=False))
+    ms_results = average_over_n(get_results(results))
     ms_averages = average_over_n(get_results(results, average=True))
+    ms_method_averages = average_over_n(get_results(results, average=True, method_average=True))
     generate_plots(ms_results, "multisource_"+variant, save_plot, show_title,
         legend_separate, suffix)
     generate_plots(ms_averages, "multisource_average_"+variant, save_plot,
         show_title, legend_separate, suffix)
+    generate_plots(ms_method_averages, "multisource_methodaverage_"+variant, save_plot,
+        show_title, legend_separate, suffix, error_bars=False)
 
 
 def main(argv):
     plot_multisource("vary_n_best_source", "best_source",
-        save_plot=True, show_title=True,
+        save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf")
 
     # We pass variant=best_target, but match * variant since for the upper bound
@@ -536,7 +572,7 @@ def main(argv):
     # others we evaluate only with best_target, so we can match all to get the
     # best_source only for the upper bound.
     plot_multisource("vary_n_best_target", "best_target", "*",
-        save_plot=True, show_title=True,
+        save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf")
 
 
