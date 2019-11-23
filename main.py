@@ -3,6 +3,7 @@
 Time-series adaptation
 """
 import os
+import sys
 import time
 import tensorflow as tf
 
@@ -133,6 +134,7 @@ def main(argv):
 
         if i%1000 == 0:
             print("step %d took %f seconds"%(int(global_step), t))
+            sys.stdout.flush()  # otherwise waits till the end to flush on Kamiak
 
         # Metrics on training/validation data
         if i%FLAGS.log_train_steps == 0:
