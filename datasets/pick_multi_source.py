@@ -131,6 +131,185 @@ hyperparameters_target = {
     },
 }
 
+# ./samples_per_target.py | tee samples_per_target.txt
+dataset_target_training_sample_counts = {
+    "ucihar": {
+        1: 221,
+        2: 192,
+        3: 217,
+        4: 202,
+        5: 192,
+        6: 208,
+        7: 196,
+        8: 179,
+        9: 184,
+        10: 188,
+        11: 201,
+        12: 204,
+        13: 208,
+        14: 206,
+        15: 209,
+        16: 233,
+        17: 235,
+        18: 232,
+        19: 230,
+        20: 226,
+        21: 260,
+        22: 204,
+        23: 237,
+        24: 243,
+        25: 261,
+        26: 250,
+        27: 240,
+        28: 244,
+        29: 220,
+        30: 244,
+    },
+    "uwave": {
+        1: 358,
+        2: 358,
+        3: 358,
+        4: 358,
+        5: 358,
+        6: 358,
+        7: 358,
+        8: 358,
+    },
+    "ucihhar": {
+        0: 6617,
+        1: 7251,
+        2: 6425,
+        3: 6648,
+        4: 7192,
+        5: 6334,
+        6: 6991,
+        7: 6644,
+        8: 7387,
+    },
+    "wisdm_at": {
+        0: 174,
+        1: 148,
+        2: 223,
+        3: 132,
+        4: 200,
+        5: 283,
+        6: 133,
+        7: 157,
+        8: 169,
+        9: 322,
+        10: 131,
+        11: 105,
+        12: 217,
+        13: 126,
+        14: 160,
+        15: 154,
+        16: 114,
+        17: 176,
+        18: 188,
+        19: 178,
+        20: 176,
+        21: 147,
+        22: 200,
+        23: 172,
+        24: 102,
+        25: 124,
+        26: 136,
+        27: 172,
+        28: 150,
+        29: 118,
+        30: 222,
+        31: 152,
+        32: 105,
+        33: 162,
+        34: 116,
+        35: 169,
+        36: 147,
+        37: 308,
+        38: 109,
+        39: 99,
+        40: 129,
+        41: 293,
+        42: 142,
+        43: 105,
+        44: 1846,
+        45: 369,
+        46: 113,
+        47: 300,
+        48: 387,
+        49: 114,
+        50: 186,
+    },
+    "wisdm_ar": {
+        0: 149,
+        1: 116,
+        2: 175,
+        3: 141,
+        4: 148,
+        5: 153,
+        6: 204,
+        7: 173,
+        8: 157,
+        9: 163,
+        10: 184,
+        11: 190,
+        12: 140,
+        13: 101,
+        14: 109,
+        15: 163,
+        16: 226,
+        17: 282,
+        18: 176,
+        19: 111,
+        20: 128,
+        21: 128,
+        22: 162,
+        23: 174,
+        24: 105,
+        25: 190,
+        26: 125,
+        27: 220,
+        28: 176,
+        29: 147,
+        30: 179,
+        31: 111,
+        32: 160,
+    },
+    "watch": {
+        1: 630,
+        2: 3604,
+        3: 528,
+        4: 964,
+        5: 975,
+        6: 684,
+        7: 2256,
+        8: 712,
+        9: 1566,
+        10: 1238,
+        11: 652,
+        12: 3657,
+        13: 2733,
+        14: 613,
+        15: 120,
+    },
+    "watch_noother": {
+        1: 432,
+        2: 2259,
+        3: 464,
+        4: 689,
+        5: 636,
+        6: 508,
+        7: 1743,
+        8: 543,
+        9: 1252,
+        10: 823,
+        11: 506,
+        12: 2298,
+        13: 1722,
+        14: 431,
+        15: 92,
+    },
+}
+
 
 def other_users(users, skip_user):
     """ From the list of users, throw out skip_user """
@@ -258,6 +437,10 @@ if __name__ == "__main__":
     tuning_params = get_tuning_params()
     tuning_uid = 0
 
+    # Vary-amount-of-target-data experiments
+    vary_amount = []
+    vary_amount_uid = 0
+
     # Note: "dataset_users" is set in datasets.py
     for name, users in dataset_users.items():
         # Tune on "watch_noother" not "watch"
@@ -292,8 +475,10 @@ if __name__ == "__main__":
             # we can just increment uid's like before.
             bonus_uid = 0
 
-            if name == "wisdm_at" or name == "watch_noother":
+            if name == "wisdm_at":
                 max_users = 10  # Note: we only used 5 for tuning though
+            elif name == "watch_noother":
+                max_users = 15
             else:
                 max_users = 5
 
@@ -320,12 +505,39 @@ if __name__ == "__main__":
                     uids.append(str(uid)+"_"+str(bonus_uid))
                     bonus_uid += 1
 
-            # Save highest one for hyperparameter tuning
+            # Same idea as how we created "options", but for number of target samples.
+            # We go from 1 sample up to max samples from any of the targets we'll
+            # be looking at (skip targets we ignore), but later we check that
+            # the target has this many samples, otherwise we skip it for those
+            # larger-than-it-has values of target examples.
+            possible_target_users = users[:max_users]
+            max_examples = max([examples for user, examples in
+                dataset_target_training_sample_counts[name].items()
+                if user in possible_target_users])
+            amounts_of_target_data = generate_n_with_max(max_examples, 5)
+
+            # Save highest one for hyperparameter tuning and
+            # vary-amount-of-target-data experiments
             if i == len(options)-1:
                 for pair in curr_pairs:
+                    # Choose different hyperparameters
                     for params in tuning_params:
                         tuning.append((tuning_uid, params, pair))
                         tuning_uid += 1
+
+                    dataset_name, source_users, target_user = pair
+
+                    # Choose different amounts of data
+                    for amount_of_target_data in amounts_of_target_data:
+                        # Skip if this amount-of-data is larger than the number
+                        # of training samples this target has.
+                        if amount_of_target_data <= \
+                                dataset_target_training_sample_counts[name][int(target_user)]:
+                            vary_amount.append((str(vary_amount_uid)+"_"+str(amount_of_target_data),
+                                dataset_name, source_users,
+                                target_user, amount_of_target_data))
+
+                    vary_amount_uid += 1
 
             pairs += curr_pairs
 
@@ -333,6 +545,11 @@ if __name__ == "__main__":
     print("List of adaptations we'll perform:")
     for i, (dataset_name, source, target) in enumerate(pairs):
         print("    ", dataset_name, source, "to", target, "uid", uids[i])
+    print()
+
+    print("List of vary amount problems:")
+    for uid, dataset_name, source, target, amount_of_target_data in vary_amount:
+        print("    ", dataset_name, source, "to", target, "amount", amount_of_target_data, "uid", uid)
     print()
 
     #
@@ -480,6 +697,70 @@ if __name__ == "__main__":
     print("datasets=(", " ".join(targets_unique_dataset), ")", sep="")
     print("sources=(", " ".join(sources_blank), ")", sep="")
     print("targets=(", " ".join(targets_unique_target), ")", sep="")
+    print()
+
+    #
+    # kamiak_train_vary_amount_target.srun
+    # Note: this is using target hyperparameters. Skipping the source ones.
+    #
+    print("For kamiak_train_vary_amount_target.srun:")
+    methods = []
+    print_uids = []
+    dataset_names = []
+    sources = []
+    targets = []
+    other_params = []
+    for method in method_list:
+        for uid, dataset_name, source, target, amount_of_target_data in vary_amount:
+            if dataset_name not in hyperparameters_target:
+                #print("Warning: skipping dataset", dataset_name, "since no hyperparameters")
+                continue
+
+            # TODO remove
+            # if "watch" not in dataset_name:
+            #     continue
+
+            methods.append("\""+method+"\"")
+            print_uids.append(str(uid))
+            dataset_names.append("\""+dataset_name+"\"")
+            sources.append("\""+source+"\"")
+            targets.append("\""+target+"\"")
+            other_params.append(("\"" + hyperparameters_target[dataset_name][method]
+                + " --max_target_examples=" + str(amount_of_target_data) + "\""))
+
+    print("# number of adaptation problems =", len(sources))
+    print("methods=(", " ".join(methods), ")", sep="")
+    print("uids=(", " ".join(print_uids), ")", sep="")
+    print("datasets=(", " ".join(dataset_names), ")", sep="")
+    print("sources=(", " ".join(sources), ")", sep="")
+    print("targets=(", " ".join(targets), ")", sep="")
+    print("other_params=(", " ".join(other_params), ")", sep="")
+    print()
+
+    #
+    # kamiak_eval_vary_amount_target.srun
+    # Note: this is using target hyperparameters. Skipping the source ones.
+    #
+    print("For kamiak_eval_vary_amount_target.srun:")
+    print_uids = []
+    dataset_names = []
+    sources = []
+    targets = []
+    for uid, dataset_name, source, target, amount_of_target_data in vary_amount:
+        if dataset_name not in hyperparameters_target:
+            #print("Warning: skipping dataset", dataset_name, "since no hyperparameters")
+            continue
+
+        print_uids.append(str(uid))
+        dataset_names.append("\""+dataset_name+"\"")
+        sources.append("\""+source+"\"")
+        targets.append("\""+target+"\"")
+
+    print("# number of adaptation problems =", len(sources))
+    print("uids=(", " ".join(print_uids), ")", sep="")
+    print("datasets=(", " ".join(dataset_names), ")", sep="")
+    print("sources=(", " ".join(sources), ")", sep="")
+    print("targets=(", " ".join(targets), ")", sep="")
     print()
 
     #

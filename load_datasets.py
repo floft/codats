@@ -308,8 +308,8 @@ def load_da(dataset, sources, target, *args, **kwargs):
         source_train_batch = FLAGS.train_batch
         target_train_batch = FLAGS.train_batch
 
-    print("Source batch size:", source_train_batch, "for", len(sources), "sources")
-    print("Target batch size:", target_train_batch)
+    #print("Source batch size:", source_train_batch, "for", len(sources), "sources")
+    #print("Target batch size:", target_train_batch)
 
     # Load each source
     source_datasets = []
@@ -332,7 +332,11 @@ def load_da(dataset, sources, target, *args, **kwargs):
         # training/evaluation
         if FLAGS.max_target_examples != 0:
             train_max_examples = FLAGS.max_target_examples
-            eval_max_examples = FLAGS.max_target_examples
+
+            # Note: for now don't limit eval examples. We want the best estimate
+            # of evaluation performance. We just want to limit how much data
+            # we have during training.
+            #eval_max_examples = FLAGS.max_target_examples
 
         target_dataset = load(target, num_domains,
             train_batch=target_train_batch,
