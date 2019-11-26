@@ -357,7 +357,7 @@ def pretty_dataset_name(dataset):
     return make_replacements(dataset, replacements)
 
 
-def get_results(results, average=False, method_average=False):
+def get_results(results, average=False, method_average=False, target_amount=False):
     """ Get results - get the test on target mean and standard deviation values,
     indexed by,
     if average*=False: ms_results[dataset_name + " " + target][method][n]
@@ -370,7 +370,13 @@ def get_results(results, average=False, method_average=False):
         params = result["parameters"]
         avgs = result["averages"]
         method = params["method"]
-        n = params["num_domains"]
+
+        if target_amount:
+            assert params["config"] is not None, "no config for "+str(result)
+            n = params["config"]["max_target_examples"]
+        else:
+            n = params["num_domains"]
+
         dataset_name = pretty_dataset_name(params["dataset"])
 
         # Indexed by target, i.e. separate plot per dataset-target. Otherwise,
@@ -451,8 +457,8 @@ def average_over_n(ms_results):
 
 
 def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf", dir_name="results",
-        error_bars=True, figsize=(10, 4.1)):
+        legend_separate=True, suffix="pdf", dir_name="result_plots",
+        error_bars=True, figsize=(10, 4.1), xlabel="Number of source domains"):
     # See: https://matplotlib.org/3.1.1/api/markers_api.html
     markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
         "1", "2", "3", "4", "+", "x"]
@@ -519,7 +525,7 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         if show_title:
             plt.title("Adaptation and Generalization Methods on "+dataset_name)
 
-        ax.set_xlabel("Number of source domains")
+        ax.set_xlabel(xlabel)
         ax.set_ylabel("Target Domain Accuracy (%)")
 
         if legend_separate:
@@ -552,15 +558,42 @@ def plot_multisource(dataset, variant, variant_match=None, save_plot=True,
 
     files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
     results = all_stats(files)
+
     ms_results = average_over_n(get_results(results))
     ms_averages = average_over_n(get_results(results, average=True))
     ms_method_averages = average_over_n(get_results(results, average=True, method_average=True))
+
     generate_plots(ms_results, "multisource_"+variant, save_plot, show_title,
         legend_separate, suffix)
     generate_plots(ms_averages, "multisource_average_"+variant, save_plot,
         show_title, legend_separate, suffix)
     generate_plots(ms_method_averages, "multisource_methodaverage_"+variant, save_plot,
         show_title, legend_separate, suffix, error_bars=False, figsize=(10, 3))
+
+
+def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
+        show_title=False, legend_separate=True, suffix="pdf"):
+    if variant_match is None:
+        variant_match = variant
+
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
+    results = all_stats(files)
+
+    ms_results = average_over_n(get_results(results, target_amount=True))
+    ms_averages = average_over_n(get_results(results, average=True,
+        target_amount=True))
+    ms_method_averages = average_over_n(get_results(results, average=True,
+        method_average=True, target_amount=True))
+
+    xlabel = "Number of unlabeled target examples for training"
+
+    generate_plots(ms_results, "varyamount_"+variant, save_plot, show_title,
+        legend_separate, suffix, xlabel=xlabel)
+    generate_plots(ms_averages, "varyamount_average_"+variant, save_plot,
+        show_title, legend_separate, suffix, xlabel=xlabel)
+    generate_plots(ms_method_averages, "varyamount_methodaverage_"+variant, save_plot,
+        show_title, legend_separate, suffix, error_bars=False, figsize=(10, 3),
+        xlabel=xlabel)
 
 
 def main(argv):
@@ -573,6 +606,10 @@ def main(argv):
     # others we evaluate only with best_target, so we can match all to get the
     # best_source only for the upper bound.
     plot_multisource("vary_n_best_target", "best_target", "*",
+        save_plot=True, show_title=False,
+        legend_separate=True, suffix="pdf")
+
+    plot_varyamount("vary_amount", "best_target", "*",
         save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf")
 
