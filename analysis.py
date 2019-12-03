@@ -458,7 +458,8 @@ def average_over_n(ms_results):
 
 def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf", dir_name="result_plots",
-        error_bars=True, figsize=(10, 4.1), xlabel="Number of source domains"):
+        error_bars=True, figsize=(10, 4.1), xlabel="Number of source domains",
+        skip=[]):
     # See: https://matplotlib.org/3.1.1/api/markers_api.html
     markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
         "1", "2", "3", "4", "+", "x"]
@@ -496,6 +497,9 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
             x = method_data[:, 0] + jitter[i]
             y = method_data[:, 1]*100
             std = method_data[:, 2]*100
+
+            if methods[i] in skip:
+                continue
 
             if methods[i] in nice_method_names:
                 method_name = nice_method_names[methods[i]]
@@ -585,7 +589,7 @@ def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
     ms_method_averages = average_over_n(get_results(results, average=True,
         method_average=True, target_amount=True))
 
-    xlabel = "Number of unlabeled target examples for training"
+    xlabel = "Number of unlabeled target instances for training"
 
     generate_plots(ms_results, "varyamount_"+variant, save_plot, show_title,
         legend_separate, suffix, xlabel=xlabel)
@@ -593,7 +597,7 @@ def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
         show_title, legend_separate, suffix, xlabel=xlabel)
     generate_plots(ms_method_averages, "varyamount_methodaverage_"+variant, save_plot,
         show_title, legend_separate, suffix, error_bars=False, figsize=(10, 3),
-        xlabel=xlabel)
+        xlabel=xlabel, skip=["none", "upper"])
 
 
 def main(argv):
