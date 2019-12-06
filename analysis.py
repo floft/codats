@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from absl import app
 from absl import flags
 # from scipy import stats
+from matplotlib.ticker import MaxNLocator
 
 from pool import run_job_pool
 from file_utils import get_config
@@ -343,7 +344,8 @@ def make_replacements(s, replacements):
 def pretty_dataset_name(dataset):
     """ Make dataset name look good for plots """
     replacements = [
-        ("watch_noother", "CASAS AR"),
+        #("watch_noother", "CASAS AR"),
+        ("watch_noother", "LABNAME AR"),
         ("ucihar", "HAR"),
         ("ucihhar", "HHAR"),
         ("ucihm", "HM"),
@@ -458,8 +460,8 @@ def average_over_n(ms_results):
 
 def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf", dir_name="result_plots",
-        error_bars=True, figsize=(10, 4.1), xlabel="Number of source domains",
-        skip=[]):
+        error_bars=True, figsize=(5, 3), xlabel="Number of source domains",
+        skip=[], yrange=None, ncol=1):
     # See: https://matplotlib.org/3.1.1/api/markers_api.html
     markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
         "1", "2", "3", "4", "+", "x"]
@@ -491,6 +493,13 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         jitter = gen_jitter(len(data), amount=0.01*x_range)
 
         fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=100)
+
+        if yrange is not None:
+            ax.set_ylim(yrange)
+
+        # Only integers on x axis
+        # https://stackoverflow.com/a/38096332
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
         for i in range(len(data)):
             method_data = np.array(data[i])
@@ -535,7 +544,7 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         if legend_separate:
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-            legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+            legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5), ncol=ncol)
             export_legend(legend, dir_name, filename=prefix+"_key."+suffix)
             legend.remove()
         else:
@@ -543,7 +552,7 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
             # Shrink current axis by 20%
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-            plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+            plt.legend(loc="center left", bbox_to_anchor=(1, 0.5), ncol=ncol)
 
         if save_plot:
             plt.savefig(os.path.join(dir_name,
@@ -568,11 +577,12 @@ def plot_multisource(dataset, variant, variant_match=None, save_plot=True,
     ms_method_averages = average_over_n(get_results(results, average=True, method_average=True))
 
     generate_plots(ms_results, "multisource_"+variant, save_plot, show_title,
-        legend_separate, suffix)
+        legend_separate, suffix, ncol=4)
     generate_plots(ms_averages, "multisource_average_"+variant, save_plot,
-        show_title, legend_separate, suffix)
+        show_title, legend_separate, suffix, ncol=4)
     generate_plots(ms_method_averages, "multisource_methodaverage_"+variant, save_plot,
-        show_title, legend_separate, suffix, error_bars=False, figsize=(10, 3))
+        show_title, legend_separate, suffix, error_bars=False,
+        yrange=[35, 105], ncol=2)
 
 
 def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
@@ -592,12 +602,13 @@ def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
     xlabel = "Number of unlabeled target instances for training"
 
     generate_plots(ms_results, "varyamount_"+variant, save_plot, show_title,
-        legend_separate, suffix, xlabel=xlabel)
+        legend_separate, suffix, xlabel=xlabel, ncol=2)
     generate_plots(ms_averages, "varyamount_average_"+variant, save_plot,
-        show_title, legend_separate, suffix, xlabel=xlabel)
+        show_title, legend_separate, suffix, xlabel=xlabel, ncol=2)
     generate_plots(ms_method_averages, "varyamount_methodaverage_"+variant, save_plot,
-        show_title, legend_separate, suffix, error_bars=False, figsize=(10, 3),
-        xlabel=xlabel, skip=["none", "upper"])
+        show_title, legend_separate, suffix, error_bars=True,
+        xlabel=xlabel, skip=["none", "upper"],
+        yrange=[35, 105], ncol=2)
 
 
 def main(argv):
