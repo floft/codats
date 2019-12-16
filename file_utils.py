@@ -3,8 +3,14 @@ Functions for handling loading/saving files
 """
 import os
 import re
+import yaml
 import pathlib
 import numpy as np
+
+from absl import flags
+
+
+FLAGS = flags.FLAGS
 
 
 def get_last_int(s, only_one=False):
@@ -73,11 +79,6 @@ def get_best_valid_accuracy(log_dir, filename="best_valid_accuracy.txt"):
     return None
 
 
-def get_best_target_valid_accuracy(log_dir):
-    """ Best accuracy based on target classifier """
-    return get_best_valid_accuracy(log_dir, "best_target_valid_accuracy.txt")
-
-
 def write_best_valid_accuracy(log_dir, accuracy,
         filename="best_valid_accuracy.txt"):
     """ Write the best validation accuracy to a file """
@@ -85,12 +86,6 @@ def write_best_valid_accuracy(log_dir, accuracy,
 
     with open(filename, "w") as f:
         f.write(str(accuracy))
-
-
-def write_best_target_valid_accuracy(log_dir, accuracy):
-    """ Write best accuracy based on target classifier """
-    return write_best_valid_accuracy(log_dir, accuracy,
-        "best_target_valid_accuracy.txt")
 
 
 def get_finished(log_dir):
@@ -150,3 +145,75 @@ def write_finished(log_dir):
 
     with open(filename, "w") as f:
         f.write("\n")
+
+
+def get_config(log_dir):
+    """ Get config file containing dataset name, sources, target, etc. """
+    filename = os.path.join(log_dir, "config.yaml")
+
+    if not os.path.exists(filename):
+        return None
+
+    with open(filename) as f:
+        # See: https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
+        return yaml.load(f, Loader=yaml.SafeLoader)
+
+
+def write_config_from_args(log_dir):
+    """ Save config file containing dataset name, sources, target, etc. """
+    filename = os.path.join(log_dir, "config.yaml")
+
+    # Log everything -- get list from ./main.py --helpfull
+    config = {
+        # main.py
+        "dataset": FLAGS.dataset,
+        "debug": FLAGS.debug,
+        "debugnum": FLAGS.debugnum,
+        "gpumem": FLAGS.gpumem,
+        "log_plots_steps": FLAGS.log_plots_steps,
+        "log_train_steps": FLAGS.log_train_steps,
+        "log_val_steps": FLAGS.log_val_steps,
+        "logdir": FLAGS.logdir,
+        "method": FLAGS.method,
+        "model_steps": FLAGS.model_steps,
+        "modeldir": FLAGS.modeldir,
+        "sources": [int(x) for x in FLAGS.sources.split(",")],
+        "steps": FLAGS.steps,
+        "subdir": FLAGS.subdir,
+        "target": int(FLAGS.target) if FLAGS.target != "" else None,
+        "test": FLAGS.test,
+        "uid": FLAGS.uid,
+
+        # checkpoints.py
+        "best_checkpoints": FLAGS.best_checkpoints,
+        "latest_checkpoints": FLAGS.latest_checkpoints,
+
+        # dataset.py
+        "normalize": FLAGS.normalize,
+
+        # load_datasets.py
+        "batch_division": FLAGS.batch_division,
+        "cache": FLAGS.cache,
+        "eval_batch": FLAGS.eval_batch,
+        "eval_max_examples": FLAGS.eval_max_examples,
+        "eval_shuffle_seed": FLAGS.eval_shuffle_seed,
+        "feature_subset": FLAGS.feature_subset,
+        "max_target_examples": FLAGS.max_target_examples,
+        "prefetch_buffer": FLAGS.prefetch_buffer,
+        "shuffle_buffer": FLAGS.shuffle_buffer,
+        "train_batch": FLAGS.train_batch,
+        "train_max_examples": FLAGS.train_max_examples,
+        "trim_time_steps": FLAGS.trim_time_steps,
+        "tune_num_parallel_calls": FLAGS.tune_num_parallel_calls,
+
+        # methods.py
+        "lr": FLAGS.lr,
+        "lr_domain_mult": FLAGS.lr_domain_mult,
+        "model": FLAGS.model,
+
+        # plots.py
+        "max_plot_embedding": FLAGS.max_plot_embedding,
+    }
+
+    with open(filename, "w") as f:
+        yaml.dump(config, f)

@@ -40,7 +40,7 @@ def print_class_balance(title, dataset_list):
     classes_test = {}
 
     for dataset in dataset_list:
-        source_dataset, _ = datasets.load_da(dataset, None)
+        source_dataset = datasets.load(dataset)
         #class_labels = source_dataset.class_labels
         num_classes = source_dataset.num_classes
 

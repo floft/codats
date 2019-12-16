@@ -2,6 +2,7 @@
 """
 Analyze the results
 """
+import os
 import sys
 import pathlib
 import numpy as np
@@ -10,31 +11,68 @@ import matplotlib.pyplot as plt
 
 from absl import app
 from absl import flags
-from scipy import stats
+# from scipy import stats
+from matplotlib.ticker import MaxNLocator
 
+from pool import run_job_pool
+from file_utils import get_config
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("ignore", "", "List of models to ignore, comma separated")
+flags.DEFINE_integer("jobs", 0, "Number of jobs to use for processing files (0 == number of cores)")
 
 
 # Use nice names for the plot
 nice_method_names = {
-    "none": "Lower Bound",  # (no adaptation)
-    "upper": "Upper Bound",  # (train on target)
-    "dann": "CoDATS + DANN-Shu",
-    "dann_grl": "CoDATS + DANN-GRL",
-    "cyclegan": "CoDATS + CycleGAN",
-    "cyclegan_dann": "CoDATS + CycleGAN + DANN",
-    "cycada": "CoDATS + CyCADA",
-    "deepjdot": "CoDATS + DeepJDOT",
-    "rdann": "R-DANN",
-    "vrada": "VRADA",
-    "random": "Many Reinit",
+    # No adaptation or training on target
+    "none": "None",  # (no adaptation)
+    "upper": "Target Only",  # (train on target)
+
+    # Multi-source domain adaptation
+    "dann": "MS-DA-DANN",
+    "dann_gs": "GS-DA",
+    "dann_smooth": "MS-DA-Smooth",
+
+    # Domain generalization
+    "dann_dg": "DG-DANN",
+    "sleep_dg": "DG-Sleep",
+    "aflac_dg": "DG-AFLAC",
+    "ciddg_dg": "DG-CIDDG",
+}
+
+method_lines = {
+    # Approximate bounds
+    "none": "-.",
+    "upper": "-.",
+
+    # MS-DA solid
+    "dann": "-",
+    "dann_gs": "-",
+    "dann_smooth": "-",
+
+    # DG dashed
+    "dann_dg": "--",
+    "sleep_dg": "--",
+    "aflac_dg": "--",
+    "ciddg_dg": "--",
+}
+
+method_types = {
+    "none": "none",
+    "upper": "upper",
+
+    "dann": "MS-DA",
+    "dann_gs": "MS-DA",
+    "dann_smooth": "MS-DA",
+
+    "dann_dg": "DG",
+    "sleep_dg": "DG",
+    "aflac_dg": "DG",
+    "ciddg_dg": "DG",
 }
 
 
-def get_tuning_files(dir_name, prefix="results_runwalk01_"):
+def get_tuning_files(dir_name, prefix):
     """ Get all the hyperparameter evaluation result files """
     files = []
     matching = pathlib.Path(dir_name).glob(prefix+"*.txt")
@@ -69,9 +107,18 @@ def parse_file(filename):
     traintest = []
     averages = []
 
-    valid_header = "Log Dir,Source,Target,Model,Method,Best Step,Accuracy at Step"
-    traintest_header = "Log Dir,Source,Target,Model,Method,Train A,Test A,Train B,Test B,Target Train A,Target Test A,Target Train B,Target Test B"
-    averages_header = "Dataset,Avg,Std"
+    valid_header = "Log Dir;Dataset;Sources;Target;Model;Method;Best Step;Accuracy at Step"
+    traintest_header = "Log Dir;Dataset;Sources;Target;Model;Method;Train A;Test A;Train B;Test B"
+    averages_header = "Dataset;Avg;Std"
+
+    # Config information
+    log_dir = None
+    dataset_name = None
+    sources = None
+    num_domains = None
+    target = None
+    model = None
+    method = None
 
     with open(filename) as f:
         for line in f:
@@ -79,9 +126,13 @@ def parse_file(filename):
 
             if line == "Virtual devices must be set at program startup":
                 pass
-            elif line == "Error occured -- exiting":
+            elif line == "Error occurred -- exiting":
                 print("Found:", line, "in", filename, file=sys.stderr)
                 exit(1)
+            elif beginning_match("Source batch size: ", line) or \
+                    beginning_match("Target batch size: ", line):
+                # Forgot that I print out {Source,Target} batch size: ...
+                pass
             elif beginning_match(valid_header, line):
                 in_validation = True
                 in_traintest = False
@@ -95,7 +146,7 @@ def parse_file(filename):
                 in_traintest = False
                 in_averages = True
             elif len(line) > 0:
-                values = line.split(",")
+                values = line.split(";")
 
                 # For example, if we ran evaluation before we had any models to
                 # evaluate, we'd get no data.
@@ -105,18 +156,45 @@ def parse_file(filename):
                 if in_validation:
                     # If there was no model yet (e.g. if a method errors before
                     # starting training)
-                    if values[5] == "None":
+                    if values[6] == "None":
                         print("Warning: no best model for", filename, file=sys.stderr)
                         return None
 
                     validation.append((values[0], values[1], values[2],
-                        values[3], values[4], int(values[5]), float(values[6])))
+                        values[3], values[4], values[5],
+                        int(values[6]), float(values[7])))
+
+                    # Doesn't really matter which one... just get one of them
+                    log_dir = values[0]
+
+                    # Get data, make sure it's not conflicting with previous
+                    # values
+                    assert dataset_name is None or values[1] == dataset_name
+                    dataset_name = values[1]
+
+                    assert sources is None or values[2] == sources
+                    sources = values[2]
+
+                    num_domains = len(sources.split(","))
+
+                    assert target is None or values[3] == target
+                    target = values[3]
+
+                    if target != "":
+                        # Probably 1, but still will work if we ever support
+                        # multiple targets
+                        num_domains += len(target.split(","))
+
+                    assert model is None or values[4] == model
+                    model = values[4]
+
+                    assert method is None or values[5] == method
+                    method = values[5]
                 elif in_traintest:
                     traintest.append((values[0], values[1], values[2],
-                        values[3], values[4], float(values[5]),
-                        float(values[6]), float(values[7]), float(values[8]),
-                        float(values[9]), float(values[10]), float(values[11]),
-                        float(values[12])))
+                        values[3], values[4], values[5],
+                        float(values[6]), float(values[7]),
+                        float(values[8]), float(values[9])))
                 elif in_averages:
                     averages.append((values[0], float(values[1]), float(values[2])))
             else:
@@ -125,25 +203,45 @@ def parse_file(filename):
                 in_traintest = False
                 in_averages = False
 
-    validation = pd.DataFrame(data=validation, columns=valid_header.split(","))
-    traintest = pd.DataFrame(data=traintest, columns=traintest_header.split(","))
-    averages = pd.DataFrame(data=averages, columns=averages_header.split(","))
+    validation = pd.DataFrame(data=validation, columns=valid_header.split(";"))
+    traintest = pd.DataFrame(data=traintest, columns=traintest_header.split(";"))
+    averages = pd.DataFrame(data=averages, columns=averages_header.split(";"))
 
-    return validation, traintest, averages
+    # method="upper" doesn't actually exist since it uses "none", but our upper
+    # bound is method="none" without any target domains, so set appropriately.
+    if method == "none" and target == "":
+        method = "upper"
+
+    # Create params
+    assert num_domains is not None, \
+        "could not find config information in file (probably no runs): " \
+        + filename
+
+    # If the config file exists, add it to the parameters. We assume all the
+    # runs have the same-ish config (you average over them, so those parts
+    # may be different)
+    config = get_config(log_dir)
+
+    params = {
+        "dataset": dataset_name,
+        "sources": sources,
+        "num_domains": num_domains,
+        "target": target,
+        "model": model,
+        "method": method,
+        "config": config,
+    }
+
+    return validation, traintest, averages, params
 
 
-def compute_mean_std(df, name, ignore_label_flipping, filename):
+def compute_mean_std(df, name, filename):
     data = df[name]
-
-    if ignore_label_flipping:
-        # To ignore label flipping (assuming this is binary classification), we
-        # flip anything less than 50% to over 50%
-        data[data < 0.5] = 1 - data[data < 0.5]
 
     # I expect there to only be 3 or 5 of each... if not, warn
     length = len(data)
 
-    if length != 3 and length != 5:
+    if length != 1 and length != 3 and length != 5:
         print("Warning: number of runs ", length, "(not 3 or 5) for", filename,
             file=sys.stderr)
 
@@ -151,124 +249,63 @@ def compute_mean_std(df, name, ignore_label_flipping, filename):
     return data.mean(), data.std(ddof=0)
 
 
-def compute_val_stats(df, ignore_label_flipping, filename):
-    return compute_mean_std(df, "Accuracy at Step", ignore_label_flipping, filename)
+def compute_val_stats(df, filename):
+    return compute_mean_std(df, "Accuracy at Step", filename)
 
 
-def compute_eval_stats(df, filename, has_target_clasifier=False, ignore_label_flipping=False):
+def compute_eval_stats(df, filename):
     names = ["Train A", "Test A", "Train B", "Test B"]
-    if has_target_clasifier:
-        names += ["Target Train A", "Target Test A", "Target Train B", "Target Test B"]
-    data = [[name]+list(compute_mean_std(df, name, ignore_label_flipping, filename)) for name in names]
+    data = [[name]+list(compute_mean_std(df, name, filename)) for name in names]
     return pd.DataFrame(data=data, columns=["Dataset", "Avg", "Std"])
 
 
-def parse_name_synthetic_old(name):
-    # Get values
-    values = name.split("-")
+def _all_stats(name, file, recompute_averages):
+    parse_result = parse_file(file)
 
-    dataset = values[0]
-    method = values[1]
-    adaptation = int(values[2].replace("b", ""))
+    if parse_result is None:
+        print("Warning: no data, skipping", file, file=sys.stderr)
+        return
+
+    validation, traintest, averages, params = parse_result
+
+    if recompute_averages:
+        averages = compute_eval_stats(traintest, name)
+
+    validavg = compute_val_stats(validation, name)
 
     return {
-        "dataset": dataset,
-        "method": method,
-        "adaptation": adaptation,
+        "name": name,
+        "parameters": params,
+        "file": file,
+        "validation": validation,
+        "traintest": traintest,
+        "averages": averages,
+        "validavg": validavg,
     }
 
 
-def parse_name_synthetic(name):
-    # Get values
-    values = name.split("-")
+def all_stats(files, recompute_averages=True, sort=False):
+    """ Process all files, but since we may have many, many thousands, do it
+    with multiple cores by default """
+    if FLAGS.jobs == 1:
+        results = []
 
-    method = values[0]
-    dataset = values[1]
-    adaptation = int(values[2].split("_")[-1].replace("b", ""))
-
-    return {
-        "dataset": dataset,
-        "method": method,
-        "adaptation": adaptation,
-    }
-
-
-def parse_name_real(name):
-    # Get values
-    values = name.split("-")
-
-    method = values[0]
-    source = values[1]
-    target = values[2]
-
-    return {
-        "method": method,
-        "source": source,
-        "target": target,
-    }
-
-
-def all_stats(files, recompute_averages=True, sort_on_test=False,
-        sort_on_b=False, sort_by_name=False, has_target_clasifier=False,
-        ignore_label_flipping=False, real_data=False):
-    stats = []
-
-    for name, file in files:
-        parse_result = parse_file(file)
-
-        if parse_result is None:
-            print("Warning: no data, skipping", file, file=sys.stderr)
-            continue
-
-        validation, traintest, averages = parse_result
-
-        if recompute_averages:
-            averages = compute_eval_stats(traintest, name,
-                has_target_clasifier, ignore_label_flipping)
-
-        validavg = compute_val_stats(validation, ignore_label_flipping, name)
-
-        if real_data:
-            params = parse_name_real(name)
-        else:
-            params = parse_name_synthetic(name)
-
-        stats.append({
-            "name": name,
-            "parameters": params,
-            "file": file,
-            "validation": validation,
-            "traintest": traintest,
-            "averages": averages,
-            "validavg": validavg,
-        })
-
-    if sort_by_name:
-        stats.sort(key=lambda x: x["name"])
-    elif sort_on_test:
-        # Sort by test accuracy (i.e. cheating)
-        stats.sort(key=lambda x: x["averages"][x["averages"]["Dataset"] == "Test A"]["Avg"].values[0])
-    elif sort_on_b:
-        # Sort by test accuracy on domain B (i.e. cheating)
-        stats.sort(key=lambda x: x["averages"][x["averages"]["Dataset"] == "Test B"]["Avg"].values[0])
+        for name, file in files:
+            results.append(_all_stats(name, file, recompute_averages))
     else:
-        # Sort by validation accuracy
-        stats.sort(key=lambda x: x["validavg"][0])
+        commands = []
 
-    return stats
+        for name, file in files:
+            commands.append((name, file, recompute_averages))
 
+        jobs = FLAGS.jobs if FLAGS.jobs != 0 else None
+        results = run_job_pool(_all_stats, commands, cores=jobs)
 
-def output_csv(results):
-    """ Output most relevant part of the evaluation results to CSV file """
-    print("Dataset,Method,Adaptation,Train A,Test A, Train B, Test B")
-    for result in results:
-        params = result["parameters"]
-        avgs = result["averages"]
-        print(params["dataset"], params["method"], params["adaptation"],
-            avgs[avgs["Dataset"] == "Train A"]["Avg"].values[0],
-            avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0],
-            avgs[avgs["Dataset"] == "Train B"]["Avg"].values[0],
-            avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0], sep=",")
+    # Sort by name
+    if sort:
+        results.sort(key=lambda x: x["name"])
+
+    return results
 
 
 def gen_jitter(length, amount=0.04):
@@ -283,227 +320,14 @@ def gen_jitter(length, amount=0.04):
     return np.array(x, dtype=np.float32)
 
 
-def compute_significance(results, significance_level=0.05):
-    """ Calculate significance:
-
-    For each CoDATS method, is the mean significantly different than the
-    mean of both of the RNN methods (separately compare with R-DANN and VRADA
-    and it's significant if p<0.05 for both)
-
-    Note: only works for real data
-    """
-    # Indexed by target_accuracy[dataset][method]
-    datasets = {}
-
-    for result in results:
-        params = result["parameters"]
-        traintest = result["traintest"]
-        method = params["method"]
-        target_accuracy = traintest["Test B"].values
-
-        # Skip
-        if method == "upper" or method == "lower" or method == "random":
-            continue
-
-        if method in FLAGS.ignore.split(","):
-            print("Skipping", method, file=sys.stderr)
-            continue
-
-        dataset = params["source"] + " --> " + params["target"]
-        method = nice_method_names[method]
-
-        if dataset not in datasets:
-            datasets[dataset] = {}
-        if method not in datasets[dataset]:
-            datasets[dataset][method] = []
-
-        datasets[dataset][method] = target_accuracy
-
-    significantly_better = {}
-
-    for dataset, values in datasets.items():
-        dannshu = None
-        danngrl = None
-        cycada = None
-        deepjdot = None
-
-        if "R-DANN" in values and "VRADA" in values:
-            if "CoDATS + DANN-Shu" in values:
-                dannshu = \
-                    stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-Shu"]).pvalue < significance_level and \
-                    stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-Shu"]).pvalue < significance_level
-
-            if "CoDATS + DANN-GRL" in values:
-                danngrl = \
-                    stats.ttest_rel(values["R-DANN"], values["CoDATS + DANN-GRL"]).pvalue < significance_level and \
-                    stats.ttest_rel(values["VRADA"], values["CoDATS + DANN-GRL"]).pvalue < significance_level
-
-            if "CoDATS + CyCADA" in values:
-                cycada = \
-                    stats.ttest_rel(values["R-DANN"], values["CoDATS + CyCADA"]).pvalue < significance_level and \
-                    stats.ttest_rel(values["VRADA"], values["CoDATS + CyCADA"]).pvalue < significance_level
-
-            if "CoDATS + DeepJDOT" in values:
-                deepjdot = \
-                    stats.ttest_rel(values["R-DANN"], values["CoDATS + DeepJDOT"]).pvalue < significance_level and \
-                    stats.ttest_rel(values["VRADA"], values["CoDATS + DeepJDOT"]).pvalue < significance_level
-
-        else:
-            print("Warning: no R-DANN/VRADA so no significance", file=sys.stderr)
-
-        print(dataset, "- DANN-Shu", dannshu, "DANN-GRL", danngrl, "CyCADA", cycada, "DeepJDOT", deepjdot)
-
-        significantly_better[dataset] = {
-            "CoDATS + DANN-Shu": dannshu,
-            "CoDATS + DANN-GRL": danngrl,
-            "CoDATS + CyCADA": cycada,
-            "CoDATS + DeepJDOT": deepjdot,
-        }
-
-    return significantly_better
-
-
-def process_results(results, real_data=False):
-    datasets = {}
-
-    for result in results:
-        params = result["parameters"]
-        avgs = result["averages"]
-        method = params["method"]
-        source_accuracy = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
-        source_accuracy_std = avgs[avgs["Dataset"] == "Test A"]["Std"].values[0]
-        target_accuracy = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
-        target_accuracy_std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
-
-        # For upper bound, we set the source to the target
-        if method == "upper":
-            target_accuracy = source_accuracy
-            target_accuracy_std = source_accuracy_std
-
-        if real_data:
-            if method == "upper":
-                dataset = params["source"]
-            else:
-                dataset = params["source"] + " --> " + params["target"]
-        else:
-            dataset = params["dataset"]
-            adaptation = params["adaptation"]
-
-        # Skip if desired
-        if method in FLAGS.ignore.split(","):
-            print("Skipping", method, file=sys.stderr)
-            continue
-
-        method = nice_method_names[method]
-
-        if dataset not in datasets:
-            datasets[dataset] = {}
-        if method not in datasets[dataset]:
-            datasets[dataset][method] = []
-
-        if real_data:
-            # Not .append() since there's only one of each method/dataset on
-            # the real data
-            datasets[dataset][method] = [target_accuracy, target_accuracy_std]
-        else:
-            # (x,y,error) - x axis is adaptation problem {0..5} and y axes is accuracy
-            datasets[dataset][method].append([adaptation, target_accuracy,
-                target_accuracy_std])
-            # Sort on adaptation problem, so we get 0, 1, 2, 3, 4, 5
-            datasets[dataset][method].sort(key=lambda x: x[0])
-
-    return datasets
-
-
-def export_legend(legend, filename="key.pdf", expand=[-5, -5, 5, 5]):
+def export_legend(legend, dir_name=".", filename="key.pdf", expand=[-5, -5, 5, 5]):
     """ See: https://stackoverflow.com/a/47749903 """
     fig = legend.figure
     fig.canvas.draw()
     bbox = legend.get_window_extent()
     bbox = bbox.from_extents(*(bbox.extents + np.array(expand)))
     bbox = bbox.transformed(fig.dpi_scale_trans.inverted())
-    fig.savefig(filename, dpi="figure", bbox_inches=bbox)
-
-
-def plot_synthetic_results(results, save_plot=False, save_prefix="plot_",
-        title_suffix="", show_title=False, legend_separate=True, suffix="pdf"):
-    """ Generate a plot for each dataset comparing how well the various
-    adaptation methods handle varying amounts of domain shift """
-    datasets = process_results(results)
-
-    # See: https://matplotlib.org/3.1.1/api/markers_api.html
-    markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
-        "1", "2", "3", "4", "+", "x"]
-
-    for dataset_name, dataset_values in datasets.items():
-        methods = list(dataset_values.keys())
-        data = list(dataset_values.values())
-        jitter = gen_jitter(len(data))  # "dodge" points so they don't overlap
-
-        fig, ax = plt.subplots(1, 1, figsize=(10, 4.1), dpi=100)
-
-        for i in range(len(data)):
-            method_data = np.array(data[i])
-            x = method_data[:, 0] + jitter[i]
-            y = method_data[:, 1]*100
-            std = method_data[:, 2]*100
-            plt.errorbar(x, y, yerr=std, label=methods[i], fmt=markers[i]+"--", alpha=0.8)
-
-        if show_title:
-            plt.title("Various Adaptation Methods on Dataset "+dataset_name+title_suffix)
-
-        ax.set_xlabel("Domain Shift Amount")
-        ax.set_ylabel("Target Domain Accuracy (%)")
-
-        if legend_separate:
-            box = ax.get_position()
-            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-            legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-            export_legend(legend)
-            legend.remove()
-        else:
-            # Put legend outside the graph http://stackoverflow.com/a/4701285
-            # Shrink current axis by 20%
-            box = ax.get_position()
-            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-            plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-
-        if save_plot:
-            plt.savefig(save_prefix+dataset_name+"."+suffix, bbox_inches='tight')
-
-    if save_plot:
-        plt.close()
-    else:
-        plt.show()
-
-
-def to_list(datasets):
-    """ Convert two-level dictionary to list """
-    output = []
-    for dataset, data in datasets.items():
-        for method, values in data.items():
-            output.append((dataset, method, values[0]*100, values[1]*100))
-    return output
-
-
-def print_real_results(results, title=None, filename=None):
-    """ Print table comparing different methods on real datasets """
-    # Don't truncate
-    pd.set_option("display.max_rows", None)
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.max_colwidth", -1)
-    pd.set_option("display.width", None)
-
-    datasets = process_results(results, real_data=True)
-    df = pd.DataFrame(to_list(datasets),
-        columns=["Adaptation", "Method", "Mean", "Std"])
-
-    if title is not None:
-        print(title)
-    print(df)
-
-    if filename is not None:
-        df.to_csv(filename)
+    fig.savefig(os.path.join(dir_name, filename), dpi="figure", bbox_inches=bbox)
 
 
 def make_replacements(s, replacements):
@@ -517,327 +341,292 @@ def make_replacements(s, replacements):
     return s
 
 
-def replace_highest_bold(values):
-    """ Replace highest DDD.D $\pm$ DDD.D with \textbf{...} """
-    max_index = []
-    max_value = None
-
-    for i, v in enumerate(values):
-        if len(v) > 0:
-            parts = v.split(" $\pm$ ")
-
-            if len(parts) == 1 or len(parts) == 2:
-                if "underline{" in parts[0]:
-                    parts[0] = parts[0].replace("\\underline{", "")
-                    parts[1] = parts[1].replace("?", "")
-
-                float_value = float(parts[0])
-
-                if max_value is None or float_value > max_value:
-                    max_value = float_value
-                    max_index = [i]
-                elif float_value == max_value:
-                    max_index.append(i)
-
-    if max_index is not None:
-        new_values = []
-
-        for i, v in enumerate(values):
-            if i in max_index:
-                new_values.append("\\textbf{"+v+"}")
-            else:
-                new_values.append(v)
-
-        return new_values
-    else:
-        return values
-
-
-def pretty_source_target_names(source, target):
+def pretty_dataset_name(dataset):
+    """ Make dataset name look good for plots """
     replacements = [
-        ("ucihar_", "HAR "),
-        ("uwave_", "uWave "),
-        ("utdata_wrist", "Wrist"),
-        ("utdata_pocket", "Pocket"),
+        #("watch_noother", "CASAS AR"),
+        ("watch_noother", "LABNAME AR"),
+        ("ucihar", "HAR"),
+        ("ucihhar", "HHAR"),
+        ("ucihm", "HM"),
+        ("uwave", "uWave"),
+        ("utdata", "UT-Data"),
+        ("sleep", "Sleep"),
+        ("wisdm_ar", "WISDM AR"),
+        ("wisdm_at", "WISDM AT"),
     ]
 
-    source = make_replacements(source, replacements)
-    target = make_replacements(target, replacements)
-
-    return source, target
+    return make_replacements(dataset, replacements)
 
 
-def print_latex_results(results):
-    """ There's >350 values to fill in... I'm not going to manually type that
-    in LaTex, especially when I'll have to do it more than once. This is not
-    clean code per se. """
-    significantly_better = compute_significance(results)
-    datasets = process_results(results, real_data=True)
-    indexed_by_target = {}
+def get_results(results, average=False, method_average=False, target_amount=False):
+    """ Get results - get the test on target mean and standard deviation values,
+    indexed by,
+    if average*=False: ms_results[dataset_name + " " + target][method][n]
+    if average=True:  ms_results[dataset_name][method][n]
+    if method_average=True: ms_results[...][method_type (MS-DA, DG, ...)][n]
+    """
+    ms_results = {}
 
-    for dataset, data in datasets.items():
-        values = dataset.split(" --> ")
+    for result in results:
+        params = result["parameters"]
+        avgs = result["averages"]
+        method = params["method"]
 
-        if len(values) == 2:
-            source, target = values
-        elif len(values) == 1:
-            source = None
-            target = values[0]
+        if target_amount:
+            assert params["config"] is not None, "no config for "+str(result)
+            n = params["config"]["max_target_examples"]
+        else:
+            n = params["num_domains"]
 
-        source, target = pretty_source_target_names(source, target)
-        adaptation = (source, target)
-        indexed_by_target[adaptation] = {}
+        dataset_name = pretty_dataset_name(params["dataset"])
 
-        for method, values in data.items():
-            indexed_by_target[adaptation][method] = "{:.1f} $\\pm$ {:.1f}".format(values[0]*100, values[1]*100)
-
-            # Check for significance
-            if dataset in significantly_better and \
-                    method in significantly_better[dataset] and \
-                    significantly_better[dataset][method]:
-                indexed_by_target[adaptation][method] = \
-                    "\\underline{" + indexed_by_target[adaptation][method] + "}"
-
-    columns = ["Lower Bound", "Many Reinit", "R-DANN", "VRADA", "CoDATS + DANN-GRL",
-        "CoDATS + DANN-Shu", "CoDATS + CyCADA", "CoDATS + DeepJDOT", "Upper Bound"]
-    rows = [
-        ("HAR 1", "HAR 2"), ("HAR 2", "HAR 1"),
-        ("HAR 3", "HAR 4"), ("HAR 4", "HAR 3"),
-        ("HAR 5", "HAR 6"), ("HAR 6", "HAR 5"),
-        ("HAR 7", "HAR 8"), ("HAR 8", "HAR 7"),
-        ("HAR 9", "HAR 10"), ("HAR 10", "HAR 9"),
-        ("HAR 11", "HAR 12"), ("HAR 12", "HAR 11"),
-        ("\\hline",),
-        ("uWave 1", "uWave 2"), ("uWave 2", "uWave 1"),
-        ("uWave 3", "uWave 4"), ("uWave 4", "uWave 3"),
-        ("uWave 5", "uWave 6"), ("uWave 6", "uWave 5"),
-        ("uWave 7", "uWave 8"), ("uWave 8", "uWave 7"),
-        ("\\hline",),
-        ("Wrist", "Pocket"), ("Pocket", "Wrist"),
-    ]
-
-    # Create table
-    table = []
-
-    for row in rows:
-        # The \hline's
-        if len(row) == 1:
-            table.append([row[0]])
-            continue
-
-        thisrow = [row[0], row[1]]
-
-        for column in columns:
-            if column == "Upper Bound":
-                val = indexed_by_target[(None, row[1])][column]
-            else:
-                if column in indexed_by_target[row]:
-                    val = indexed_by_target[row][column]
-                else:
-                    # Not done yet (e.g. CyCADA gave errors at some point)
-                    val = ""
-
-            thisrow.append(val)
-
-        table.append(thisrow)
-
-    # Print table, but bold the highest in each row excluding the last
-    for row in table:
-        row[2:9+1] = replace_highest_bold(row[2:9+1])
-
-        # \hline's
-        if len(row) == 1:
-            print(row[0])
-            continue
-
-        for i, column in enumerate(row):
-            print(column, end=" ")
-
-            if i == len(row)-1:
-                print("\\\\")
-            else:
-                print("&", end=" ")
-
-
-def plot_seqlen(datasets, variant, save_plot=True, show_title=False,
-        legend_separate=True, prefix="seqlen", suffix="pdf",
-        xaxis="Trimmed Sequence Length"):
-    """ Similar to plot_synthetic_results but for varying sequence lengths
-    on the real datasets """
-    seqlen_results = {}
-    dataset_filenames = {}
-
-    # Get all the results for sequence lengths 10, 20, 30, ..., 100
-    for dataset in datasets:
-        files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
-        results = all_stats(files, sort_by_name=True, real_data=True)
-
-        seqlen = int(dataset.replace(prefix, ""))
-
-        for result in results:
-            params = result["parameters"]
-            avgs = result["averages"]
-            method = params["method"]
-            source, target = pretty_source_target_names(params["source"], params["target"])
-            dataset_name = source + " --> " + target
-            mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
-            std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
-
-            # Filenames shouldn't have --> in them for Latex
-            dataset_filenames[dataset_name] = params["source"]
-
-            # For upper bound, we set the source to the target
+        # Indexed by target, i.e. separate plot per dataset-target. Otherwise,
+        # indexed by dataset, i.e. one plot per dataset (averaged over multiple
+        # targets).
+        if not average:
+            # For the upper bound, we don't have a target, but set the source
+            # as the target
             if method == "upper":
-                mean = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
-                std = avgs[avgs["Dataset"] == "Test A"]["Std"].values[0]
+                target = dataset_name + " " + params["sources"]
+            else:
+                target = dataset_name + " " + params["target"]
+            dataset_name = target
 
-            #print(dataset_name, method, seqlen, mean, std, sep=",")
+        mean = avgs[avgs["Dataset"] == "Test B"]["Avg"].values[0]
+        std = avgs[avgs["Dataset"] == "Test B"]["Std"].values[0]
 
-            if dataset_name not in seqlen_results:
-                seqlen_results[dataset_name] = {}
-            if method not in seqlen_results[dataset_name]:
-                seqlen_results[dataset_name][method] = []
-            seqlen_results[dataset_name][method].append((seqlen, mean, std))
+        # For upper bound, we set the source to the target
+        if method == "upper":
+            mean = avgs[avgs["Dataset"] == "Test A"]["Avg"].values[0]
+            std = avgs[avgs["Dataset"] == "Test A"]["Std"].values[0]
+
+        # Group by types, average over all methods of that type
+        if method_average:
+            method = method_types[method]
+
+        #print(target, method, seqlen, mean, std, sep=";")
+
+        if dataset_name not in ms_results:
+            ms_results[dataset_name] = {}
+        if method not in ms_results[dataset_name]:
+            ms_results[dataset_name][method] = {}
+        if n not in ms_results[dataset_name][method]:
+            ms_results[dataset_name][method][n] = []
+        ms_results[dataset_name][method][n].append((n, mean, std))
+
+    return ms_results
+
+
+def average_over_n(ms_results):
+    """
+    Average over multiple runs (values of n, the number of source domains)
+    - Recompute mean/stdev for those that have multiple entries
+    - Get rid of the n-specific dictionary
+    """
+    for dataset, values in ms_results.items():
+        for method, n_values in values.items():
+            new_values = []
+
+            for n, ms_values in n_values.items():
+                if len(ms_values) > 1:
+                    ms_values = np.array(ms_values, dtype=np.float32)
+                    # All the 0th elements should be the same n
+                    # Then recompute the mean/stdev from the accuracy values in 1th column
+                    new_values.append((int(ms_values[0, 0]),
+                        ms_values[:, 1].mean(), ms_values[:, 1].std(ddof=0)))
+                elif len(ms_values) == 1:
+                    # Leave as is if there's only one
+                    #assert new_values == [], "upper bound has multiple runs?"
+                    ms_values = np.array(ms_values, dtype=np.float32)
+                    new_values.append((int(ms_values[0, 0]),
+                        ms_values[0, 1], ms_values[0, 2]))
+                else:
+                    raise NotImplementedError("must be several or one run")
+
+            # Sort on n
+            new_values.sort(key=lambda x: x[0])
+
+            ms_results[dataset][method] = new_values
 
     # Make numpy array
-    for dataset, values in seqlen_results.items():
-        for method, seqlen_values in values.items():
-            seqlen_results[dataset][method] = \
-                np.array(seqlen_results[dataset][method], dtype=np.float32)
+    for dataset, values in ms_results.items():
+        for method, ms_values in values.items():
+            ms_results[dataset][method] = \
+                np.array(ms_values, dtype=np.float32)
 
+    return ms_results
+
+
+def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
+        legend_separate=True, suffix="pdf", dir_name="result_plots",
+        error_bars=True, figsize=(5, 3), xlabel="Number of source domains",
+        skip=[], yrange=None, ncol=1):
     # See: https://matplotlib.org/3.1.1/api/markers_api.html
     markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
         "1", "2", "3", "4", "+", "x"]
 
-    for dataset_name, dataset_values in seqlen_results.items():
-        methods = list(dataset_values.keys())
-        data = list(dataset_values.values())
-        jitter = gen_jitter(len(data))  # "dodge" points so they don't overlap
+    # Sort datasets by name
+    dataset_names = list(ms_results.keys())
+    dataset_names.sort()
 
-        fig, ax = plt.subplots(1, 1, figsize=(10, 4.1), dpi=100)
+    for dataset_name in dataset_names:
+        # Sort methods by name
+        dataset_values = ms_results[dataset_name]
+        methods = list(dataset_values.keys())
+        methods.sort()
+
+        # Get data in order of the sorted methods
+        data = [dataset_values[m] for m in methods]
+
+        # Find min/max x values for scaling the jittering appropriately
+        max_x = -np.inf
+        min_x = np.inf
+        for i in range(len(data)):
+            method_data = np.array(data[i])
+            x = method_data[:, 0]
+            max_x = max(max(x), max_x)
+            min_x = min(min(x), min_x)
+        x_range = max_x - min_x
+
+        # "dodge" points so they don't overlap
+        jitter = gen_jitter(len(data), amount=0.01*x_range)
+
+        fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=100)
+
+        if yrange is not None:
+            ax.set_ylim(yrange)
+
+        # Only integers on x axis
+        # https://stackoverflow.com/a/38096332
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
         for i in range(len(data)):
             method_data = np.array(data[i])
             x = method_data[:, 0] + jitter[i]
             y = method_data[:, 1]*100
             std = method_data[:, 2]*100
-            method_name = nice_method_names[methods[i]]
-            plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+"--", alpha=0.8)
+
+            if methods[i] in skip:
+                continue
+
+            if methods[i] in nice_method_names:
+                method_name = nice_method_names[methods[i]]
+            else:
+                method_name = methods[i]
+
+            if methods[i] in method_lines:
+                line_type = method_lines[methods[i]]
+            else:
+                line_type = "-"
+
+            if error_bars:
+                p = plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+line_type, alpha=0.8)
+            else:
+                p = plt.plot(x, y, markers[i]+line_type, label=method_name, alpha=0.8)
+
+            # Make a horizontal line at the upper bound since it doesn't matter
+            # what "n" is for this method (ignores the sources, only trains
+            # on target)
+            if methods[i] == "upper":
+                # xmin=1 since the upper bound is 1 source in a sense
+                assert method_lines[methods[i]] == "-.", \
+                    "change linestyles in hlines to match that of method_lines[\"upper\"]"
+                ax.hlines(y=y, xmin=1, xmax=max_x, colors=p[0].get_color(),
+                    linestyles="dashdot")
 
         if show_title:
-            plt.title("Adaptation Methods with Varying Sequence Lengths on "+dataset_name)
+            plt.title("Adaptation and Generalization Methods on "+dataset_name)
 
-        ax.set_xlabel(xaxis)
+        ax.set_xlabel(xlabel)
         ax.set_ylabel("Target Domain Accuracy (%)")
 
         if legend_separate:
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-            legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
-            export_legend(legend, filename=prefix+"_key."+suffix)
+            legend = plt.legend(loc="center left", bbox_to_anchor=(1, 0.5), ncol=ncol)
+            export_legend(legend, dir_name, filename=prefix+"_key."+suffix)
             legend.remove()
         else:
             # Put legend outside the graph http://stackoverflow.com/a/4701285
             # Shrink current axis by 20%
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-            plt.legend(loc="center left", bbox_to_anchor=(1, 0.5))
+            plt.legend(loc="center left", bbox_to_anchor=(1, 0.5), ncol=ncol)
 
         if save_plot:
-            dataset_filename = dataset_filenames[dataset_name]
-            plt.savefig(prefix+"_"+dataset_filename+"."+suffix, bbox_inches='tight')
+            plt.savefig(os.path.join(dir_name,
+                prefix+"_"+dataset_name+"."+suffix), bbox_inches='tight')
+            plt.close()
 
-    if save_plot:
-        plt.close()
-    else:
+    if not save_plot:
         plt.show()
 
 
+def plot_multisource(dataset, variant, variant_match=None, save_plot=True,
+        show_title=False, legend_separate=True, suffix="pdf"):
+    """ Generate plots of target accuracy vs. number of source domains """
+    if variant_match is None:
+        variant_match = variant
+
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
+    results = all_stats(files)
+
+    ms_results = average_over_n(get_results(results))
+    ms_averages = average_over_n(get_results(results, average=True))
+    ms_method_averages = average_over_n(get_results(results, average=True, method_average=True))
+
+    generate_plots(ms_results, "multisource_"+variant, save_plot, show_title,
+        legend_separate, suffix, ncol=4)
+    generate_plots(ms_averages, "multisource_average_"+variant, save_plot,
+        show_title, legend_separate, suffix, ncol=4)
+    generate_plots(ms_method_averages, "multisource_methodaverage_"+variant, save_plot,
+        show_title, legend_separate, suffix, error_bars=False,
+        yrange=[35, 105], ncol=2)
+
+
+def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
+        show_title=False, legend_separate=True, suffix="pdf"):
+    if variant_match is None:
+        variant_match = variant
+
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
+    results = all_stats(files)
+
+    ms_results = average_over_n(get_results(results, target_amount=True))
+    ms_averages = average_over_n(get_results(results, average=True,
+        target_amount=True))
+    ms_method_averages = average_over_n(get_results(results, average=True,
+        method_average=True, target_amount=True))
+
+    xlabel = "Number of unlabeled target instances for training"
+
+    generate_plots(ms_results, "varyamount_"+variant, save_plot, show_title,
+        legend_separate, suffix, xlabel=xlabel, ncol=2)
+    generate_plots(ms_averages, "varyamount_average_"+variant, save_plot,
+        show_title, legend_separate, suffix, xlabel=xlabel, ncol=2)
+    generate_plots(ms_method_averages, "varyamount_methodaverage_"+variant, save_plot,
+        show_title, legend_separate, suffix, error_bars=True,
+        xlabel=xlabel, skip=["none", "upper"],
+        yrange=[35, 105], ncol=2)
+
+
 def main(argv):
-    # Ignoring label flipping won't work on best model since if it flips the
-    # labels, it'll pick (and actually save during training) the wrong "best"
-    # model
-    #files = get_tuning_files(".", prefix="results_runwalk01_best-")
-    #results = all_stats(files, sort_by_name=True)
-    #plot_synthetic_results(results, save_plot=True, save_prefix="plot_runwalk01_best_", title_suffix=" (best)")
+    plot_multisource("vary_n_best_source", "best_source",
+        save_plot=True, show_title=False,
+        legend_separate=True, suffix="pdf")
 
-    #variants = ["best", "last"]
-    variants = ["best"]
+    # We pass variant=best_target, but match * variant since for the upper bound
+    # there isn't a "target" (since target is passed as source), but we all the
+    # others we evaluate only with best_target, so we can match all to get the
+    # best_source only for the upper bound.
+    plot_multisource("vary_n_best_target", "best_target", "*",
+        save_plot=True, show_title=False,
+        legend_separate=True, suffix="pdf")
 
-    #
-    # Synthetic data
-    #
-    datasets = [
-        # "runwalk01",
-        # "runwalk2",
-        # "runwalk3",
-        # "runwalk4",
-        # "losses-grl-bi",
-        # "losses-gan-bi",
-        # "losses-lsgan-bi",
-        # "losses-wgan-bi",
-        # "losses-gan-nobi",
-        # "losses-lsgan-nobi",
-        # "losses-wgan-nobi",
-        # "runwalk5",
-        # "runwalk6",
-        # "rand1",
-        # "rand2",
-        # "runwalk7",
-        # "rotate1",
-        # "comb1",
-        # "synthetic1",
-    ]
-
-    for dataset in datasets:
-        for variant in variants:
-            files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
-            results = all_stats(files, sort_by_name=True)
-            plot_synthetic_results(results, save_plot=True,
-                save_prefix="plot_"+dataset+"_"+variant+"_",
-                title_suffix=" ("+variant+")")
-
-    #
-    # Real data
-    #
-    datasets = [
-        # "real_utdata1",
-        # "real_utdata_rand1",
-        # "realdata1",
-        # "ucihar1",
-        # "ucihar2",
-        # "uwave2",
-        # "real1",
-        "real2",
-    ]
-
-    for dataset in datasets:
-        print("Dataset:", dataset)
-
-        for variant in variants:
-            files = get_tuning_files(".", prefix="results_"+dataset+"_"+variant+"-")
-            results = all_stats(files, sort_by_name=True, real_data=True)
-            #print_real_results(results, title="Real Dataset Adaptation ("+variant+")",
-            #    filename="analysis_"+dataset+"_"+variant+".csv")
-            # Just make the .tex code
-            print_latex_results(results)
-            print()
-
-    #
-    # Varying sequence lengths
-    #
-    variant = "best"
-    datasets = ["seqlen"+str(i) for i in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]]
-    plot_seqlen(datasets, variant)
-
-    #
-    # Varying number of features
-    # (repurpose same seqlen function above)
-    #
-    variant = "best"
-    datasets = ["subset"+str(i) for i in [1, 2, 3]]
-    plot_seqlen(datasets, variant, prefix="subset", xaxis="Number of Features",
-        legend_separate=False)
+    plot_varyamount("vary_amount", "best_target", "*",
+        save_plot=True, show_title=False,
+        legend_separate=True, suffix="pdf")
 
 
 if __name__ == "__main__":

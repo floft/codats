@@ -30,35 +30,16 @@ def write_tfrecord(filename, x, y):
             writer.write(tf_example.SerializeToString())
 
 
-def tfrecord_filename(domain1, domain2, dataset_name, train_or_test):
+def tfrecord_filename(dataset_name, train_or_test):
     """
-    Determine tfrecord filename for source --> target adaptation,
-    loading the dataset_name (one of source or target) for training,
-    validation, or testing
-
-    domain2=None results in just a single file without the A_and_B prefix.
-    This is also the case for those in the "skip" list below.
+    Version of tfrecord_filename ignoring the pairs and just creating a
+    separate file for each domain. This works if there's no changes in the
+    data based on the pairing (e.g. no resizing to match image dimensions)
     """
-    names = [domain1, domain2]
-
     # Sanity checks
     assert train_or_test in ["train", "valid", "test"], \
         "train_or_test must be train, valid, or test"
-    assert dataset_name in names, \
-        "dataset_name must be one of domain1 or domain2"
 
-    # Some datasets don't need any changes for a particular adaptation, e.g.
-    # office is the same for any pair of the 3, so in that case just output a
-    # single file without the A_and_B prefix
-    skip = ["office_amazon", "office_dslr", "office_webcam"]
-
-    if domain2 is None or (domain1 in skip and domain2 in skip):
-        filename = "%s_%s.tfrecord"%(dataset_name, train_or_test)
-    else:
-        # Prefix is the source and target names but sorted
-        names.sort()
-        prefix = names[0]+"_and_"+names[1]
-
-        filename = "%s_%s_%s.tfrecord"%(prefix, dataset_name, train_or_test)
+    filename = "%s_%s.tfrecord"%(dataset_name, train_or_test)
 
     return filename

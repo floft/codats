@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --job-name=clean
+#SBATCH --output=slurm_logs/clean_%A_%a.out
+#SBATCH --error=slurm_logs/clean_%A_%a.err
+#SBATCH --cpus-per-task=3
+#SBATCH --gres=gpu:1
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+#SBATCH --time=3-00:00:00
+#SBATCH --mem=20G
+#SBATCH --array=0-500
+
+#
+# I think tf.function may be loading from the cache rather than the current
+# version of the code. Thus, clear the *.py[c] files in /tmp that it keeps.
+# Sleep and have a bunch of jobs so that we hopefully get onto all the nodes
+# that have the cached files.
+#
+
+find /tmp -user garrett.wilson -delete
+sleep 60

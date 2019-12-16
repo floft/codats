@@ -1,23 +1,20 @@
 #!/bin/bash
-#SBATCH --job-name=seqlen_real
-#SBATCH --output=slurm_logs/seqlen_%A_%a.out
-#SBATCH --error=slurm_logs/seqlen_%A_%a.err
-#SBATCH --cpus-per-task=3
+#SBATCH --job-name=train_real
+#SBATCH --output=slurm_logs/train_%A_%a.out
+#SBATCH --error=slurm_logs/train_%A_%a.err
+#SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-#SBATCH --time=2-00:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-80
+#SBATCH --array=0-74
 
 #
-# Test how sequence length affects VRADA vs. DANN-GRL performance
-# Run with:
-# sbatch -J seq10 kamiak_seqlen_real.srun seqlen10 --trim_time_steps=10
-# sbatch -J seq20 kamiak_seqlen_real.srun seqlen20 --trim_time_steps=20
-# ...
-# sbatch -J eval_seq10 kamiak_evalseqlen_real.srun seqlen10
-# sbatch -J eval_seq20 kamiak_evalseqlen_real.srun seqlen20
-# ...
+# Upper bound separate since there's a lot of duplicates if we were to run it
+# in kamiak_train_real.srun since for upper bounds the multiple combinations
+# of source domains (or number of them) doesn't affect the result. Thus, just
+# run three of each.
+#
 
 # My computer
 #gpumem=4500
@@ -36,7 +33,7 @@ gpumem=0
 
 # Errors
 handle_terminate() { echo "Exiting"; exit 1; }
-handle_error() { echo "Error occured -- exiting"; exit 1; }
+handle_error() { echo "Error occurred -- exiting"; exit 1; }
 trap "handle_terminate" SIGTERM SIGINT
 
 # Get suffix, i.e. files stored in kamiak-{models,logs}-suffix
@@ -45,10 +42,13 @@ suffix=$1; shift
 
 # Adapt in both directions, then do upper bound
 model=fcn
-methods=("vrada" "rdann" "cycada" "random" "dann" "deepjdot" "dann_grl" "none" "upper")
+methods=("upper")
 debugnums=(1 2 3)
-sources=("ucihar_1" "uwave_1" "utdata_wrist")
-targets=("ucihar_2" "uwave_2" "utdata_pocket")
+# number of adaptation problems = 25
+uids=(u0 u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 u16 u17 u18 u19 u20 u21 u22 u23 u24)
+datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "0" "1" "2" "3" "4")
 
 # Make sure we're using the right number
 correct_min=0
@@ -71,6 +71,8 @@ index1=$((index % index1max))
 
 method="${methods[$index3]}"
 debugnum="${debugnums[$index2]}"
+uid="${uids[$index1]}"
+dataset_name="${datasets[$index1]}"
 source="${sources[$index1]}"
 target="${targets[$index1]}"
 
@@ -80,14 +82,13 @@ if [[ $method == "upper" ]]; then
     method="none"
     source="$target"
     target=""
-    additional_args+=("--best_source" "--notrain_on_source_valid")
 fi
 
 # Training / model options
 steps=30000
 lr=0.0001
 model=fcn
-batch=64
+batch=128
 
 if [[ $method == "vrada" || $method == "rdann" ]]; then
     model="$method"
@@ -95,24 +96,19 @@ elif [[ $method == "random" ]]; then
     additional_args+=("--log_val_steps=100")
 fi
 
-# Pretraining - VRADA requires its custom reconstruction loss
-if [[ $method == "vrada" || $method == "random" ]]; then
-    pretraining=0
-else
-    pretraining=1000
-fi
-
 echo "$suffix #$SLURM_ARRAY_TASK_ID"
 echo "Method: $method"
 echo "DebugNum: $debugnum"
 echo "Other args: $@"
-echo "$source --> $target"
+echo "UID: $uid"
+echo "$dataset_name $source --> $target"
 
 cd "$remotedir"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-module load cuda/10.0.130 cudnn/7.5.1.10_cuda10.0 python3/3.6.5
+module load cuda/10.0.130 cudnn/7.6.4.38_cuda10.0 python3/3.7.4
 python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --model="$model" --steps="$steps" --train_batch=$batch --pretrain_steps=$pretraining --lr="$lr" \
-    --method="$method" --source="$source" --target="$target" --debugnum="$debugnum" \
+    --model="$model" --steps="$steps" --train_batch=$batch --lr="$lr" \
+    --method="$method" --dataset="$dataset_name" --sources="$source" \
+    --target="$target" --uid="$uid" --debugnum="$debugnum" \
     --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error

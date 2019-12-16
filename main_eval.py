@@ -20,10 +20,11 @@ from absl import app
 from absl import flags
 
 import models
+import methods
+import file_utils
 import load_datasets
 
 from pool import run_job_pool
-from models import DomainAdaptationModel
 from metrics import Metrics
 from checkpoints import CheckpointManager
 from gpu_memory import set_gpu_memory
@@ -31,19 +32,16 @@ from gpu_memory import set_gpu_memory
 
 FLAGS = flags.FLAGS
 
-methods = ["none", "random", "cyclegan", "forecast", "cyclegan_dann", "cycada", "dann", "dann_grl", "deepjdot", "pseudo", "instance", "rdann", "vrada"]
-
 # Same as in main.py
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_boolean("target_classifier", True, "Use separate target classifier in ATT or Pseudo[-labeling] methods")
-flags.DEFINE_boolean("best_target", True, "If target_classifier, then pick best model based on target classifier accuracy (not task classifier accuracy)")
 # Specific for evaluation
 flags.DEFINE_float("gpumem", 8140, "GPU memory to let TensorFlow use, in MiB (divided among jobs)")
-flags.DEFINE_string("match", "*-*-*-*", "String matching to determine which logs/models to process")
+flags.DEFINE_string("match", "*-*-*", "String matching to determine which logs/models to process")
 flags.DEFINE_integer("jobs", 4, "Number of TensorFlow jobs to run at once")
 flags.DEFINE_integer("gpus", 1, "Split jobs between GPUs -- overrides jobs (1 == run multiple jobs on first GPU)")
-flags.DEFINE_boolean("last", False, "Use last model rather than one with best validation set performance")
+flags.DEFINE_enum("selection", "best_source", ["last", "best_source", "best_target"], "Which model to select")
+flags.DEFINE_boolean("test", True, "Whether to evaluate on the true test set or if --notest, then the validation set")
 
 
 def get_gpus():
@@ -70,29 +68,37 @@ def get_models_to_evaluate():
     specified as command line arguments. The matching pattern is specified by
     the match argument.
 
-    Returns: [(log_dir, model_dir, source, target, model_name, method_name), ...]
+    Returns: [(log_dir, model_dir, dataset_name, sources, target,
+        model_name, method_name), ...]
     """
     files = pathlib.Path(FLAGS.logdir).glob(FLAGS.match)
     models_to_evaluate = []
 
     for log_dir in files:
-        items = str(log_dir.stem).split("-")
-        assert len(items) >= 4, \
-            "name should be one of source-target-model-method{,-num}"
+        # Get information from config files
+        config = file_utils.get_config(log_dir)
 
-        source, target, model_name, method_name = items[:4]
-        assert method_name in methods, \
-            "unknown method "+method_name
+        dataset_name = config["dataset"]
+        # We want the string versions of the sources and target, not integers
+        sources = ",".join([str(x) for x in config["sources"]])
+        target = config["target"]
+
+        # Convert from int to string, but not if it's None
+        if target is None:
+            target = ""
+        else:
+            target = str(target)
+
+        model_name = config["model"]
+        method_name = config["method"]
+        assert method_name in methods.names(), "Unknown method "+method_name
 
         model_dir = os.path.join(FLAGS.modeldir, log_dir.stem)
         assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)
-
         assert model_name in models.names(), "Unknown model "+str(model_name)
-        assert source in load_datasets.names(), "Unknown source "+str(source)
-        assert target in [""]+load_datasets.names(), "Unknown target "+str(target)
 
-        models_to_evaluate.append((str(log_dir), model_dir, source, target,
-            model_name, method_name))
+        models_to_evaluate.append((str(log_dir), model_dir, dataset_name,
+            sources, target, model_name, method_name))
 
     return models_to_evaluate
 
@@ -104,18 +110,10 @@ def print_results(results):
     source_test = []
     target_train = []
     target_test = []
-    target_source_train = []
-    target_source_test = []
-    target_target_train = []
-    target_target_test = []
 
-    print("Log Dir,Source,Target,Model,Method,"
-        "Train A,Test A,Train B,Test B,Target Train A,"
-        "Target Test A,Target Train B,Target Test B")
-    for log_dir, source, target, model, method, \
-            s_train, t_train, s_test, t_test, \
-            target_s_train, target_s_test, target_t_train, target_t_test \
-            in results:
+    print("Log Dir;Dataset;Sources;Target;Model;Method;Train A;Test A;Train B;Test B")
+    for log_dir, dataset_name, sources, target, model, method, \
+            s_train, t_train, s_test, t_test in results:
         if s_train is not None and s_test is not None:
             # If we don't have a target domain, just output zero
             if t_train is None:
@@ -123,60 +121,33 @@ def print_results(results):
             if t_test is None:
                 t_test = 0
 
-            # If we don't have a target classifier, just output zero
-            if target_s_train is None:
-                target_s_train = 0
-            if target_s_test is None:
-                target_s_test = 0
-            if target_t_train is None:
-                target_t_train = 0
-            if target_t_test is None:
-                target_t_test = 0
-
-            print(log_dir + "," + source + "," + target + ","
-                + model + "," + method + ","
-                + str(s_train) + "," + str(s_test) + ","
-                + str(t_train) + "," + str(t_test) + ","
-                + str(target_s_train) + "," + str(target_s_test) + ","
-                + str(target_t_train) + "," + str(target_t_test))
+            print(log_dir + ";" + dataset_name + ";" + sources + ";"
+                + target + ";" + model + ";" + method + ";"
+                + str(s_train) + ";" + str(s_test) + ";"
+                + str(t_train) + ";" + str(t_test))
 
             # Task classifier
             source_train.append(s_train)
             source_test.append(s_test)
             target_train.append(t_train)
             target_test.append(t_test)
-            # Target classifier
-            target_source_train.append(target_s_train)
-            target_source_test.append(target_s_test)
-            target_target_train.append(target_t_train)
-            target_target_test.append(target_t_test)
 
     # Task classifier
     source_train = np.array(source_train)
     source_test = np.array(source_test)
     target_train = np.array(target_train)
     target_test = np.array(target_test)
-    # Target classifier
-    target_source_train = np.array(target_source_train)
-    target_source_test = np.array(target_source_test)
-    target_target_train = np.array(target_target_train)
-    target_target_test = np.array(target_target_test)
 
     if len(source_train) > 0 and len(source_test) > 0 \
             and len(target_train) > 0 and len(target_test) > 0:
         print()
         print()
-        print("Dataset,Avg,Std")
+        print("Dataset;Avg;Std")
         # Task classifier
-        print("Train A," + str(source_train.mean()) + "," + str(source_train.std()))
-        print("Test A," + str(source_test.mean()) + "," + str(source_test.std()))
-        print("Train B," + str(target_train.mean()) + "," + str(target_train.std()))
-        print("Test B," + str(target_test.mean()) + "," + str(target_test.std()))
-        # Target classifier
-        print("Target Train A," + str(target_source_train.mean()) + "," + str(target_source_train.std()))
-        print("Target Test A," + str(target_source_test.mean()) + "," + str(target_source_test.std()))
-        print("Target Train B," + str(target_target_train.mean()) + "," + str(target_target_train.std()))
-        print("Target Test B," + str(target_target_test.mean()) + "," + str(target_target_test.std()))
+        print("Train A;" + str(source_train.mean()) + ";" + str(source_train.std()))
+        print("Test A;" + str(source_test.mean()) + ";" + str(source_test.std()))
+        print("Train B;" + str(target_train.mean()) + ";" + str(target_train.std()))
+        print("Test B;" + str(target_test.mean()) + ";" + str(target_test.std()))
 
         print()
         print()
@@ -186,17 +157,12 @@ def print_results(results):
         print("Test A  \t Avg:", source_test.mean(), "\t Std:", source_test.std())
         print("Train B \t Avg:", target_train.mean(), "\t Std:", target_train.std())
         print("Test B  \t Avg:", target_test.mean(), "\t Std:", target_test.std())
-        # Target classifier
-        print("Target Train A \t Avg:", target_source_train.mean(), "\t Std:", target_source_train.std())
-        print("Target Test A  \t Avg:", target_source_test.mean(), "\t Std:", target_source_test.std())
-        print("Target Train B \t Avg:", target_target_train.mean(), "\t Std:", target_target_train.std())
-        print("Target Test B  \t Avg:", target_target_test.mean(), "\t Std:", target_target_test.std())
     else:
         print("No data.")
 
 
-def process_model(log_dir, model_dir, source, target, model_name, method_name,
-        gpumem, multi_gpu):
+def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
+        method_name, gpumem, multi_gpu):
     """ Evaluate a model on the train/test data and compute the results """
     # We need to do this in the process since otherwise TF can't access cuDNN
     # for some reason. But, we only need to do this the first time we create the
@@ -222,131 +188,72 @@ def process_model(log_dir, model_dir, source, target, model_name, method_name,
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
     # Load datasets
-    if target != "":
-        source_dataset, target_dataset = load_datasets.load_da(source,
-            target, test=True)
-        assert source_dataset.num_classes == target_dataset.num_classes, \
-            "Adapting from source to target with different classes not supported"
-    else:
-        assert method_name not in ["cyclegan", "cycada", "forecast"], \
-            "mapping methods require both source and target data"
-        source_dataset, _ = load_datasets.load_da(source,
-            None, test=True)
-        target_dataset = None
+    source_datasets, target_dataset = load_datasets.load_da(dataset_name,
+        sources, target, test=FLAGS.test)
 
-    # Evaluation datasets if we have the dataset
-    source_dataset_train = source_dataset.train_evaluation
-    target_dataset_train = target_dataset.train_evaluation \
-        if target_dataset is not None else None
-    source_dataset_test = source_dataset.test_evaluation
-    target_dataset_test = target_dataset.test_evaluation \
-        if target_dataset is not None else None
-
-    # Information about domains
-    num_classes = source_dataset.num_classes
-
-    # Build our model
+    # Load the method, model, etc.
     # Note: {global,num}_step are for training, so it doesn't matter what
     # we set them to here
-    global_step = 1
-    num_steps = 1
-    model = DomainAdaptationModel(num_classes, model_name,
-        global_step, num_steps)
-
-    # For mapping, we need to know the source and target sizes
-    # Note: first dimension is batch size, so drop that
-    source_first_x, _ = next(iter(source_dataset.train))
-    source_x_shape = source_first_x.shape[1:]
-    if target_dataset is not None:
-        target_first_x, _ = next(iter(target_dataset.train))
-        target_x_shape = target_first_x.shape[1:]
-
-    if method_name in ["cyclegan", "cycada", "cyclegan_dann"]:
-        mapping_model = models.CycleGAN(source_x_shape, target_x_shape)
-    elif method_name == "forecast":
-        mapping_model = models.ForecastGAN(source_x_shape, target_x_shape)
-    else:
-        mapping_model = None
-
-    # Does this method use a target classifier?
-    has_target_classifier = method_name in ["pseudo", "instance"] \
-        and FLAGS.target_classifier
+    method = methods.load(method_name,
+        source_datasets=source_datasets,
+        target_dataset=target_dataset,
+        global_step=1, total_steps=1)
 
     # Load model from checkpoint
-    checkpoint = {}
+    checkpoint = tf.train.Checkpoint(**method.checkpoint_variables)
+    checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
 
-    if model is not None:
-        checkpoint["model"] = model
-    if mapping_model is not None:
-        checkpoint["mapping_model"] = mapping_model
-
-    checkpoint = tf.train.Checkpoint(**checkpoint)
-    checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir,
-        target=has_target_classifier)
-
-    if FLAGS.last:
+    if FLAGS.selection == "last":
         checkpoint_manager.restore_latest()
         max_accuracy_step = checkpoint_manager.latest_step()
         max_accuracy = 0  # We don't really care...
+        found = checkpoint_manager.found_last
+    elif FLAGS.selection == "best_source":
+        checkpoint_manager.restore_best_source()
+        max_accuracy_step = checkpoint_manager.best_step_source()
+        max_accuracy = checkpoint_manager.best_validation_source
+        found = checkpoint_manager.found_best_source
+    elif FLAGS.selection == "best_target":
+        checkpoint_manager.restore_best_target()
+        max_accuracy_step = checkpoint_manager.best_step_target()
+        max_accuracy = checkpoint_manager.best_validation_target
+        found = checkpoint_manager.found_best_target
     else:
-        checkpoint_manager.restore_best(FLAGS.best_target)
-        max_accuracy_step = checkpoint_manager.best_step(FLAGS.best_target)
-
-        if has_target_classifier and FLAGS.best_target:
-            max_accuracy = checkpoint_manager.best_target_validation
-        else:
-            max_accuracy = checkpoint_manager.best_validation
+        raise NotImplementedError("unknown --selection argument")
 
     # Print which step we're loading the model for
-    print(log_dir + "," + source + "," + target + ","
-        + method_name + "," + model_name + ","
-        + str(max_accuracy_step) + "," + str(max_accuracy))
+    print(log_dir + ";" + dataset_name + ";" + sources + ";" + target + ";"
+        + model_name + ";" + method_name + ";"
+        + str(max_accuracy_step) + ";" + str(max_accuracy))
 
     # If not found, give up
-    if not checkpoint_manager.found:
-        return source, target, model_name, method_name, \
-            None, None, None, None, \
+    if not found:
+        return log_dir, dataset_name, sources, target, model_name, method_name, \
             None, None, None, None
 
     # Metrics
-    have_target_domain = target_dataset is not None
-    metrics = Metrics(log_dir, source_dataset,
-            None, None, have_target_domain,
-            target_classifier=has_target_classifier,
-            enable_compile=False)
+    has_target_domain = target_dataset is not None
+    metrics = Metrics(log_dir, method, source_datasets, target_dataset,
+        has_target_domain)
 
     # Evaluate on both datasets
-    metrics.train(model, mapping_model, source_dataset_train, None, target_dataset_train, evaluation=True)
-    metrics.test(model, mapping_model, source_dataset_test, target_dataset_test, evaluation=True)
+    metrics.train_eval()
+    metrics.test(evaluation=True)
 
     # Get results
     results = metrics.results()
     s_train = results["accuracy_task/source/training"]
     s_test = results["accuracy_task/source/validation"]
 
-    target_s_train = None
-    target_s_test = None
-    target_t_train = None
-    target_t_test = None
-
-    if has_target_classifier:
-        target_s_train = results["accuracy_target/source/training"]
-        target_s_test = results["accuracy_target/source/validation"]
-
     if target_dataset is not None:
         t_train = results["accuracy_task/target/training"]
         t_test = results["accuracy_task/target/validation"]
-
-        if has_target_classifier:
-            target_t_train = results["accuracy_target/target/training"]
-            target_t_test = results["accuracy_target/target/validation"]
     else:
         t_train = None
         t_test = None
 
-    return log_dir, source, target, model_name, method_name, \
-        s_train, t_train, s_test, t_test, \
-        target_s_train, target_s_test, target_t_train, target_t_test
+    return log_dir, dataset_name, sources, target, model_name, method_name, \
+        s_train, t_train, s_test, t_test
 
 
 def main(argv):
@@ -374,8 +281,14 @@ def main(argv):
         commands.append((*model_params, gpumem, multi_gpu))
 
     # Also prints which models we load
-    print("Log Dir,Source,Target,Model,Method,Best Step,Accuracy at Step")
-    results = run_job_pool(process_model, commands, cores=jobs)
+    print("Log Dir;Dataset;Sources;Target;Model;Method;Best Step;Accuracy at Step")
+    if jobs == 1:  # Eases debugging, printing even if it errors
+        results = []
+
+        for c in commands:
+            results.append(process_model(*c))
+    else:
+        results = run_job_pool(process_model, commands, cores=jobs)
 
     # Print results, averages, etc.
     print_results(results)
