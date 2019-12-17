@@ -4,6 +4,7 @@ Models
 import tensorflow as tf
 
 from absl import flags
+from vrnn import VRNN
 
 FLAGS = flags.FLAGS
 
@@ -58,56 +59,10 @@ class StopGradient(tf.keras.layers.Layer):
         return tf.stop_gradient(inputs)
 
 
-class FcnModelBase(tf.keras.Model):
-    """
-    FCN (fully CNN) -- but domain classifier has additional dense layers
-
-    From: https://arxiv.org/pdf/1611.06455.pdf
-    Tested in: https://arxiv.org/pdf/1809.04356.pdf
-    Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/fcn.py
-    """
-    def __init__(self, num_classes, num_domains, **kwargs):
-        assert FLAGS.model == "fcn", "currently only support FCN"
-        super().__init__(**kwargs)
-        self.num_classes = num_classes
-        self.num_domains = num_domains
-        self.feature_extractor = tf.keras.Sequential([
-            tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.GlobalAveragePooling1D(),
-        ])
-        self.task_classifier = tf.keras.Sequential([
-            tf.keras.layers.Dense(num_classes),
-        ])
-        self.domain_classifier = tf.keras.Sequential([
-            # Note: alternative is Dense(128, activation="tanh") like used by
-            # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
-            # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
-            tf.keras.layers.Dense(500, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-            tf.keras.layers.Dropout(0.3),
-
-            tf.keras.layers.Dense(500, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-            tf.keras.layers.Dropout(0.3),
-
-            tf.keras.layers.Dense(num_domains),
-        ])
+class ModelBase(tf.keras.Model):
+    """ Base model class (inheriting from Keras' Model class) """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     @property
     def trainable_variables_task(self):
@@ -150,6 +105,57 @@ class FcnModelBase(tf.keras.Model):
         task = self.call_task_classifier(fe, **kwargs)
         domain = self.call_domain_classifier(fe, task, **kwargs)
         return task, domain, fe
+
+
+class FcnModelBase(ModelBase):
+    """
+    FCN (fully CNN) -- but domain classifier has additional dense layers
+
+    From: https://arxiv.org/pdf/1611.06455.pdf
+    Tested in: https://arxiv.org/pdf/1809.04356.pdf
+    Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/fcn.py
+    """
+    def __init__(self, num_classes, num_domains, **kwargs):
+        super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.num_domains = num_domains
+        self.feature_extractor = tf.keras.Sequential([
+            tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
+                use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+
+            tf.keras.layers.GlobalAveragePooling1D(),
+        ])
+        self.task_classifier = tf.keras.Sequential([
+            tf.keras.layers.Dense(num_classes),
+        ])
+        self.domain_classifier = tf.keras.Sequential([
+            # Note: alternative is Dense(128, activation="tanh") like used by
+            # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
+            # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
+            tf.keras.layers.Dense(500, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+            tf.keras.layers.Dropout(0.3),
+
+            tf.keras.layers.Dense(500, use_bias=False),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation("relu"),
+            tf.keras.layers.Dropout(0.3),
+
+            tf.keras.layers.Dense(num_domains),
+        ])
 
 
 class DannModel(FcnModelBase):
@@ -221,6 +227,99 @@ class DannSmoothModel(DannModel):
         grl_output = self.flip_gradient(fe, **kwargs)
         # 0 = source domain 1 with target, 1 = source domain 2 with target, etc.
         return self.domain_classifier[domain_classifier](grl_output, **kwargs)
+
+
+class VradaFeatureExtractor(tf.keras.Model):
+    """
+    Need to get VRNN state, so we can't directly use Sequential since it can't
+    return intermediate layer's extra outputs. And, can't use the functional
+    API directly since we don't now the input shape.
+
+    Note: only returns state if vrada=True
+    """
+    def __init__(self, vrada=True, **kwargs):
+        super().__init__(**kwargs)
+        self.vrada = vrada
+
+        if self.vrada:
+            # Use z for predictions in VRADA like in original paper
+            self.rnn = VRNN(100, 100, return_z=True, return_sequences=False)
+        else:
+            self.rnn = tf.keras.layers.LSTM(100, return_sequences=False)
+
+        self.fe = tf.keras.Sequential([
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(100),
+            tf.keras.layers.Dense(100),
+            tf.keras.layers.Dense(100),
+        ])
+
+    def call(self, inputs, **kwargs):
+        if self.vrada:
+            rnn_output, rnn_state = self.rnn(inputs, **kwargs)
+        else:
+            rnn_output = self.rnn(inputs, **kwargs)
+            rnn_state = None
+
+        fe_output = self.fe(rnn_output, **kwargs)
+
+        return fe_output, rnn_state
+
+
+class RnnModelBase(ModelBase):
+    """ RNN-based model - for R-DANN and VRADA """
+    def __init__(self, vrada, num_classes, num_domains, **kwargs):
+        super().__init__(**kwargs)
+        self.num_classes = num_classes
+        self.num_domains = num_domains
+        self.feature_extractor = VradaFeatureExtractor(vrada)
+        self.task_classifier = tf.keras.Sequential([
+            tf.keras.layers.Dense(50),
+            tf.keras.layers.Dense(50),
+            tf.keras.layers.Dense(50),
+            tf.keras.layers.Dense(num_classes),
+        ])
+        self.domain_classifier = tf.keras.Sequential([
+            tf.keras.layers.Dense(50),
+            tf.keras.layers.Dense(50),
+            tf.keras.layers.Dense(50),
+            tf.keras.layers.Dense(num_domains),
+        ])
+
+    def call(self, inputs, training=None, **kwargs):
+        """ Since our RNN feature extractor returns two values (output and
+        RNN state, which we need for the loss) we need to only pass the output
+        to the classifiers, i.e. fe[0] rather than fe """
+        self.set_learning_phase(training)
+        fe = self.call_feature_extractor(inputs, **kwargs)
+        task = self.call_task_classifier(fe[0], **kwargs)
+        domain = self.call_domain_classifier(fe[0], task, **kwargs)
+        return task, domain, fe
+
+
+class DannRnnModel(RnnModelBase):
+    """ DannModel but for RnnModelBase not FcnModelBase """
+    def __init__(self, vrada, num_classes, num_domains, global_step,
+            total_steps, **kwargs):
+        super().__init__(vrada, num_classes, num_domains, **kwargs)
+        grl_schedule = DannGrlSchedule(total_steps)
+        self.flip_gradient = FlipGradient(global_step, grl_schedule)
+
+    def call_domain_classifier(self, fe, task, **kwargs):
+        grl_output = self.flip_gradient(fe, **kwargs)
+        return self.domain_classifier(grl_output, **kwargs)
+
+
+class VradaModel(DannRnnModel):
+    def __init__(self, *args, **kwargs):
+        vrada = True
+        super().__init__(vrada, *args, **kwargs)
+
+
+class RDannModel(DannRnnModel):
+    def __init__(self, *args, **kwargs):
+        vrada = False
+        super().__init__(vrada, *args, **kwargs)
 
 
 # List of names

@@ -209,7 +209,6 @@ def write_config_from_args(log_dir):
         # methods.py
         "lr": FLAGS.lr,
         "lr_domain_mult": FLAGS.lr_domain_mult,
-        "model": FLAGS.model,
 
         # plots.py
         "max_plot_embedding": FLAGS.max_plot_embedding,

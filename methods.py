@@ -11,7 +11,6 @@ import load_datasets
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_enum("model", "fcn", models.names(), "What model to use for the method")
 flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 
@@ -218,7 +217,7 @@ class MethodBase:
     def call_model(self, x, **kwargs):
         return self.model(x, **kwargs)
 
-    def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         # Maybe: regularization = sum(model.losses) and add to loss
         return self.task_loss(task_y_true, task_y_pred)
@@ -241,7 +240,7 @@ class MethodBase:
 
         with tf.GradientTape(persistent=True) as tape:
             task_y_pred, domain_y_pred, fe_output = self.call_model(x, training=True)
-            losses = self.compute_losses(task_y_true, domain_y_true,
+            losses = self.compute_losses(x, task_y_true, domain_y_true,
                 task_y_pred, domain_y_pred, fe_output, training=True)
 
         gradients = self.compute_gradients(tape, losses)
@@ -273,7 +272,7 @@ class MethodBase:
         task_y_pred, domain_y_pred, fe_output = self.call_model(x, training=False)
 
         # Calculate losses
-        losses = self.compute_losses(task_y_true, domain_y_true,
+        losses = self.compute_losses(x, task_y_true, domain_y_true,
             task_y_pred, domain_y_pred, fe_output, training=False)
 
         # Post-process data (e.g. compute softmax from logits)
@@ -332,7 +331,7 @@ class MethodDann(MethodBase):
 
         return x, task_y_true, domain_y_true
 
-    def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         nontarget = tf.where(tf.not_equal(domain_y_true, 0))
         task_y_true = tf.gather(task_y_true, nontarget)
@@ -452,7 +451,7 @@ class MethodDannSmooth(MethodDannGS):
 
         return task_y_pred, domain_y_pred, fe_output
 
-    def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         """
         MDAN losses - domain classifiers' losses weighted by task
@@ -568,7 +567,7 @@ class MethodDannDG(MethodDann):
         domain_y_true = tf.concat(domain_a, axis=0)
         return x, task_y_true, domain_y_true
 
-    def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         # Since we don't have target domain data, don't throw out anything like
         # we did in MethodDANN()
@@ -677,7 +676,7 @@ class MethodAflacDG(MethodDannDG):
     def create_model(self):
         self.model = models.FcnModelBase(self.num_classes, self.domain_outputs)
 
-    def compute_losses(self, task_y_true, domain_y_true, task_y_pred,
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         task_loss = self.task_loss(task_y_true, task_y_pred)
         d_loss = self.domain_loss(domain_y_true, domain_y_pred)
@@ -738,6 +737,68 @@ class MethodAflacDG(MethodDannDG):
         self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
 
 
+class MethodRDann(MethodDann):
+    """ Same as DANN but uses a different model -- LSTM with some dense layers """
+    def create_model(self):
+        self.model = models.RDannModel(self.num_classes, self.domain_outputs,
+            self.global_step, self.total_steps)
+
+
+class MethodVrada(MethodDann):
+    """ DANN but with the VRADA model and VRNN loss """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.loss_names += ["vrnn"]
+
+    def create_model(self):
+        self.model = models.VradaModel(self.num_classes, self.domain_outputs,
+            self.global_step, self.total_steps)
+
+    def compute_vrnn_loss(self, vrnn_state, x, epsilon=1e-9):
+        """
+        Compute VRNN loss
+
+        KL loss/divergence:
+        - https://stats.stackexchange.com/q/7440
+        - https://github.com/kimkilho/tensorflow-vrnn/blob/master/main.py
+
+        Negative log likelihood loss:
+        - https://papers.nips.cc/paper/7219-simple-and-scalable-predictive-uncertainty-estimation-using-deep-ensembles.pdf
+        - https://fairyonice.github.io/Create-a-neural-net-with-a-negative-log-likelihood-as-a-loss.html
+        """
+        encoder_mu, encoder_sigma, decoder_mu, decoder_sigma, \
+            prior_mu, prior_sigma = vrnn_state
+
+        kl_loss = tf.reduce_mean(tf.reduce_mean(
+            tf.math.log(tf.maximum(epsilon, prior_sigma)) - tf.math.log(tf.maximum(epsilon, encoder_sigma))
+            + 0.5*(tf.square(encoder_sigma) + tf.square(encoder_mu - prior_mu))
+            / tf.maximum(epsilon, tf.square(prior_sigma))
+            - 0.5, axis=1), axis=1)
+
+        likelihood_loss = 0.5*tf.reduce_mean(tf.reduce_mean(
+            tf.square(decoder_mu - x) / tf.maximum(epsilon, tf.square(decoder_sigma))
+            + tf.math.log(tf.maximum(epsilon, tf.square(decoder_sigma))),
+            axis=1), axis=1)
+
+        return tf.reduce_mean(kl_loss) + tf.reduce_mean(likelihood_loss)
+
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training):
+        _, task_loss, d_loss = super().compute_losses(
+            x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training)
+        vrnn_state = fe_output[1]  # fe_output = (vrnn_output, vrnn_state)
+        vrnn_loss = self.compute_vrnn_loss(vrnn_state, x)
+        total_loss = task_loss + d_loss + vrnn_loss
+        return [total_loss, task_loss, d_loss, vrnn_loss]
+
+    def compute_gradients(self, tape, losses):
+        # We only use vrnn_loss for plotting -- for computing gradients it's
+        # included in the total loss
+        total_loss, task_loss, d_loss, _ = losses
+        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
+
+
 def make_loss(from_logits=True):
     cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=from_logits)
 
@@ -758,6 +819,10 @@ def load(name, *args, **kwargs):
 methods = {
     # No adaptation or training on target
     "none": MethodNone,
+
+    # Domain adaptation
+    "vrada": MethodVrada,
+    "rdann": MethodRDann,
 
     # Multi-source domain adaptation (works with it...)
     "dann": MethodDann,
