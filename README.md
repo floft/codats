@@ -13,10 +13,13 @@ Steps:
 
 ## Installation
 
-This requires the following packages:
+This requires the following packages (*module load* for Kamiak):
 
+    module load cuda/10.1.105 cudnn/7.5.1.10_cuda10.1 python3/3.7.4
     pip3 install --user --upgrade pip
-    pip3 install --user tensorflow-gpu pillow lxml jupyter matplotlib pandas sklearn scipy tensorboard rarfile tqdm pyyaml
+    export PATH="$HOME/.local/bin:$PATH"
+    pip3 install --user --upgrade numpy cython
+    pip3 install --user --upgrade tensorflow-gpu==2.1.0rc1 pillow lxml jupyter matplotlib pandas sklearn scipy tensorboard rarfile tqdm pyyaml POT dtw
 
 ## Hyperparameter tuning
 If you want to re-run hyperparameter tuning, you can train, eval, then pick
