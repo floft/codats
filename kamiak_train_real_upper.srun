@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-74
+#SBATCH --array=0-89
 
 #
 # Upper bound separate since there's a lot of duplicates if we were to run it
@@ -41,14 +41,13 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-model=fcn
 methods=("upper")
 debugnums=(1 2 3)
-# number of adaptation problems = 25
-uids=(u0 u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 u16 u17 u18 u19 u20 u21 u22 u23 u24)
-datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
-sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
-targets=("1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "0" "1" "2" "3" "4")
+# number of adaptation problems = 30
+uids=(u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9)
+datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("1" "4" "9" "21" "24" "0" "1" "2" "5" "8" "1" "2" "3" "6" "8" "1" "2" "5" "11" "12" "1" "7" "8" "23" "32" "1" "7" "17" "40" "47")
 
 # Make sure we're using the right number
 correct_min=0
@@ -85,14 +84,7 @@ if [[ $method == "upper" ]]; then
 fi
 
 # Training / model options
-steps=30000
-lr=0.0001
-model=fcn
-batch=128
-
-if [[ $method == "vrada" || $method == "rdann" ]]; then
-    model="$method"
-elif [[ $method == "random" ]]; then
+if [[ $method == "random" ]]; then
     additional_args+=("--log_val_steps=100")
 fi
 
@@ -108,7 +100,6 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.1.105 cudnn/7.5.1.10_cuda10.1 python3/3.7.4
 python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --model="$model" --steps="$steps" --train_batch=$batch --lr="$lr" \
     --method="$method" --dataset="$dataset_name" --sources="$source" \
     --target="$target" --uid="$uid" --debugnum="$debugnum" \
     --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error

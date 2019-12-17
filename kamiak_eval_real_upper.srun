@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-24
+#SBATCH --array=0-29
 
 # My computer
 #gpumem=4500
@@ -37,11 +37,11 @@ suffix=$1; shift
 model=fcn
 methods=("upper")
 variants=("best_source")
-# number of adaptation problems = 25
-uids=(u0 u1 u2 u3 u4 u5 u6 u7 u8 u9 u10 u11 u12 u13 u14 u15 u16 u17 u18 u19 u20 u21 u22 u23 u24)
-datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
-sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
-targets=("1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "1" "2" "3" "4" "5" "0" "1" "2" "3" "4" "0" "1" "2" "3" "4")
+# number of adaptation problems = 30
+uids=(u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9)
+datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("1" "4" "9" "21" "24" "0" "1" "2" "5" "8" "1" "2" "3" "6" "8" "1" "2" "5" "11" "12" "1" "7" "8" "23" "32" "1" "7" "17" "40" "47")
 
 # Make sure we're using the right number
 correct_min=0
@@ -78,13 +78,6 @@ if [[ $method == "upper" ]]; then
     method="none"
     source="$target"
     target=""
-fi
-
-# Model
-if [[ $method == "vrada" || $method == "rdann" ]]; then
-    model="$method"
-else
-    model="fcn"
 fi
 
 # Which model to evaluate
