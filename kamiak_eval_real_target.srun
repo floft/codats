@@ -93,7 +93,7 @@ echo "$dataset_name $source --> $target" >> "$out"
 cd "$remotedir"
 mkdir -p results
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-module load cuda/10.1.105 cudnn/7.5.1.10_cuda10.1 python3/3.7.4
+module load cuda/10.0.130 cudnn/7.6.4.38_cuda10.0 python3/3.7.4
 set -o pipefail  # error if any of the commands in the pipe fail
 { python3 main_eval.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
