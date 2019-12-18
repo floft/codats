@@ -183,8 +183,8 @@ def parse_file(filename):
                         # multiple targets
                         num_domains += len(target.split(","))
 
-                    assert method is None or values[5] == method
-                    method = values[5]
+                    assert method is None or values[4] == method
+                    method = values[4]
                 elif in_traintest:
                     traintest.append((values[0], values[1], values[2],
                         values[3], values[4],
@@ -606,19 +606,15 @@ def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
 
 
 def main(argv):
-    plot_multisource("vary_n_best_source", "best_source",
-        save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf")
+    outdir = "result_plots"
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
 
     # We pass variant=best_target, but match * variant since for the upper bound
     # there isn't a "target" (since target is passed as source), but we all the
     # others we evaluate only with best_target, so we can match all to get the
     # best_source only for the upper bound.
-    plot_multisource("vary_n_best_target", "best_target", "*",
-        save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf")
-
-    plot_varyamount("vary_amount", "best_target", "*",
+    plot_multisource("msda1", "best_target", "*",
         save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf")
 
