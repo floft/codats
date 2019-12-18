@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_real
+#SBATCH --job-name=eval
 #SBATCH --output=slurm_logs/eval_%A_%a.out
 #SBATCH --error=slurm_logs/eval_%A_%a.err
 #SBATCH --cpus-per-task=1
@@ -8,19 +8,6 @@
 #SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
 #SBATCH --array=0-899
-
-# My computer
-#gpumem=4500
-# SBATCH --partition=cook
-# SBATCH --cpus-per-task=4
-# SBATCH --gres=gpu:0
-# SBATCH --mem=10G
-# Kamiak
-gpumem=0
-# SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-# SBATCH --cpus-per-task=3
-# SBATCH --gres=gpu:1
-# SBATCH --mem=20G
 
 . kamiak_config.sh
 
@@ -97,7 +84,7 @@ module load cuda/10.0.130 cudnn/7.6.4.38_cuda10.0 python3/3.7.4
 set -o pipefail  # error if any of the commands in the pipe fail
 { python3 main_eval.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --jobs=1 --gpus=1 --gpumem="$gpumem" \
+    --jobs=1 --gpus=1 --gpumem=0 \
     --match="${dataset_name}-${uid}-${method}-[0-9]*" \
     "${additional_args[@]}" "$@" || handle_error; } | \
     tee -a "$out"

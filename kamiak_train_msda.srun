@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_real
+#SBATCH --job-name=train
 #SBATCH --output=slurm_logs/train_%A_%a.out
 #SBATCH --error=slurm_logs/train_%A_%a.err
 #SBATCH --cpus-per-task=1
@@ -8,19 +8,6 @@
 #SBATCH --time=3-00:00:00
 #SBATCH --mem=20G
 #SBATCH --array=0-899
-
-# My computer
-#gpumem=4500
-# SBATCH --partition=cook
-# SBATCH --cpus-per-task=4
-# SBATCH --gres=gpu:0
-# SBATCH --mem=10G
-# Kamiak
-gpumem=0
-# SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-# SBATCH --cpus-per-task=3
-# SBATCH --gres=gpu:1
-# SBATCH --mem=20G
 
 . kamiak_config.sh
 
@@ -92,4 +79,4 @@ python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
     --method="$method" --dataset="$dataset_name" --sources="$source" \
     --target="$target" --uid="$uid" --debugnum="$debugnum" \
-    --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error
+    --gpumem=0 "${additional_args[@]}" "$@" || handle_error

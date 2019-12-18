@@ -1,33 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=train_real
-#SBATCH --output=slurm_logs/train_%A_%a.out
-#SBATCH --error=slurm_logs/train_%A_%a.err
+#SBATCH --job-name=eval
+#SBATCH --output=slurm_logs/eval_%A_%a.out
+#SBATCH --error=slurm_logs/eval_%A_%a.err
 #SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:1
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-#SBATCH --time=1-00:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-89
-
-#
-# Upper bound separate since there's a lot of duplicates if we were to run it
-# in kamiak_train_real.srun since for upper bounds the multiple combinations
-# of source domains (or number of them) doesn't affect the result. Thus, just
-# run three of each.
-#
-
-# My computer
-#gpumem=4500
-# SBATCH --partition=cook
-# SBATCH --cpus-per-task=4
-# SBATCH --gres=gpu:0
-# SBATCH --mem=10G
-# Kamiak
-gpumem=0
-# SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
-# SBATCH --cpus-per-task=3
-# SBATCH --gres=gpu:1
-# SBATCH --mem=20G
+#SBATCH --array=0-29
 
 . kamiak_config.sh
 
@@ -41,8 +21,9 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
+model=fcn
 methods=("upper")
-debugnums=(1 2 3)
+variants=("best_source")
 # number of adaptation problems = 30
 uids=(u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9)
 datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
@@ -51,7 +32,7 @@ targets=("1" "4" "9" "21" "24" "0" "1" "2" "5" "8" "1" "2" "3" "6" "8" "1" "2" "
 
 # Make sure we're using the right number
 correct_min=0
-correct_max=$(( ${#methods[@]} * ${#debugnums[@]} * ${#sources[@]} - 1))
+correct_max=$(( ${#methods[@]} * ${#variants[@]} * ${#sources[@]} - 1))
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "source/target sizes should match"; handle_error; }
 [[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
@@ -62,18 +43,21 @@ correct_max=$(( ${#methods[@]} * ${#debugnums[@]} * ${#sources[@]} - 1))
 # Indexing: https://stackoverflow.com/a/34363187
 index=$SLURM_ARRAY_TASK_ID
 index1max=${#sources[@]}
-index2max=${#debugnums[@]}
+index2max=${#variants[@]}
 index3=$((index / (index1max * index2max)))
 index=$((index - index3 * index1max * index2max))
 index2=$((index / index1max))
 index1=$((index % index1max))
 
 method="${methods[$index3]}"
-debugnum="${debugnums[$index2]}"
+variant="${variants[$index2]}"
 uid="${uids[$index1]}"
 dataset_name="${datasets[$index1]}"
 source="${sources[$index1]}"
 target="${targets[$index1]}"
+
+# Output name uses method from above not the "none" for "upper"
+out="results/results_${suffix}_$variant-$dataset_name-$uid-$method.txt"
 
 # Upper bound is actually "none" but without a target domain and with other args
 additional_args=()
@@ -83,23 +67,24 @@ if [[ $method == "upper" ]]; then
     target=""
 fi
 
-# Training / model options
-if [[ $method == "random" ]]; then
-    additional_args+=("--log_val_steps=100")
-fi
+# Which model to evaluate
+additional_args+=("--selection=$variant")
 
-echo "$suffix #$SLURM_ARRAY_TASK_ID"
-echo "Method: $method"
-echo "DebugNum: $debugnum"
-echo "Other args: $@"
-echo "UID: $uid"
-echo "$dataset_name $source --> $target"
+echo "$suffix #$SLURM_ARRAY_TASK_ID" > "$out"
+echo "Selection: $variant" >> "$out"
+echo "Method: $method" >> "$out"
+echo "Other args: $@" >> "$out"
+echo "UID: $uid" >> "$out"
+echo "$dataset_name $source --> $target" >> "$out"
 
 cd "$remotedir"
+mkdir -p results
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 module load cuda/10.0.130 cudnn/7.6.4.38_cuda10.0 python3/3.7.4
-python3 main.py \
+set -o pipefail  # error if any of the commands in the pipe fail
+{ python3 main_eval.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
-    --method="$method" --dataset="$dataset_name" --sources="$source" \
-    --target="$target" --uid="$uid" --debugnum="$debugnum" \
-    --gpumem="$gpumem" "${additional_args[@]}" "$@" || handle_error
+    --jobs=1 --gpus=1 --gpumem=0 \
+    --match="${dataset_name}-${uid}-${method}-[0-9]*" \
+    "${additional_args[@]}" "$@" || handle_error; } | \
+    tee -a "$out"

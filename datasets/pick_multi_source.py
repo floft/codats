@@ -191,11 +191,12 @@ if __name__ == "__main__":
     print()
 
     #
-    # kamiak_train_real_{source,target}.srun
+    # kamiak_train_msda.srun
     #
     # List of methods (excluding "upper", which is run separately)
     # We need to unwrap the methods dimension from the slurm array because we
     # have to specify different hyperparameters for each dataset-method pair.
+    # TODO we don't....
     method_list = [
         # VRADA/R-DANN are for SS-DA not MS-DA
         # "vrada",
@@ -204,7 +205,7 @@ if __name__ == "__main__":
         "none"
     ]
 
-    print("For kamiak_train_real_target.srun:")
+    print("For kamiak_train_msda.srun:")
     methods = []
     print_uids = []
     dataset_names = []
@@ -228,10 +229,10 @@ if __name__ == "__main__":
     print()
 
     #
-    # kamiak_eval_real_targe.srun (same as above, but don't need to
+    # kamiak_eval_msda.srun (same as above, but don't need to
     # unwrap method and don't need other_params)
     #
-    print("For kamiak_eval_real_target.srun:")
+    print("For kamiak_eval_msda.srun:")
     dataset_names = []
     print_uids = []
     sources = []
@@ -256,9 +257,9 @@ if __name__ == "__main__":
     print()
 
     #
-    # kamiak_{train,eval}_real_upper.srun
+    # kamiak_{train,eval}_msda_upper.srun
     #
-    print("For kamiak_{train,eval}_real_upper.srun:")
+    print("For kamiak_{train,eval}_msda_upper.srun:")
     targets_unique = list(set(dataset_target_pairs.keys()))
     targets_unique.sort(key=natural_keys)
     sources_blank = ["\"\""]*len(targets_unique)
