@@ -69,7 +69,7 @@ def get_models_to_evaluate():
     the match argument.
 
     Returns: [(log_dir, model_dir, dataset_name, sources, target,
-        model_name, method_name), ...]
+        method_name), ...]
     """
     files = pathlib.Path(FLAGS.logdir).glob(FLAGS.match)
     models_to_evaluate = []
@@ -89,16 +89,14 @@ def get_models_to_evaluate():
         else:
             target = str(target)
 
-        model_name = config["model"]
         method_name = config["method"]
         assert method_name in methods.names(), "Unknown method "+method_name
 
         model_dir = os.path.join(FLAGS.modeldir, log_dir.stem)
         assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)
-        assert model_name in models.names(), "Unknown model "+str(model_name)
 
         models_to_evaluate.append((str(log_dir), model_dir, dataset_name,
-            sources, target, model_name, method_name))
+            sources, target, method_name))
 
     return models_to_evaluate
 
@@ -111,8 +109,8 @@ def print_results(results):
     target_train = []
     target_test = []
 
-    print("Log Dir;Dataset;Sources;Target;Model;Method;Train A;Test A;Train B;Test B")
-    for log_dir, dataset_name, sources, target, model, method, \
+    print("Log Dir;Dataset;Sources;Target;Method;Train A;Test A;Train B;Test B")
+    for log_dir, dataset_name, sources, target, method, \
             s_train, t_train, s_test, t_test in results:
         if s_train is not None and s_test is not None:
             # If we don't have a target domain, just output zero
@@ -122,7 +120,7 @@ def print_results(results):
                 t_test = 0
 
             print(log_dir + ";" + dataset_name + ";" + sources + ";"
-                + target + ";" + model + ";" + method + ";"
+                + target + ";" + method + ";"
                 + str(s_train) + ";" + str(s_test) + ";"
                 + str(t_train) + ";" + str(t_test))
 
@@ -161,7 +159,7 @@ def print_results(results):
         print("No data.")
 
 
-def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
+def process_model(log_dir, model_dir, dataset_name, sources, target,
         method_name, gpumem, multi_gpu):
     """ Evaluate a model on the train/test data and compute the results """
     # We need to do this in the process since otherwise TF can't access cuDNN
@@ -223,12 +221,11 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
 
     # Print which step we're loading the model for
     print(log_dir + ";" + dataset_name + ";" + sources + ";" + target + ";"
-        + model_name + ";" + method_name + ";"
-        + str(max_accuracy_step) + ";" + str(max_accuracy))
+        + method_name + ";" + str(max_accuracy_step) + ";" + str(max_accuracy))
 
     # If not found, give up
     if not found:
-        return log_dir, dataset_name, sources, target, model_name, method_name, \
+        return log_dir, dataset_name, sources, target, method_name, \
             None, None, None, None
 
     # Metrics
@@ -252,7 +249,7 @@ def process_model(log_dir, model_dir, dataset_name, sources, target, model_name,
         t_train = None
         t_test = None
 
-    return log_dir, dataset_name, sources, target, model_name, method_name, \
+    return log_dir, dataset_name, sources, target, method_name, \
         s_train, t_train, s_test, t_test
 
 
@@ -281,7 +278,7 @@ def main(argv):
         commands.append((*model_params, gpumem, multi_gpu))
 
     # Also prints which models we load
-    print("Log Dir;Dataset;Sources;Target;Model;Method;Best Step;Accuracy at Step")
+    print("Log Dir;Dataset;Sources;Target;Method;Best Step;Accuracy at Step")
     if jobs == 1:  # Eases debugging, printing even if it errors
         results = []
 

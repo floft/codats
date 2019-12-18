@@ -107,8 +107,8 @@ def parse_file(filename):
     traintest = []
     averages = []
 
-    valid_header = "Log Dir;Dataset;Sources;Target;Model;Method;Best Step;Accuracy at Step"
-    traintest_header = "Log Dir;Dataset;Sources;Target;Model;Method;Train A;Test A;Train B;Test B"
+    valid_header = "Log Dir;Dataset;Sources;Target;Method;Best Step;Accuracy at Step"
+    traintest_header = "Log Dir;Dataset;Sources;Target;Method;Train A;Test A;Train B;Test B"
     averages_header = "Dataset;Avg;Std"
 
     # Config information
@@ -117,7 +117,6 @@ def parse_file(filename):
     sources = None
     num_domains = None
     target = None
-    model = None
     method = None
 
     with open(filename) as f:
@@ -156,13 +155,12 @@ def parse_file(filename):
                 if in_validation:
                     # If there was no model yet (e.g. if a method errors before
                     # starting training)
-                    if values[6] == "None":
+                    if values[5] == "None":
                         print("Warning: no best model for", filename, file=sys.stderr)
                         return None
 
                     validation.append((values[0], values[1], values[2],
-                        values[3], values[4], values[5],
-                        int(values[6]), float(values[7])))
+                        values[3], values[4], int(values[5]), float(values[6])))
 
                     # Doesn't really matter which one... just get one of them
                     log_dir = values[0]
@@ -185,16 +183,13 @@ def parse_file(filename):
                         # multiple targets
                         num_domains += len(target.split(","))
 
-                    assert model is None or values[4] == model
-                    model = values[4]
-
                     assert method is None or values[5] == method
                     method = values[5]
                 elif in_traintest:
                     traintest.append((values[0], values[1], values[2],
-                        values[3], values[4], values[5],
-                        float(values[6]), float(values[7]),
-                        float(values[8]), float(values[9])))
+                        values[3], values[4],
+                        float(values[5]), float(values[6]),
+                        float(values[7]), float(values[8])))
                 elif in_averages:
                     averages.append((values[0], float(values[1]), float(values[2])))
             else:
@@ -227,7 +222,6 @@ def parse_file(filename):
         "sources": sources,
         "num_domains": num_domains,
         "target": target,
-        "model": model,
         "method": method,
         "config": config,
     }
