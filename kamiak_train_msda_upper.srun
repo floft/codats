@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-89
+#SBATCH --array=0-170
 
 #
 # Upper bound separate since there's a lot of duplicates if we were to run it
@@ -30,11 +30,11 @@ suffix=$1; shift
 # Adapt in both directions, then do upper bound
 methods=("upper")
 debugnums=(1 2 3)
-# number of adaptation problems = 30
-uids=(u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9 u3 u0 u9 u6 u12 u6 u3 u12 u0 u9)
-datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
-sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
-targets=("1" "4" "9" "21" "24" "0" "1" "2" "5" "8" "1" "2" "3" "6" "8" "1" "2" "5" "11" "12" "1" "7" "8" "23" "32" "1" "7" "17" "40" "47")
+# number of adaptation problems = 57
+uids=(u0 u3 u5_1 u5_4 u5_7 u5_10 u5_13 u5_16 u5_19 u5_22 u0 u3 u5_1 u5_4 u5_7 u5_10 u5_13 u5_16 u5_19 u0 u3 u5_1 u5_4 u5_7 u5_10 u5_13 u5_16 u0 u3 u5_1 u5_4 u5_7 u5_10 u5_13 u5_16 u5_19 u5_22 u0 u3 u5_1 u5_4 u5_7 u5_10 u5_13 u5_16 u5_19 u5_22 u0 u3 u5_1 u5_4 u5_7 u5_10 u5_13 u5_16 u5_19 u5_22)
+datasets=("ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "ucihhar" "uwave" "uwave" "uwave" "uwave" "uwave" "uwave" "uwave" "uwave" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "watch_noother" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_ar" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at" "wisdm_at")
+sources=("" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
+targets=("21" "4" "1" "24" "9" "8" "25" "5" "29" "18" "1" "0" "5" "2" "8" "4" "7" "6" "3" "2" "1" "6" "3" "8" "7" "5" "4" "11" "2" "1" "12" "5" "4" "10" "3" "6" "13" "7" "1" "23" "8" "32" "28" "4" "30" "3" "21" "40" "7" "1" "47" "17" "15" "14" "8" "6" "34")
 
 # Make sure we're using the right number
 correct_min=0

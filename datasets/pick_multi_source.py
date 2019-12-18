@@ -153,7 +153,7 @@ if __name__ == "__main__":
             # elif name == "watch_noother":
             #     max_users = 15
             # else:
-            max_users = 5
+            max_users = 10
 
             curr_pairs = generate_multi_source(name, users, n,
                 max_users=max_users)
