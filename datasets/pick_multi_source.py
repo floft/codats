@@ -237,8 +237,9 @@ if __name__ == "__main__":
 
         # for upper bounds
         pair_name = ("\""+dataset_name+"\"", "\""+target+"\"")
+        full_pair = ("\""+dataset_name+"\"", str(uids[i]), "\""+target+"\"")
         if pair_name not in dataset_target_pairs:
-            dataset_target_pairs[pair_name] = str(uids[i])
+            dataset_target_pairs[pair_name] = full_pair
 
     print("# number of adaptation problems =", len(sources))
     print("uids=(", " ".join(print_uids), ")", sep="")
@@ -251,19 +252,17 @@ if __name__ == "__main__":
     # kamiak_{train,eval}_msda_upper.srun
     #
     print("For kamiak_{train,eval}_msda_upper.srun:")
-    targets_unique = list(set(dataset_target_pairs.keys()))
+    targets_unique = list(set(dataset_target_pairs.values()))
     targets_unique.sort(key=natural_keys)
     sources_blank = ["\"\""]*len(targets_unique)
 
-    uid = 0
     targets_unique_uids = []
     targets_unique_dataset = []
     targets_unique_target = []
 
-    for dataset_name, target in targets_unique:
+    for dataset_name, uid, target in targets_unique:
         # Uses first uid from dataset_name-target
-        targets_unique_uids.append(dataset_target_pairs[(dataset_name, target)])
-        uid += 1
+        targets_unique_uids.append(uid)
         targets_unique_dataset.append(dataset_name)
         targets_unique_target.append(target)
 
