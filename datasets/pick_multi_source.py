@@ -114,10 +114,6 @@ if __name__ == "__main__":
     pairs = []
     uids = []
 
-    # Vary-amount-of-target-data experiments
-    vary_amount = []
-    vary_amount_uid = 0
-
     # Note: "dataset_users" is set in datasets.py
     for name, users in dataset_users.items():
         # Tune on "watch_noother" not "watch"
@@ -162,17 +158,12 @@ if __name__ == "__main__":
             curr_pairs = generate_multi_source(name, users, n,
                 max_users=max_users)
 
-            for dataset_name, source_users, target_user in curr_pairs:
+            for i, (dataset_name, source_users, target_user) in enumerate(curr_pairs):
                 # We want to allow increasing the number of max_users for
                 # wisdm_at and watch without changing the uid's of the 0-4
                 # targets for backwards compatibility (otherwise we have to move
                 # all the models around...)
-                if users[0] == 1:  # subtract 1 if doesn't start at zer0
-                    set_of_five = (int(target_user) - 1) // 5
-                elif users[0] == 0:
-                    set_of_five = int(target_user) // 5
-                else:
-                    raise NotImplementedError("users doesn't start at 0 or 1?")
+                set_of_five = i // 5
 
                 # before we had 0-4 (or 1-5), so do as before
                 if max_users == 5 or set_of_five == 0:
