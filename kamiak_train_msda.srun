@@ -30,10 +30,6 @@ targets=("21" "21" "21" "4" "4" "4" "1" "1" "1" "24" "24" "24" "9" "9" "9" "21" 
 # Make sure we're using the right number
 correct_min=0
 correct_max=$(( ${#sources[@]} - 1))
-[[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
-    { echo "array min should be $correct_min"; handle_error; }
-[[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
-    { echo "array max should be $correct_max"; handle_error; }
 [[ ${#sources[@]} == ${#methods[@]} ]] || \
     { echo "length of sources and methods arrays differ"; handle_error; }
 [[ ${#sources[@]} == ${#uids[@]} ]] || \
@@ -42,6 +38,10 @@ correct_max=$(( ${#sources[@]} - 1))
     { echo "length of sources and datasets arrays differ"; handle_error; }
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "length of sources and targets arrays differ"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
+    { echo "array min should be $correct_min"; handle_error; }
+[[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
+    { echo "array max should be $correct_max"; handle_error; }
 
 # Indexing: https://stackoverflow.com/a/34363187
 index=$SLURM_ARRAY_TASK_ID

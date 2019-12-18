@@ -41,6 +41,10 @@ correct_min=0
 correct_max=$(( ${#methods[@]} * ${#debugnums[@]} * ${#sources[@]} - 1))
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "source/target sizes should match"; handle_error; }
+[[ ${#sources[@]} == ${#uids[@]} ]] || \
+    { echo "length of sources and uids arrays differ"; handle_error; }
+[[ ${#sources[@]} == ${#datasets[@]} ]] || \
+    { echo "length of sources and datasets arrays differ"; handle_error; }
 [[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
     { echo "array min should be $correct_min"; handle_error; }
 [[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \

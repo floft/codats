@@ -21,7 +21,6 @@ suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
 # Adapt in both directions, then do upper bound
-model=fcn
 methods=("dann" "none")
 variants=("best_target")
 # number of adaptation problems = 450
@@ -35,6 +34,10 @@ correct_min=0
 correct_max=$(( ${#methods[@]} * ${#variants[@]} * ${#sources[@]} - 1))
 [[ ${#sources[@]} == ${#targets[@]} ]] || \
     { echo "source/target sizes should match"; handle_error; }
+[[ ${#sources[@]} == ${#uids[@]} ]] || \
+    { echo "length of sources and uids arrays differ"; handle_error; }
+[[ ${#sources[@]} == ${#datasets[@]} ]] || \
+    { echo "length of sources and datasets arrays differ"; handle_error; }
 [[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
     { echo "array min should be $correct_min"; handle_error; }
 [[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
