@@ -27,7 +27,6 @@ trap "handle_terminate" SIGTERM SIGINT
 suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
-# Adapt in both directions, then do upper bound
 methods=("upper")
 debugnums=(1 2 3)
 # number of adaptation problems = 43
