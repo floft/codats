@@ -182,48 +182,9 @@ if __name__ == "__main__":
     print()
 
     #
-    # kamiak_train_msda.srun
+    # kamiak_{train,eval}_msda.srun
     #
-    # List of methods (excluding "upper", which is run separately)
-    # We need to unwrap the methods dimension from the slurm array because we
-    # have to specify different hyperparameters for each dataset-method pair.
-    # TODO we don't....
-    method_list = [
-        # VRADA/R-DANN are for SS-DA not MS-DA
-        # "vrada",
-        # "rdann",
-        "dann",
-        "none"
-    ]
-
-    print("For kamiak_train_msda.srun:")
-    methods = []
-    print_uids = []
-    dataset_names = []
-    sources = []
-    targets = []
-    other_params = []
-    for method in method_list:
-        for i, (dataset_name, source, target) in enumerate(pairs):
-            methods.append("\""+method+"\"")
-            print_uids.append(str(uids[i]))
-            dataset_names.append("\""+dataset_name+"\"")
-            sources.append("\""+source+"\"")
-            targets.append("\""+target+"\"")
-
-    print("# number of adaptation problems =", len(sources))
-    print("methods=(", " ".join(methods), ")", sep="")
-    print("uids=(", " ".join(print_uids), ")", sep="")
-    print("datasets=(", " ".join(dataset_names), ")", sep="")
-    print("sources=(", " ".join(sources), ")", sep="")
-    print("targets=(", " ".join(targets), ")", sep="")
-    print()
-
-    #
-    # kamiak_eval_msda.srun (same as above, but don't need to
-    # unwrap method and don't need other_params)
-    #
-    print("For kamiak_eval_msda.srun:")
+    print("For kamiak_{train,eval}_msda.srun:")
     dataset_names = []
     print_uids = []
     sources = []
