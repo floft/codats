@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from absl import app
 from absl import flags
-# from scipy import stats
+from scipy import stats
 from matplotlib.ticker import MaxNLocator
 
 from pool import run_job_pool
@@ -28,8 +28,13 @@ nice_method_names = {
     "none": "None",  # (no adaptation)
     "upper": "Target Only",  # (train on target)
 
+    # Domain adaptation
+    "rdann": "R-DANN",
+    "vrada": "VRADA",
+    "dann": "CoDATS",
+
     # Multi-source domain adaptation
-    "dann": "MS-DA-DANN",
+    #"dann": "MS-DA-DANN",
     "dann_gs": "GS-DA",
     "dann_smooth": "MS-DA-Smooth",
 
@@ -353,12 +358,17 @@ def pretty_dataset_name(dataset):
     return make_replacements(dataset, replacements)
 
 
-def get_results(results, average=False, method_average=False, target_amount=False):
+def get_results(results, average=False, method_average=False,
+        target_amount=False, ssda=False):
     """ Get results - get the test on target mean and standard deviation values,
     indexed by,
+
     if average*=False: ms_results[dataset_name + " " + target][method][n]
     if average=True:  ms_results[dataset_name][method][n]
     if method_average=True: ms_results[...][method_type (MS-DA, DG, ...)][n]
+
+    if ssda=True: ms_results[(dataset_name, source, target)][method]
+    if ssda=True and average=True: ms_results[dataset_name][method]
     """
     ms_results = {}
 
@@ -375,10 +385,20 @@ def get_results(results, average=False, method_average=False, target_amount=Fals
 
         dataset_name = pretty_dataset_name(params["dataset"])
 
+        # Skip these datasets
+        if "LABNAME" in dataset_name or "WISDM" in dataset_name:
+            continue
+
+        # For ssda, the index will be the raw tuple
+        if ssda and not average:
+            # Not that it really matters, but error anyway...
+            assert "," not in params["sources"], \
+                "ssda=True only should be used for SS-DA with one source"
+            dataset_name = (dataset_name, params["sources"], params["target"])
         # Indexed by target, i.e. separate plot per dataset-target. Otherwise,
         # indexed by dataset, i.e. one plot per dataset (averaged over multiple
         # targets).
-        if not average:
+        elif not average:
             # For the upper bound, we don't have a target, but set the source
             # as the target
             if method == "upper":
@@ -403,11 +423,18 @@ def get_results(results, average=False, method_average=False, target_amount=Fals
 
         if dataset_name not in ms_results:
             ms_results[dataset_name] = {}
-        if method not in ms_results[dataset_name]:
-            ms_results[dataset_name][method] = {}
-        if n not in ms_results[dataset_name][method]:
-            ms_results[dataset_name][method][n] = []
-        ms_results[dataset_name][method][n].append((n, mean, std))
+
+        # For ssda=True, we don't need any "n" value
+        if ssda:
+            if method not in ms_results[dataset_name]:
+                ms_results[dataset_name][method] = []
+            ms_results[dataset_name][method].append((mean, std))
+        else:
+            if method not in ms_results[dataset_name]:
+                ms_results[dataset_name][method] = {}
+            if n not in ms_results[dataset_name][method]:
+                ms_results[dataset_name][method][n] = []
+            ms_results[dataset_name][method][n].append((n, mean, std))
 
     return ms_results
 
@@ -450,6 +477,27 @@ def average_over_n(ms_results):
                 np.array(ms_values, dtype=np.float32)
 
     return ms_results
+
+
+def average_over_method(ss_results):
+    """ For SS-DA methods, average over the runs for each method, which
+    typically will be one (standard deviation already computed from the 3 runs)
+    or if averaging over all targets, then maybe 10 or so """
+    for dataset, values in ss_results.items():
+        for method, ss_values in values.items():
+            if len(ss_values) > 1:
+                ss_values = np.array(ss_values, dtype=np.float32)
+                ss_results[dataset][method] = (ss_values[:, 0].mean(), ss_values[:, 0].std(ddof=0))
+            else:
+                ss_results[dataset][method] = ss_values[0]
+
+    # Make numpy array
+    for dataset, values in ss_results.items():
+        for method, ss_values in values.items():
+            ss_results[dataset][method] = \
+                np.array(ss_values, dtype=np.float32)
+
+    return ss_results
 
 
 def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
@@ -605,18 +653,261 @@ def plot_varyamount(dataset, variant, variant_match=None, save_plot=True,
         yrange=[35, 105], ncol=2)
 
 
+def replace_highest_bold(values):
+    """ Replace highest DDD.D $\pm$ DDD.D with \textbf{...} """
+    max_index = []
+    max_value = None
+
+    for i, v in enumerate(values):
+        if len(v) > 0:
+            parts = v.split(" $\pm$ ")
+
+            if len(parts) == 1 or len(parts) == 2:
+                if "underline{" in parts[0]:
+                    parts[0] = parts[0].replace("\\underline{", "")
+                    parts[1] = parts[1].replace("?", "")
+
+                float_value = float(parts[0])
+
+                if max_value is None or float_value > max_value:
+                    max_value = float_value
+                    max_index = [i]
+                elif float_value == max_value:
+                    max_index.append(i)
+
+    if max_index is not None:
+        new_values = []
+
+        for i, v in enumerate(values):
+            if i in max_index:
+                new_values.append("\\textbf{"+v+"}")
+            else:
+                new_values.append(v)
+
+        return new_values
+    else:
+        return values
+
+
+def compute_significance(results, significance_level=0.05, average=False):
+    """ Calculate significance:
+
+    For each CoDATS method, is the mean significantly different than the
+    mean of both of the RNN methods (separately compare with R-DANN and VRADA
+    and it's significant if p<0.05 for both)
+
+    Note: only works for real data
+    """
+    # Indexed by target_accuracy[dataset][method]
+    datasets = {}
+
+    for result in results:
+        params = result["parameters"]
+        traintest = result["traintest"]
+        method = params["method"]
+        target_accuracy = traintest["Test B"].values
+
+        # Skip
+        if method == "upper" or method == "lower" or method == "random":
+            continue
+
+        dataset_name = pretty_dataset_name(params["dataset"])
+
+        if average:
+            dataset = dataset_name
+        else:
+            dataset = (dataset_name, params["sources"], params["target"])
+
+        method = nice_method_names[method]
+
+        if dataset not in datasets:
+            datasets[dataset] = {}
+        if method not in datasets[dataset]:
+            datasets[dataset][method] = []
+
+        datasets[dataset][method] = target_accuracy
+
+    significantly_better = {}
+
+    for dataset, values in datasets.items():
+        codats = None
+
+        if "R-DANN" in values and "VRADA" in values:
+            if "CoDATS" in values:
+                codats = \
+                    stats.ttest_rel(values["R-DANN"], values["CoDATS"]).pvalue < significance_level and \
+                    stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
+                # codats = \
+                #     stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
+
+        else:
+            print("Warning: no R-DANN/VRADA so no significance", file=sys.stderr)
+
+        significantly_better[dataset] = {
+            "CoDATS": codats,
+        }
+
+    return significantly_better
+
+
+def output_latex_results(results, output_filename):
+    """ There's >350 values to fill in... I'm not going to manually type that
+    in LaTex, especially when I'll have to do it more than once. This is not
+    clean code per se. """
+    significantly_better = compute_significance(results)
+    significantly_better_avg = compute_significance(results, average=True)
+    datasets = average_over_method(get_results(results, ssda=True))  # index tuple: (dataset, source, target)
+    averaged = average_over_method(get_results(results, ssda=True, average=True))  # index tuple: dataset
+
+    #
+    # Per-adaptation-problem results
+    #
+    indexed_by_target = {}
+    keys = list(datasets.keys())
+    keys.sort(key=lambda x: [x[0], x[2], x[1]])  # sort dataset, target, source
+
+    for key in keys:
+        dataset, source, target = key
+        data = datasets[key]
+        indexed_by_target[key] = {}
+
+        for method, values in data.items():
+            method = nice_method_names[method]
+
+            indexed_by_target[key][method] = "{:.1f} $\\pm$ {:.1f}".format(values[0]*100, values[1]*100)
+
+            # Check for significance
+            if key in significantly_better and \
+                    method in significantly_better[key] and \
+                    significantly_better[key][method]:
+                indexed_by_target[key][method] = \
+                    "\\underline{" + indexed_by_target[key][method] + "}"
+
+    #
+    # Averaged over each dataset results
+    #
+    indexed_by_target_avg = {}
+    keys_avg = list(averaged.keys())
+    keys_avg.sort()
+
+    for dataset in keys_avg:
+        data = averaged[dataset]
+        indexed_by_target_avg[dataset] = {}
+
+        for method, values in data.items():
+            method = nice_method_names[method]
+            indexed_by_target_avg[dataset][method] = "{:.1f} $\\pm$ {:.1f}".format(values[0]*100, values[1]*100)
+
+            # Check for significance
+            if dataset in significantly_better_avg and \
+                    method in significantly_better_avg[dataset] and \
+                    significantly_better_avg[dataset][method]:
+                indexed_by_target_avg[dataset][method] = \
+                    "\\underline{" + indexed_by_target_avg[dataset][method] + "}"
+
+    #
+    # Create Latex table
+    #
+    columns = ["None", "R-DANN", "VRADA", "CoDATS", "Target Only"]
+
+    # Create table
+    table = []
+
+    for i, key in enumerate(keys):
+        # # The \hline's
+        # if len(row) == 1:
+        #     table.append([row[0]])
+        #     continue
+
+        # Upper bounds are included separately below
+        if key[2] == "":
+            continue
+
+        dataset, sources, target = key
+        adaptation = dataset + " " + sources + " $\\rightarrow$ " + target
+        thisrow = [adaptation]
+
+        for column in columns:
+            if column == "Target Only":
+                # get upper bound when the source was this one's target
+                val = indexed_by_target[(dataset, target, "")][column]
+            else:
+                if column in indexed_by_target[key]:
+                    val = indexed_by_target[key][column]
+                else:
+                    # Not done yet (e.g. CyCADA gave errors at some point)
+                    val = ""
+
+            thisrow.append(val)
+
+        table.append(thisrow)
+
+        # Average after each dataset's rows, when last row or next row is
+        # a different dataset
+        if i == len(keys)-1 or dataset != keys[i+1][0]:
+            table.append(["\\hdashline"])
+            thisrow = [dataset + " Average"]
+
+            for column in columns:
+                if column in indexed_by_target_avg[dataset]:
+                    val = indexed_by_target_avg[dataset][column]
+                else:
+                    # Not done yet (e.g. CyCADA gave errors at some point)
+                    val = ""
+                thisrow.append(val)
+            table.append(thisrow)
+
+            # Not if last line
+            if i != len(keys)-1:
+                table.append(["\\hline"])
+
+    # Print table, but bold the highest in each row excluding the last
+    with open(output_filename, "w") as f:
+        for row in table:
+            # \hline's
+            if len(row) == 1:
+                #print(row[0])
+                f.write(row[0]+"\n")
+                continue
+
+            # Skip problem name and upper bound
+            row[1:4+1] = replace_highest_bold(row[1:4+1])
+
+            for i, column in enumerate(row):
+                #print(column, end=" ")
+                f.write(column+" ")
+
+                if i == len(row)-1:
+                    #print("\\\\")
+                    f.write("\\\\\n")
+                else:
+                    #print("&", end=" ")
+                    f.write("& ")
+
+
+def table_singlesource(dataset, variant, variant_match=None, output="table.tex"):
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
+    results = all_stats(files, sort=True)
+    output_latex_results(results, output)
+
+
 def main(argv):
     outdir = "result_plots"
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
+    # Multi-source plots
+    #
     # We pass variant=best_target, but match * variant since for the upper bound
     # there isn't a "target" (since target is passed as source), but we all the
     # others we evaluate only with best_target, so we can match all to get the
     # best_source only for the upper bound.
-    plot_multisource("msda1", "best_target", "*",
-        save_plot=True, show_title=False,
-        legend_separate=True, suffix="pdf")
+    # plot_multisource("msda1", "best_target", "*",
+    #     save_plot=True, show_title=False,
+    #     legend_separate=True, suffix="pdf")
+
+    # Single-source table
+    table_singlesource("ssda1", "best_target", "*", output="table.tex")
 
 
 if __name__ == "__main__":
