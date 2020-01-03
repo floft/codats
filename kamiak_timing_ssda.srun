@@ -1,0 +1,82 @@
+#!/bin/bash
+#SBATCH --job-name=timing
+#SBATCH --output=slurm_logs/timing_%A_%a.out
+#SBATCH --error=slurm_logs/timing_%A_%a.err
+#SBATCH --cpus-per-task=1
+#SBATCH --gres=gpu:1
+#SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
+#SBATCH --time=1-00:00:00
+#SBATCH --mem=20G
+#SBATCH --array=0-35
+
+. kamiak_config.sh
+
+# Errors
+handle_terminate() { echo "Exiting"; exit 1; }
+handle_error() { echo "Error occured -- exiting"; exit 1; }
+trap "handle_terminate" SIGTERM SIGINT
+
+# Get suffix, i.e. files stored in kamiak-{models,logs}-suffix
+suffix=$1; shift
+[[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
+
+methods=("vrada" "rdann" "dann" "none")
+debugnums=(1 2 3)
+# number of adaptation problems = 3 -- first one from each dataset in the SS-DA table in the paper
+uids=(0 1 2)
+datasets=("ucihar" "uwave" "ucihhar")
+sources=("2" "2" "1")
+targets=("11" "5" "3")
+
+# Make sure we're using the right number
+correct_min=0
+correct_max=$(( ${#methods[@]} * ${#debugnums[@]} * ${#sources[@]} - 1))
+[[ ${#sources[@]} == ${#targets[@]} ]] || \
+    { echo "source/target sizes should match"; handle_error; }
+[[ ${#sources[@]} == ${#uids[@]} ]] || \
+    { echo "length of sources and uids arrays differ"; handle_error; }
+[[ ${#sources[@]} == ${#datasets[@]} ]] || \
+    { echo "length of sources and datasets arrays differ"; handle_error; }
+#[[ $SLURM_ARRAY_TASK_MIN == $correct_min ]] || \
+#    { echo "array min should be $correct_min"; handle_error; }
+#[[ $SLURM_ARRAY_TASK_MAX == $correct_max ]] || \
+#    { echo "array max should be $correct_max"; handle_error; }
+
+# Indexing: https://stackoverflow.com/a/34363187
+index=$SLURM_ARRAY_TASK_ID
+index1max=${#sources[@]}
+index2max=${#debugnums[@]}
+index3=$((index / (index1max * index2max)))
+index=$((index - index3 * index1max * index2max))
+index2=$((index / index1max))
+index1=$((index % index1max))
+
+method="${methods[$index3]}"
+debugnum="${debugnums[$index2]}"
+uid="${uids[$index1]}"
+dataset_name="${datasets[$index1]}"
+source="${sources[$index1]}"
+target="${targets[$index1]}"
+
+# Print in an easily-parsable format, before changing method name below
+echo "$suffix;$method;$dataset_name;$source;$target;$uid;$debugnum;$SLURM_ARRAY_TASK_ID"
+
+# Upper bound is actually "none" but without a target domain and with other args
+additional_args=()
+if [[ $method == "upper" ]]; then
+    method="none"
+    source="$target"
+    target=""
+fi
+
+# Do the timing
+additional_args+=("--time_training")
+
+cd "$remotedir"
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+module load cuda/10.1.105 cudnn/7.6.4.38_cuda10.1 python3/3.7.4
+python3 main.py \
+    --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
+    --method="$method" --dataset="$dataset_name" --sources="$source" \
+    --target="$target" --uid="$uid" --debugnum="$debugnum" \
+    --gpumem=0 "${additional_args[@]}" "$@" || handle_error
