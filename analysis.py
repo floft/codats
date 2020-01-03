@@ -33,6 +33,9 @@ nice_method_names = {
     "vrada": "VRADA",
     "dann": "CoDATS",
 
+    # Domain adaptation with weak supervision
+    "daws": "DA-WS",
+
     # Multi-source domain adaptation
     #"dann": "MS-DA-DANN",
     "dann_gs": "GS-DA",
@@ -69,6 +72,8 @@ method_types = {
     "dann": "MS-DA",
     "dann_gs": "MS-DA",
     "dann_smooth": "MS-DA",
+
+    "daws": "DA-WS",
 
     "dann_dg": "DG",
     "sleep_dg": "DG",

@@ -1282,8 +1282,8 @@ dataset_users = {
     "ucihhar": zero_to_n(8),  # 9 people
     "wisdm_ar": zero_to_n(32),  # 33 people
 
-    #"wisdm_at": zero_to_n(50),  # 51 people
-    #"watch_noother": one_to_n(15),  # 15 people
+    "wisdm_at": zero_to_n(50),  # 51 people
+    "watch_noother": one_to_n(15),  # 15 people
 
     #"watch": one_to_n(15),  # 15 people
     #"sleep": zero_to_n(25),  # 26 people
