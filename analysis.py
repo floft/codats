@@ -25,8 +25,8 @@ flags.DEFINE_integer("jobs", 0, "Number of jobs to use for processing files (0 =
 # Use nice names for the plot
 nice_method_names = {
     # No adaptation or training on target
-    "none": "None",  # (no adaptation)
-    "upper": "Target Only",  # (train on target)
+    "none": "No Adaptation",
+    "upper": "Train on Target",
 
     # Domain adaptation
     "rdann": "R-DANN",
@@ -385,8 +385,9 @@ def get_results(results, average=False, method_average=False,
 
         dataset_name = pretty_dataset_name(params["dataset"])
 
-        # Skip these datasets
-        if "LABNAME" in dataset_name or "WISDM" in dataset_name:
+        # Not using our dataset in this paper, skip WISDM-AT for now -- does
+        # very poorly without MS-DA
+        if "LABNAME" in dataset_name or "WISDM AT" in dataset_name:
             continue
 
         # For ssda, the index will be the raw tuple
@@ -808,7 +809,7 @@ def output_latex_results(results, output_filename):
     #
     # Create Latex table
     #
-    columns = ["None", "R-DANN", "VRADA", "CoDATS", "Target Only"]
+    columns = ["No Adaptation", "R-DANN", "VRADA", "CoDATS", "Train on Target"]
 
     # Create table
     table = []
@@ -828,7 +829,7 @@ def output_latex_results(results, output_filename):
         thisrow = [adaptation]
 
         for column in columns:
-            if column == "Target Only":
+            if column == "Train on Target":
                 # get upper bound when the source was this one's target
                 val = indexed_by_target[(dataset, target, "")][column]
             else:
@@ -902,9 +903,9 @@ def main(argv):
     # there isn't a "target" (since target is passed as source), but we all the
     # others we evaluate only with best_target, so we can match all to get the
     # best_source only for the upper bound.
-    # plot_multisource("msda1", "best_target", "*",
-    #     save_plot=True, show_title=False,
-    #     legend_separate=True, suffix="pdf")
+    plot_multisource("msda1", "best_target", "*",
+        save_plot=True, show_title=False,
+        legend_separate=True, suffix="pdf")
 
     # Single-source table
     table_singlesource("ssda1", "best_target", "*", output="table.tex")
