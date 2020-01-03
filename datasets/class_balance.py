@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-Check the class balance for each dataset
+Check the class balance for each dataset from the raw dataset (before .tfrecord)
+
+Note: ../class_balance.py with test=True will provide this from the .tfrecord
+files much faster than running this script.
 
 Note: sets CUDA_VISIBLE_DEVICES= so that it doesn't use the GPU.
+
+Run something like the following to save the result:
+    ./class_balance.py | tee class_balance.txt
 """
 import os
-import numpy as np
 
 from absl import app
 
 import datasets
+
+from datasets import dataset_users
 
 
 def calc_class_balance(labels, num_classes, percentage=True):
@@ -17,9 +24,8 @@ def calc_class_balance(labels, num_classes, percentage=True):
     classes = [0]*num_classes
 
     for class_num in range(0, num_classes):
-        this_class = np.argmax(labels, axis=1) == class_num
-
-        classes[class_num] = sum(this_class)
+        # Count instances of this class -- note labels is a numpy array
+        classes[class_num] = sum(labels == class_num)
 
         if percentage:
             classes[class_num] /= len(labels)
@@ -58,11 +64,12 @@ def main(argv):
     # Don't bother using the GPU for this
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-    # Get class balances for each of the datasets (separate since they differ
-    # in the number of classes)
-    print_class_balance("UCI HAR", ["ucihar_"+str(i) for i in range(1, 12+1)])
-    print_class_balance("uWave", ["uwave_"+str(i) for i in range(1, 8+1)])
-    print_class_balance("UT-Data-Complex", ["utdata_wrist", "utdata_pocket"])
+    for name, users in dataset_users.items():
+        # Get class balances for each of the datasets
+        datasets = [name+"_"+str(x) for x in users]
+
+        # Print
+        print_class_balance(name, datasets)
 
 
 if __name__ == "__main__":
