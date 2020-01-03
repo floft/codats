@@ -349,12 +349,11 @@ class uWaveBase(Dataset):
     class_labels = list(range(num_classes))
     feature_names = ["accel_x", "accel_y", "accel_z"]
 
-    def __init__(self, days, users, num_classes, class_labels,
-            *args, **kwargs):
+    def __init__(self, users, *args, days=None, **kwargs):
         self.days = days
         self.users = users
-        super().__init__(num_classes, class_labels, None, None,
-            uWaveBase.feature_names, *args, **kwargs)
+        super().__init__(uWaveBase.num_classes, uWaveBase.class_labels,
+            None, None, uWaveBase.feature_names, *args, **kwargs)
 
     def download(self):
         (dataset_fp,) = self.download_dataset(["uWaveGestureLibrary.zip"],
@@ -504,8 +503,7 @@ class SleepBase(Dataset):
     feature_names = ["real1", "real2", "real3", "real4", "real5",
         "imag1", "imag2", "imag3", "imag4", "imag5"]
 
-    def __init__(self, days, users, num_classes, class_labels,
-            *args, **kwargs):
+    def __init__(self, users, *args, days=None, **kwargs):
         self.days = days
         self.users = users
         super().__init__(SleepBase.num_classes, SleepBase.class_labels,
@@ -1282,11 +1280,12 @@ dataset_users = {
     "ucihar": one_to_n(30),  # 30 people
     "uwave": one_to_n(8),  # 8 people
     "ucihhar": zero_to_n(8),  # 9 people
-    "wisdm_at": zero_to_n(50),  # 51 people
     "wisdm_ar": zero_to_n(32),  # 33 people
-    "watch": one_to_n(15),  # 15 people
-    "watch_noother": one_to_n(15),  # 15 people
 
+    #"wisdm_at": zero_to_n(50),  # 51 people
+    #"watch_noother": one_to_n(15),  # 15 people
+
+    #"watch": one_to_n(15),  # 15 people
     #"sleep": zero_to_n(25),  # 26 people
     #"ucihm": zero_to_n(5),  # 6 people
     #"ucihm_full": zero_to_n(5),  # 6 people
