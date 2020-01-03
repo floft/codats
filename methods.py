@@ -9,6 +9,8 @@ from absl import flags
 import models
 import load_datasets
 
+from class_balance import class_balance
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
@@ -682,6 +684,8 @@ class MethodAflacDG(MethodDannDG):
         d_loss = self.domain_loss(domain_y_true, domain_y_pred)
 
         # Gather the P(d|y) for the true y's for each example.
+        # Note: this doesn't leak target-domain label information since this
+        # is DG not MS-DA, so we have no data (x or y) for the target domain.
         d_true = tf.gather(self.p_d_given_y, tf.cast(task_y_true, dtype=tf.int32))
 
         # p_d_given_y (above, now d_true) is already normalized, but
@@ -799,6 +803,96 @@ class MethodVrada(MethodDann):
         return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
 
 
+class MethodDaws(MethodDann):
+    """ Domain adaptation with weak supervision (in this case, target-domain
+    label proportions)"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.loss_names += ["weak"]
+        self.compute_p_y()
+        # Used in loss
+        self.grl_schedule = models.DannGrlSchedule(self.total_steps)
+
+    def compute_p_y(self):
+        """ Compute P(y) (i.e. class balance) of the training target dataset
+
+        Note: we simulate the self-report label proportions from looking at
+        the target training labels (not validation or test sets). However, after
+        this function call, we don't use the labels themselves (outside of
+        computing evaluation accuracy), just the computed proportions for the
+        training.
+        """
+        # Compute proportion of each class
+        # Note: we use the "eval" train dataset since it doesn't repeat infinitely
+        # and we use "train" not test since we don't want to peak at the
+        # validation data we use for model selection.
+        self.p_y = class_balance(self.target_train_eval_dataset, self.num_classes)
+
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training):
+        # DANN losses
+        nontarget = tf.where(tf.not_equal(domain_y_true, 0))
+        task_y_true_nontarget = tf.gather(task_y_true, nontarget)
+        task_y_pred_nontarget = tf.gather(task_y_pred, nontarget)
+
+        task_loss = self.task_loss(task_y_true_nontarget, task_y_pred_nontarget)
+        d_loss = self.domain_loss(domain_y_true, domain_y_pred)
+
+        # DA-WS regularizer
+        #
+        # Get predicted target-domain labels. We ignore label proportions for
+        # the source domains since we train to predict the correct labels there.
+        # We don't know the target-domain labels, so instead we try using this
+        # additional P(y) label proportion information. Thus, we use it and the
+        # adversarial domain-invariant FE objectives as sort of auxiliary
+        # losses.
+        target = tf.where(tf.equal(domain_y_true, 0))
+        task_y_pred_target = tf.gather(task_y_pred, target)
+
+        # Idea:
+        # argmax, one-hot, reduce_sum(..., axis=1), /= batch_size, KL with p_y
+        # However, argmax yields essentially useless gradients (as far as I
+        # understand it, e.g. we use cross entropy loss for classification not
+        # the actual 0-1 loss or loss on the argmax of the softmax outputs)
+        #
+        # Thus, a soft version. Idea: softmax each, reduce sum vertically,
+        #   /= batch_size, then KL
+        # This is different than per-example-in-batch KLD because we average
+        # over the softmax outputs across the batch before KLD. So, the
+        # difference is whether averaging before or after KLD.
+        #
+        # Note: this depends on a large enough batch size. If you can't set it
+        # >=64 or so (like what we use in SS-DA for the target data, i.e. half
+        # the 128 batch size), then accumulate this gradient over multiple steps
+        # and then apply.
+        #
+        # cast batch_size to float otherwise:
+        # "x and y must have the same dtype, got tf.float32 != tf.int32"
+        batch_size = tf.cast(tf.shape(task_y_pred_target)[0], dtype=tf.float32)
+        p_y_batch = tf.reduce_sum(tf.nn.softmax(task_y_pred_target), axis=0) / batch_size
+        daws_loss = tf.keras.losses.KLD(self.p_y, p_y_batch)
+
+        # Sum up individual losses for the total
+        #
+        # Note: daws_loss doesn't have the DANN learning rate schedule because
+        # it goes with the task_loss. We want to learn predictions for the task
+        # classifier that both correctly predicts labels on the source data and
+        # on the target data aligns with the correct label proportions.
+        # Separately, we want the FE representation to also be domain invariant,
+        # which we apply the learning rate schedule to, I think, to help the
+        # adversarial part converge properly (recall GAN training instability
+        # stuff).
+        total_loss = task_loss + d_loss + daws_loss
+
+        return [total_loss, task_loss, d_loss, daws_loss]
+
+    def compute_gradients(self, tape, losses):
+        # We only use daws_loss for plotting -- for computing gradients it's
+        # included in the total loss
+        total_loss, task_loss, d_loss, _ = losses
+        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
+
+
 def make_loss(from_logits=True):
     cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=from_logits)
 
@@ -824,7 +918,10 @@ methods = {
     "vrada": MethodVrada,
     "rdann": MethodRDann,
 
-    # Multi-source domain adaptation (works with it...)
+    # Domain adaptation with weak supervision
+    "daws": MethodDaws,
+
+    # Multi-source domain adaptation
     "dann": MethodDann,
     "dann_gs": MethodDannGS,
     "dann_smooth": MethodDannSmooth,
