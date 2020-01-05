@@ -392,8 +392,8 @@ def get_results(results, average=False, method_average=False,
 
         # Not using our dataset in this paper, skip WISDM-AT for now -- does
         # very poorly without MS-DA
-        if "LABNAME" in dataset_name or "WISDM AT" in dataset_name:
-            continue
+        #if "LABNAME" in dataset_name or "WISDM AT" in dataset_name:
+        #    continue
 
         # For ssda, the index will be the raw tuple
         if ssda and not average:
@@ -737,6 +737,7 @@ def compute_significance(results, significance_level=0.05, average=False):
 
     for dataset, values in datasets.items():
         codats = None
+        daws = None
 
         if "R-DANN" in values and "VRADA" in values:
             if "CoDATS" in values:
@@ -745,12 +746,21 @@ def compute_significance(results, significance_level=0.05, average=False):
                     stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
                 # codats = \
                 #     stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
+            else:
+                print("Warning: no CoDATS so no significance")
 
+            if "DA-WS" in values:
+                daws = \
+                    stats.ttest_rel(values["R-DANN"], values["DA-WS"]).pvalue < significance_level and \
+                    stats.ttest_rel(values["VRADA"], values["DA-WS"]).pvalue < significance_level
+            else:
+                print("Warning: no DA-WS so no significance")
         else:
             print("Warning: no R-DANN/VRADA so no significance", file=sys.stderr)
 
         significantly_better[dataset] = {
             "CoDATS": codats,
+            "DA-WS": daws,
         }
 
     return significantly_better
@@ -814,7 +824,7 @@ def output_latex_results(results, output_filename):
     #
     # Create Latex table
     #
-    columns = ["No Adaptation", "R-DANN", "VRADA", "CoDATS", "Train on Target"]
+    columns = ["No Adaptation", "R-DANN", "VRADA", "CoDATS", "DA-WS", "Train on Target"]
 
     # Create table
     table = []
@@ -877,7 +887,7 @@ def output_latex_results(results, output_filename):
                 continue
 
             # Skip problem name and upper bound
-            row[1:4+1] = replace_highest_bold(row[1:4+1])
+            row[1:5+1] = replace_highest_bold(row[1:5+1])
 
             for i, column in enumerate(row):
                 #print(column, end=" ")

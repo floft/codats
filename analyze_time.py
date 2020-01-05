@@ -11,10 +11,11 @@ Then download results (SLURM output logs):
     mkdir slurm_logs
     scp kamiak:"$remotedir"/slurm_logs/timing_15670129_*.out slurm_logs/
     scp kamiak:"$remotedir"/slurm_logs/timing_15670177_*.out slurm_logs/
+    scp kamiak:"$remotedir"/slurm_logs/timing_15738526_*.out slurm_logs/
     ...
 
 Finally, run this script passing in the job number:
-    ./analyze_time.py --jobnum=15670129,15670177 --latex
+    ./analyze_time.py --jobnum=15670129,15670177,15738526 --latex
 """
 import pathlib
 import numpy as np
@@ -92,7 +93,7 @@ def main(argv):
 
     if FLAGS.latex:
         methods = [  # note "dann" is CoDATS
-            "none", "rdann", "vrada", "dann",
+            "none", "rdann", "vrada", "dann", "daws",
         ]
         for method in methods:
             columns = [
@@ -102,7 +103,7 @@ def main(argv):
             ]
             name = nice_method_names[method]
 
-            if "CoDATS" in name:
+            if "CoDATS" in name or "DA-WS" in name:
                 name = "\\textit{"+name+"}"
                 name = name.replace(" + ", "+")
 

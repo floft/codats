@@ -7,7 +7,7 @@
 #SBATCH --partition=cook,free_gpu,cahnrs_gpu,kamiak
 #SBATCH --time=1-00:00:00
 #SBATCH --mem=20G
-#SBATCH --array=0-35
+#SBATCH --array=0-44
 
 . kamiak_config.sh
 
@@ -20,7 +20,7 @@ trap "handle_terminate" SIGTERM SIGINT
 suffix=$1; shift
 [[ -z $suffix ]] && { echo "no suffix specified"; handle_error; }
 
-methods=("vrada" "rdann" "dann" "none")
+methods=("vrada" "rdann" "daws" "dann" "none")
 debugnums=(1 2 3)
 # number of adaptation problems = 3 -- first one from each dataset in the SS-DA table in the paper
 uids=(0 1 2)
