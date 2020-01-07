@@ -381,12 +381,12 @@ def get_results(results, average=False, method_average=False,
         params = result["parameters"]
         avgs = result["averages"]
         method = params["method"]
+        assert params["config"] is not None, "no config for "+str(result)
 
         if target_amount:
-            assert params["config"] is not None, "no config for "+str(result)
             n = params["config"]["max_target_examples"]
         else:
-            n = params["num_domains"]
+            n = len(params["config"]["sources"])
 
         dataset_name = pretty_dataset_name(params["dataset"])
 
