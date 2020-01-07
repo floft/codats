@@ -19,4 +19,4 @@ trivial/
 *_TEST
 *.pdf
 *.yaml
-table.tex
+*.tex

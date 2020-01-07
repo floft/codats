@@ -695,7 +695,8 @@ def replace_highest_bold(values):
         return values
 
 
-def compute_significance(results, significance_level=0.05, average=False):
+def compute_significance(results, significance_level=0.05, average=False,
+        with_vrada=False, with_codats=False):
     """ Calculate significance:
 
     For each CoDATS method, is the mean significantly different than the
@@ -739,24 +740,35 @@ def compute_significance(results, significance_level=0.05, average=False):
         codats = None
         daws = None
 
-        if "R-DANN" in values and "VRADA" in values:
+        if with_codats:
             if "CoDATS" in values:
-                codats = \
-                    stats.ttest_rel(values["R-DANN"], values["CoDATS"]).pvalue < significance_level and \
-                    stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
-                # codats = \
-                #     stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
+                if "DA-WS" in values:
+                    daws = \
+                        stats.ttest_rel(values["CoDATS"], values["DA-WS"]).pvalue < significance_level
+                else:
+                    print("Warning: no CoDATS so no significance")
             else:
-                print("Warning: no CoDATS so no significance")
+                print("Warning: no R-DANN/VRADA so no significance", file=sys.stderr)
 
-            if "DA-WS" in values:
-                daws = \
-                    stats.ttest_rel(values["R-DANN"], values["DA-WS"]).pvalue < significance_level and \
-                    stats.ttest_rel(values["VRADA"], values["DA-WS"]).pvalue < significance_level
+        elif with_vrada:
+            if "R-DANN" in values and "VRADA" in values:
+                if "CoDATS" in values:
+                    codats = \
+                        stats.ttest_rel(values["R-DANN"], values["CoDATS"]).pvalue < significance_level and \
+                        stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
+                    # codats = \
+                    #     stats.ttest_rel(values["VRADA"], values["CoDATS"]).pvalue < significance_level
+                else:
+                    print("Warning: no CoDATS so no significance")
+
+                if "DA-WS" in values:
+                    daws = \
+                        stats.ttest_rel(values["R-DANN"], values["DA-WS"]).pvalue < significance_level and \
+                        stats.ttest_rel(values["VRADA"], values["DA-WS"]).pvalue < significance_level
+                else:
+                    print("Warning: no DA-WS so no significance")
             else:
-                print("Warning: no DA-WS so no significance")
-        else:
-            print("Warning: no R-DANN/VRADA so no significance", file=sys.stderr)
+                print("Warning: no R-DANN/VRADA so no significance", file=sys.stderr)
 
         significantly_better[dataset] = {
             "CoDATS": codats,
@@ -766,12 +778,40 @@ def compute_significance(results, significance_level=0.05, average=False):
     return significantly_better
 
 
-def output_latex_results(results, output_filename):
+def write_table(output_filename, table, replace_bold=None):
+    """ Write Latex table to file, bold highest row if (row_start, row_end)
+    inclusive """
+    with open(output_filename, "w") as f:
+        for row in table:
+            # \hline's
+            if len(row) == 1:
+                f.write(row[0]+"\n")
+                continue
+
+            # Bold between columns if desired
+            if replace_bold is not None:
+                try:
+                    row_start, row_end = replace_bold
+                    row[row_start:row_end+1] = replace_highest_bold(row[row_start:row_end+1])
+                except ValueError:
+                    # If it's the header... ignore the error
+                    pass
+
+            for i, column in enumerate(row):
+                f.write(column+" ")
+
+                if i == len(row)-1:
+                    f.write("\\\\\n")
+                else:
+                    f.write("& ")
+
+
+def output_latex_ss_results(results, output_filename):
     """ There's >350 values to fill in... I'm not going to manually type that
     in LaTex, especially when I'll have to do it more than once. This is not
     clean code per se. """
-    significantly_better = compute_significance(results)
-    significantly_better_avg = compute_significance(results, average=True)
+    significantly_better = compute_significance(results, with_vrada=True)
+    significantly_better_avg = compute_significance(results, average=True, with_vrada=True)
     datasets = average_over_method(get_results(results, ssda=True))  # index tuple: (dataset, source, target)
     averaged = average_over_method(get_results(results, ssda=True, average=True))  # index tuple: dataset
 
@@ -877,34 +917,92 @@ def output_latex_results(results, output_filename):
             if i != len(keys)-1:
                 table.append(["\\hline"])
 
-    # Print table, but bold the highest in each row excluding the last
-    with open(output_filename, "w") as f:
-        for row in table:
-            # \hline's
-            if len(row) == 1:
-                #print(row[0])
-                f.write(row[0]+"\n")
-                continue
-
-            # Skip problem name and upper bound
-            row[1:5+1] = replace_highest_bold(row[1:5+1])
-
-            for i, column in enumerate(row):
-                #print(column, end=" ")
-                f.write(column+" ")
-
-                if i == len(row)-1:
-                    #print("\\\\")
-                    f.write("\\\\\n")
-                else:
-                    #print("&", end=" ")
-                    f.write("& ")
+    # Skip problem name and upper bound
+    write_table(output_filename, table, replace_bold=(1, 5))
 
 
 def table_singlesource(dataset, variant, variant_match=None, output="table.tex"):
     files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
     results = all_stats(files, sort=True)
-    output_latex_results(results, output)
+    output_latex_ss_results(results, output)
+
+
+def output_latex_ms_results(results, output_filename):
+    """ There's >350 values to fill in... I'm not going to manually type that
+    in LaTex, especially when I'll have to do it more than once. This is not
+    clean code per se. """
+    ms_averages = average_over_n(get_results(results, average=True))
+    significantly_better = compute_significance(results, average=True, with_codats=True)
+
+    # We're only looking at WISDM AR at the moment
+    dataset = "WISDM AR"
+
+    dataset_results = ms_averages[dataset]
+    indexed = {}
+    keys = None
+
+    for i, (method, values) in enumerate(dataset_results.items()):
+        method_results = []
+        method = nice_method_names[method]
+        method_keys = []  # keys for this method
+
+        for row in range(len(values)):
+            n = values[row, 0]
+            mean = values[row, 1]
+            std = values[row, 2]
+
+            # Create keys (n=1, n=2, ...) on first method, but not upper bound
+            # since it only has one key (n=1)
+            if method != "Train on Target":
+                method_keys.append(int(n))
+
+            val = "{:.1f} $\\pm$ {:.1f}".format(mean*100, std*100)
+
+            # Check for significance
+            if dataset in significantly_better and \
+                    method in significantly_better[dataset] and \
+                    significantly_better[dataset][method]:
+                val = \
+                    "\\underline{" + val + "}"
+
+            method_results.append(val)
+
+        assert not keys or keys == method_keys, \
+            "n values must be the same for each method"
+        keys = method_keys
+        indexed[method] = method_results
+
+    #
+    # Create Latex table
+    #
+    columns = ["No Adaptation", "CoDATS", "DA-WS"]
+    fancy_columns = ["No Adaptation", "\\textit{CoDATS}", "\\textit{DA-WS}"]
+
+    # Create table
+    table = []
+    table.append(["\\toprule"])
+    table.append(["Number of Sources"] + fancy_columns)
+    table.append(["\\midrule"])
+
+    for i, key in enumerate(keys):
+        thisrow = ["$n = "+str(key)+"$"]
+
+        for method in columns:
+            val = indexed[method][i]
+            thisrow.append(val)
+
+        table.append(thisrow)
+
+    table.append(["\\bottomrule"])
+
+    # Print table, but bold the highest in each row exluding method name
+    write_table(output_filename, table, replace_bold=(1, 3))
+
+
+def table_multisource(dataset, variant, variant_match=None, output="table.tex"):
+    files = get_tuning_files("results", prefix="results_"+dataset+"_"+variant_match+"-")
+    results = all_stats(files, sort=True)
+    output_latex_ms_results(results, output)
 
 
 def main(argv):
@@ -921,6 +1019,8 @@ def main(argv):
     plot_multisource("msda1", "best_target", "*",
         save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf")
+
+    table_multisource("msda1", "best_target", "*", output="table_msda.tex")
 
     # Single-source table
     table_singlesource("ssda1", "best_target", "*", output="table.tex")
