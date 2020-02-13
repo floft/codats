@@ -34,7 +34,7 @@ nice_method_names = {
     "dann": "CoDATS",
 
     # Domain adaptation with weak supervision
-    "daws": "DA-WS",
+    "daws": "CoDATS-WS",
 
     # Multi-source domain adaptation
     #"dann": "MS-DA-DANN",
