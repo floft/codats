@@ -511,8 +511,10 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
         error_bars=True, figsize=(5, 3), xlabel="Number of source domains",
         skip=[], yrange=None, ncol=1):
     # See: https://matplotlib.org/3.1.1/api/markers_api.html
-    markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
-        "1", "2", "3", "4", "+", "x"]
+    #markers = ["o", "v", "^", "<", ">", "s", "p", "*", "D", "P", "X", "h",
+    #    "1", "2", "3", "4", "+", "x"]
+    markers = ["o", "x", "*", "d"]
+    hollow = [True, False, False, False]
 
     # Sort datasets by name
     dataset_names = list(ms_results.keys())
@@ -568,10 +570,16 @@ def generate_plots(ms_results, prefix, save_plot=True, show_title=False,
             else:
                 line_type = "-"
 
-            if error_bars:
-                p = plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+line_type, alpha=0.8)
+            if hollow[i]:
+                mfc = "None"
             else:
-                p = plt.plot(x, y, markers[i]+line_type, label=method_name, alpha=0.8)
+                mfc = None
+
+            if error_bars:
+                p = plt.errorbar(x, y, yerr=std, label=method_name, fmt=markers[i]+line_type, alpha=0.8, markerfacecolor=mfc)
+            else:
+                p = plt.plot(x, y, markers[i]+line_type, label=method_name, alpha=0.8,
+                    markerfacecolor=mfc)
 
             # Make a horizontal line at the upper bound since it doesn't matter
             # what "n" is for this method (ignores the sources, only trains
@@ -1020,10 +1028,10 @@ def main(argv):
         save_plot=True, show_title=False,
         legend_separate=True, suffix="pdf")
 
-    table_multisource("msda1", "best_target", "*", output="table_msda.tex")
+    #table_multisource("msda1", "best_target", "*", output="table_msda.tex")
 
     # Single-source table
-    table_singlesource("ssda1", "best_target", "*", output="table.tex")
+    #table_singlesource("ssda1", "best_target", "*", output="table.tex")
 
 
 if __name__ == "__main__":
