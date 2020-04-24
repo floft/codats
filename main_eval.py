@@ -2,24 +2,17 @@
 """
 Evaluate models
 
-This takes a model trained by main.py and evaluates it on both:
-    train - this is the normal "train" set for these datasets
-    valid/test - when combined, this is the same as the normal "test" set for
-        these datasets
-
-It'll output the {source,target}-{train,test} accuracies for comparison with
-other methods.
+This takes a model trained by main.py and evaluates it on train/valid and test sets.
 """
 import os
+import yaml
 import pathlib
 import multiprocessing
-import numpy as np
 import tensorflow as tf
 
 from absl import app
 from absl import flags
 
-import models
 import methods
 import file_utils
 import load_datasets
@@ -36,12 +29,15 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 # Specific for evaluation
-flags.DEFINE_float("gpumem", 8140, "GPU memory to let TensorFlow use, in MiB (divided among jobs)")
+flags.DEFINE_string("output_file", None, "Output filename to write the yaml file with the results")
+flags.DEFINE_float("gpumem", 8140, "GPU memory to let TensorFlow use, in MiB (0 for all, divided among jobs)")
 flags.DEFINE_string("match", "*-*-*", "String matching to determine which logs/models to process")
 flags.DEFINE_integer("jobs", 4, "Number of TensorFlow jobs to run at once")
 flags.DEFINE_integer("gpus", 1, "Split jobs between GPUs -- overrides jobs (1 == run multiple jobs on first GPU)")
 flags.DEFINE_enum("selection", "best_source", ["last", "best_source", "best_target"], "Which model to select")
 flags.DEFINE_boolean("test", True, "Whether to evaluate on the true test set or if --notest, then the validation set")
+
+flags.mark_flag_as_required("output_file")
 
 
 def get_gpus():
@@ -62,112 +58,14 @@ def get_pool_id():
     return current._identity[0]-1
 
 
-def get_models_to_evaluate():
-    """
-    Returns the models to evaluate based on what is in logdir and modeldir
-    specified as command line arguments. The matching pattern is specified by
-    the match argument.
-
-    Returns: [(log_dir, model_dir, dataset_name, sources, target,
-        method_name), ...]
-    """
-    files = pathlib.Path(FLAGS.logdir).glob(FLAGS.match)
-    models_to_evaluate = []
-
-    for log_dir in files:
-        # Get information from config files
-        config = file_utils.get_config(log_dir)
-
-        dataset_name = config["dataset"]
-        # We want the string versions of the sources and target, not integers
-        sources = ",".join([str(x) for x in config["sources"]])
-        target = config["target"]
-
-        # Convert from int to string, but not if it's None
-        if target is None:
-            target = ""
-        else:
-            target = str(target)
-
-        method_name = config["method"]
-        assert method_name in methods.names(), "Unknown method "+method_name
-
-        model_dir = os.path.join(FLAGS.modeldir, log_dir.stem)
-        assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)
-
-        models_to_evaluate.append((str(log_dir), model_dir, dataset_name,
-            sources, target, method_name))
-
-    return models_to_evaluate
-
-
-def print_results(results):
-    """ Print out the accuracies on {Train,Test}{A,B} on each target-fold pair
-    followed by the averages and standard deviations of these. """
-    source_train = []
-    source_test = []
-    target_train = []
-    target_test = []
-
-    print("Log Dir;Dataset;Sources;Target;Method;Train A;Test A;Train B;Test B")
-    for log_dir, dataset_name, sources, target, method, \
-            s_train, t_train, s_test, t_test in results:
-        if s_train is not None and s_test is not None:
-            # If we don't have a target domain, just output zero
-            if t_train is None:
-                t_train = 0
-            if t_test is None:
-                t_test = 0
-
-            print(log_dir + ";" + dataset_name + ";" + sources + ";"
-                + target + ";" + method + ";"
-                + str(s_train) + ";" + str(s_test) + ";"
-                + str(t_train) + ";" + str(t_test))
-
-            # Task classifier
-            source_train.append(s_train)
-            source_test.append(s_test)
-            target_train.append(t_train)
-            target_test.append(t_test)
-
-    # Task classifier
-    source_train = np.array(source_train)
-    source_test = np.array(source_test)
-    target_train = np.array(target_train)
-    target_test = np.array(target_test)
-
-    if len(source_train) > 0 and len(source_test) > 0 \
-            and len(target_train) > 0 and len(target_test) > 0:
-        print()
-        print()
-        print("Dataset;Avg;Std")
-        # Task classifier
-        print("Train A;" + str(source_train.mean()) + ";" + str(source_train.std()))
-        print("Test A;" + str(source_test.mean()) + ";" + str(source_test.std()))
-        print("Train B;" + str(target_train.mean()) + ";" + str(target_train.std()))
-        print("Test B;" + str(target_test.mean()) + ";" + str(target_test.std()))
-
-        print()
-        print()
-        print("Averages over", len(source_train), "runs")
-        # Task classifier
-        print("Train A \t Avg:", source_train.mean(), "\t Std:", source_train.std())
-        print("Test A  \t Avg:", source_test.mean(), "\t Std:", source_test.std())
-        print("Train B \t Avg:", target_train.mean(), "\t Std:", target_train.std())
-        print("Test B  \t Avg:", target_test.mean(), "\t Std:", target_test.std())
-    else:
-        print("No data.")
-
-
-def process_model(log_dir, model_dir, dataset_name, sources, target,
-        method_name, gpumem, multi_gpu):
-    """ Evaluate a model on the train/test data and compute the results """
+def setup_gpu_for_process(gpumem, multi_gpu):
+    """ Handle setting GPU memory or which GPU to use in each process """
     # We need to do this in the process since otherwise TF can't access cuDNN
     # for some reason. But, we only need to do this the first time we create the
     # process. It'll error on any subsequent calls (since the pool re-uses
     # process).
     try:
-        set_gpu_memory(FLAGS.gpumem)
+        set_gpu_memory(gpumem)
     except RuntimeError:
         pass  # Ignore: "RuntimeError: GPU options must be set at program startup"
 
@@ -185,6 +83,66 @@ def process_model(log_dir, model_dir, dataset_name, sources, target,
         # each process still put some stuff into memory on every GPU.
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
+
+def get_models_to_evaluate():
+    """
+    Returns the models to evaluate based on what is in logdir and modeldir
+    specified as command line arguments. The matching pattern is specified by
+    the match argument.
+
+    Returns: [(log_dir, model_dir, config), ...]
+    """
+    files = pathlib.Path(FLAGS.logdir).glob(FLAGS.match)
+    models_to_evaluate = []
+
+    for log_dir in files:
+        config = file_utils.get_config(log_dir)
+        model_dir = os.path.join(FLAGS.modeldir, log_dir.stem)
+        assert os.path.exists(model_dir), "Model does not exist "+str(model_dir)
+        models_to_evaluate.append((str(log_dir), model_dir, config))
+
+    return models_to_evaluate
+
+
+def save_results(process_results, results_filename):
+    all_process_results = []
+
+    for pr in process_results:
+        log_dir, model_dir, config, results, max_accuracy_step, \
+            max_accuracy = pr
+
+        all_process_results.append({
+            "logdir": log_dir,
+            "modeldir": model_dir,
+            "config": config,
+            "results": results,
+            "max_accuracy_step": max_accuracy_step,
+            "max_accuracy": max_accuracy,
+        })
+
+    # Write the config file
+    with open(results_filename, "w") as f:
+        yaml.dump(all_process_results, f)
+
+
+def process_model(log_dir, model_dir, config, gpumem, multi_gpu):
+    """ Evaluate a model on the train/test data and compute the results """
+    setup_gpu_for_process(gpumem, multi_gpu)
+
+    dataset_name = config["dataset"]
+    method_name = config["method"]
+    sources = config["sources"]
+    target = config["target"]
+
+    # For backwards compatibility (TODO remove later)
+    #
+    # Previously sources was converted to a list of ints and target was
+    # converted to int in old file_utils.py:write_config_from_args()
+    if not isinstance(sources, str):
+        sources = ",".join([str(s) for s in sources])
+    if target is not None and not isinstance(target, str):
+        target = str(target)
+
     # Load datasets
     source_datasets, target_dataset = load_datasets.load_da(dataset_name,
         sources, target, test=FLAGS.test)
@@ -192,46 +150,46 @@ def process_model(log_dir, model_dir, dataset_name, sources, target,
     # Load the method, model, etc.
     # Note: {global,num}_step are for training, so it doesn't matter what
     # we set them to here
-    method = methods.load(method_name,
+    method = methods.get_method(method_name,
         source_datasets=source_datasets,
         target_dataset=target_dataset,
         global_step=1, total_steps=1)
 
-    # Load model from checkpoint
-    checkpoint = tf.train.Checkpoint(**method.checkpoint_variables)
-    checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
+    # Load model from checkpoint (if there's anything in the checkpoint)
+    if len(method.checkpoint_variables) > 0:
+        checkpoint = tf.train.Checkpoint(**method.checkpoint_variables)
+        checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
 
-    if FLAGS.selection == "last":
-        checkpoint_manager.restore_latest()
-        max_accuracy_step = checkpoint_manager.latest_step()
-        max_accuracy = 0  # We don't really care...
-        found = checkpoint_manager.found_last
-    elif FLAGS.selection == "best_source":
-        checkpoint_manager.restore_best_source()
-        max_accuracy_step = checkpoint_manager.best_step_source()
-        max_accuracy = checkpoint_manager.best_validation_source
-        found = checkpoint_manager.found_best_source
-    elif FLAGS.selection == "best_target":
-        checkpoint_manager.restore_best_target()
-        max_accuracy_step = checkpoint_manager.best_step_target()
-        max_accuracy = checkpoint_manager.best_validation_target
-        found = checkpoint_manager.found_best_target
+        if FLAGS.selection == "last":
+            checkpoint_manager.restore_latest()
+            max_accuracy_step = checkpoint_manager.latest_step()
+            max_accuracy = None  # We don't really care...
+            found = checkpoint_manager.found_last
+        elif FLAGS.selection == "best_source":
+            checkpoint_manager.restore_best_source()
+            max_accuracy_step = checkpoint_manager.best_step_source()
+            max_accuracy = checkpoint_manager.best_validation_source
+            found = checkpoint_manager.found_best_source
+        elif FLAGS.selection == "best_target":
+            checkpoint_manager.restore_best_target()
+            max_accuracy_step = checkpoint_manager.best_step_target()
+            max_accuracy = checkpoint_manager.best_validation_target
+            found = checkpoint_manager.found_best_target
+        else:
+            raise NotImplementedError("unknown --selection argument")
     else:
-        raise NotImplementedError("unknown --selection argument")
+        max_accuracy_step = None
+        max_accuracy = None
+        found = True
 
-    # Print which step we're loading the model for
-    print(log_dir + ";" + dataset_name + ";" + sources + ";" + target + ";"
-        + method_name + ";" + str(max_accuracy_step) + ";" + str(max_accuracy))
-
-    # If not found, give up
-    if not found:
-        return log_dir, dataset_name, sources, target, method_name, \
-            None, None, None, None
-
-    # Metrics
+        # Metrics
     has_target_domain = target_dataset is not None
     metrics = Metrics(log_dir, method, source_datasets, target_dataset,
         has_target_domain)
+
+    # If not found, give up
+    if not found:
+        return log_dir, model_dir, config, {}, None, None
 
     # Evaluate on both datasets
     metrics.train_eval()
@@ -239,18 +197,8 @@ def process_model(log_dir, model_dir, dataset_name, sources, target,
 
     # Get results
     results = metrics.results()
-    s_train = results["accuracy_task/source/training"]
-    s_test = results["accuracy_task/source/validation"]
 
-    if target_dataset is not None:
-        t_train = results["accuracy_task/target/training"]
-        t_test = results["accuracy_task/target/validation"]
-    else:
-        t_train = None
-        t_test = None
-
-    return log_dir, dataset_name, sources, target, method_name, \
-        s_train, t_train, s_test, t_test
+    return log_dir, model_dir, config, results, max_accuracy_step, max_accuracy
 
 
 def main(argv):
@@ -277,18 +225,16 @@ def main(argv):
     for model_params in models_to_evaluate:
         commands.append((*model_params, gpumem, multi_gpu))
 
-    # Also prints which models we load
-    print("Log Dir;Dataset;Sources;Target;Method;Best Step;Accuracy at Step")
     if jobs == 1:  # Eases debugging, printing even if it errors
-        results = []
+        process_results = []
 
         for c in commands:
-            results.append(process_model(*c))
+            process_results.append(process_model(*c))
     else:
-        results = run_job_pool(process_model, commands, cores=jobs)
+        process_results = run_job_pool(process_model, commands, cores=jobs)
 
-    # Print results, averages, etc.
-    print_results(results)
+    # Save results
+    save_results(process_results, FLAGS.output_file)
 
 
 if __name__ == "__main__":

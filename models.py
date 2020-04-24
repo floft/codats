@@ -320,17 +320,3 @@ class RDannModel(DannRnnModel):
     def __init__(self, *args, **kwargs):
         vrada = False
         super().__init__(vrada, *args, **kwargs)
-
-
-# List of names
-models = [
-    "fcn",
-]
-
-
-# Get names
-def names():
-    """
-    Returns list of all the available models for use in DomainAdaptationModel()
-    """
-    return models

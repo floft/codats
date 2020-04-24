@@ -2,6 +2,14 @@
 """
 As a sanity check, load the data from the source/target domains and display it
 
+Run:
+
+    python -m datasets.view_datasets <args>
+
+Example:
+
+    python -m datasets.view_datasets --source=ucihar_1 --target=ucihar_2
+
 Note: sets CUDA_VISIBLE_DEVICES= so that it doesn't use the GPU.
 """
 import os
@@ -11,9 +19,8 @@ import matplotlib.pyplot as plt
 from absl import app
 from absl import flags
 
-import datasets
-
-from datasets import calc_normalization, apply_normalization
+from datasets import datasets
+from datasets.normalization import calc_normalization, apply_normalization
 
 FLAGS = flags.FLAGS
 
@@ -65,10 +72,10 @@ def main(argv):
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
     # Input data
-    source_dataset = datasets.load(FLAGS.source)
+    source_dataset, _ = datasets.load(FLAGS.source)
 
     if FLAGS.target != "":
-        target_dataset = datasets.load(FLAGS.target)
+        target_dataset, _ = datasets.load(FLAGS.target)
     else:
         target_dataset = None
 

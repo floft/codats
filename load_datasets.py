@@ -188,11 +188,12 @@ class Dataset:
         """
         Load the X dataset as a tf.data.Dataset from train/test tfrecord filenames
         """
-        train_dataset = self.load_tfrecords(train_filenames, self.train_batch)
-        eval_train_dataset = self.load_tfrecords(train_filenames,
-            self.eval_batch, evaluation=True)
-        eval_test_dataset = self.load_tfrecords(test_filenames,
-            self.eval_batch, evaluation=True)
+        train_dataset = self.load_tfrecords(
+            train_filenames, self.train_batch)
+        eval_train_dataset = self.load_tfrecords(
+            train_filenames, self.eval_batch, evaluation=True)
+        eval_test_dataset = self.load_tfrecords(
+            test_filenames, self.eval_batch, evaluation=True)
 
         return train_dataset, eval_train_dataset, eval_test_dataset
 
@@ -201,7 +202,7 @@ class Dataset:
         return self.class_labels.index(label_name)
 
     def int_to_label(self, label_index):
-        """ e.g. Bathe to 0 """
+        """ e.g. 0 to Bathe """
         return self.class_labels[label_index]
 
 
@@ -212,7 +213,7 @@ def load(dataset_name, num_domains, test=False, *args, **kwargs):
     the "test" data (for use during training and hyperparameter tuning).
     """
     # Sanity checks
-    assert dataset_name in datasets.names(), \
+    assert dataset_name in names(), \
         dataset_name + " not a supported dataset"
 
     # Get dataset information
@@ -224,7 +225,7 @@ def load(dataset_name, num_domains, test=False, *args, **kwargs):
         as an array since we may sometimes want more than one file for a
         dataset. If it doesn't exist, ignore it (some datasets don't have a test
         set for example)."""
-        fn = os.path.join("datasets", filename)
+        fn = os.path.join("datasets", "tfrecords", filename)
         return [fn] if os.path.exists(fn) else []
 
     train_filenames = _path(tfrecord_filename(dataset_name, "train"))

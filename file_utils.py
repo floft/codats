@@ -12,6 +12,8 @@ from absl import flags
 
 FLAGS = flags.FLAGS
 
+flags.DEFINE_boolean("ignore_old_config", False, "Ignore checking that subsequent training of a model uses the same config as previously")
+
 
 def get_last_int(s, only_one=False):
     """
@@ -61,10 +63,11 @@ def last_modified(dir_name, glob):
     return None
 
 
-def get_best_valid_accuracy(log_dir, filename="best_valid_accuracy.txt"):
+def get_best_valid(log_dir, filename="best_valid_accuracy.txt"):
     """
-    Read in the best validation accuracy from the best_valid_accuracy.txt file
-    in the log_dir, if it exists. If it doesn't, return None.
+    Read in the best validation accuracy/mse/etc. from the
+    best_valid_accuracy.txt file in the log_dir, if it exists. If it doesn't,
+    return None.
     """
     filename = os.path.join(log_dir, filename)
 
@@ -79,13 +82,13 @@ def get_best_valid_accuracy(log_dir, filename="best_valid_accuracy.txt"):
     return None
 
 
-def write_best_valid_accuracy(log_dir, accuracy,
+def write_best_valid(log_dir, value,
         filename="best_valid_accuracy.txt"):
-    """ Write the best validation accuracy to a file """
+    """ Write the best validation accuracy/mse/etc. to a file """
     filename = os.path.join(log_dir, filename)
 
     with open(filename, "w") as f:
-        f.write(str(accuracy))
+        f.write(str(value))
 
 
 def get_finished(log_dir):
@@ -108,18 +111,18 @@ def get_log_subdirs(log_dir):
     return dirs
 
 
-def get_average_valid_accuracy(log_dir):
+def get_average_valid(log_dir):
     """ Get average of the best_valid_accuracy.txt files for all subdirs """
     dirs = get_log_subdirs(log_dir)
-    accs = []
+    values = []
 
     for d in dirs:
-        acc = get_best_valid_accuracy(d)
+        value = get_best_valid(d)
 
-        if acc is not None:
-            accs.append(acc)
+        if value is not None:
+            values.append(value)
 
-    return np.array(accs).mean()
+    return np.array(values).mean()
 
 
 def get_num_finished(log_dir):
@@ -160,59 +163,65 @@ def get_config(log_dir):
 
 
 def write_config_from_args(log_dir):
-    """ Save config file containing dataset name, sources, target, etc. """
-    filename = os.path.join(log_dir, "config.yaml")
+    """ Save config file containing all flags """
+    config_filename = os.path.join(log_dir, "config.yaml")
+    flag_filename = os.path.join(log_dir, "config.flags")
 
-    # Log everything -- get list from ./main.py --helpfull
-    config = {
-        # main.py
-        "dataset": FLAGS.dataset,
-        "debug": FLAGS.debug,
-        "debugnum": FLAGS.debugnum,
-        "gpumem": FLAGS.gpumem,
-        "log_plots_steps": FLAGS.log_plots_steps,
-        "log_train_steps": FLAGS.log_train_steps,
-        "log_val_steps": FLAGS.log_val_steps,
-        "logdir": FLAGS.logdir,
-        "method": FLAGS.method,
-        "model_steps": FLAGS.model_steps,
-        "modeldir": FLAGS.modeldir,
-        "sources": [int(x) for x in FLAGS.sources.split(",")],
-        "steps": FLAGS.steps,
-        "subdir": FLAGS.subdir,
-        "target": int(FLAGS.target) if FLAGS.target != "" else None,
-        "test": FLAGS.test,
-        "uid": FLAGS.uid,
+    # Rather than maintaining an ever-changing list of the flags from this
+    # code, just get all of the ones that aren't absl or tensorflow related.
+    config = {}
 
-        # checkpoints.py
-        "best_checkpoints": FLAGS.best_checkpoints,
-        "latest_checkpoints": FLAGS.latest_checkpoints,
+    # Note: we could use __flags_by_module directly, but there appears to be a
+    # function flags_by_module_dict() that returns this, which hopefully is
+    # less likely to change/disappear in the future.
+    for module, module_flags in FLAGS.flags_by_module_dict().items():
+        if "absl" not in module and "tensorflow" not in module:
+            for module_flag in module_flags:
+                name = module_flag.name
+                # Note: this shouldn't change ever since they say it's always
+                # FLAGS.name to access the flag.
+                assert name not in config, \
+                    "duplicate flag name should not be possible"
+                config[name] = getattr(FLAGS, name)
 
-        # dataset.py
-        "normalize": FLAGS.normalize,
+    # If we're continuing training from a previous run (e.g. training was
+    # preempted), check that the old config matches the new config. Otherwise,
+    # we may accidentally have a uid conflict and mess up the trained model.
+    # It's better to clearly error so we can fix the conflict.
+    #
+    # Note: we check for the three edit cases: insertion, deletion, edit
+    old_config = get_config(log_dir)
 
-        # load_datasets.py
-        "batch_division": FLAGS.batch_division,
-        "cache": FLAGS.cache,
-        "eval_batch": FLAGS.eval_batch,
-        "eval_max_examples": FLAGS.eval_max_examples,
-        "eval_shuffle_seed": FLAGS.eval_shuffle_seed,
-        "feature_subset": FLAGS.feature_subset,
-        "max_target_examples": FLAGS.max_target_examples,
-        "prefetch_buffer": FLAGS.prefetch_buffer,
-        "shuffle_buffer": FLAGS.shuffle_buffer,
-        "train_batch": FLAGS.train_batch,
-        "train_max_examples": FLAGS.train_max_examples,
-        "trim_time_steps": FLAGS.trim_time_steps,
-        "tune_num_parallel_calls": FLAGS.tune_num_parallel_calls,
+    if old_config is not None and not FLAGS.ignore_old_config:
+        for key, old_value in old_config.items():
+            # Skip the flag that tells us whether or not to ignore these
+            # differences. We want to be able to go back and forth on that.
+            if key == "ignore_old_config":
+                continue
 
-        # methods.py
-        "lr": FLAGS.lr,
-        "lr_domain_mult": FLAGS.lr_domain_mult,
+            # Check old key is in the new config
+            assert key in config, \
+                "mismatch in old/new config for key \"" + str(key) + "\": " \
+                + "missing key in new config"
 
-        # plots.py
-        "max_plot_embedding": FLAGS.max_plot_embedding,
-    }
+            # Check old/new values are the same
+            new_value = config[key]
+            assert new_value == old_value, \
+                "mismatch in old/new config for key \"" + str(key) + "\": " \
+                + "old = " + str(old_value) + ", " \
+                + "new = " + str(new_value)
 
-    with open(filename, "w") as f:
+        # Check new keys are in old config
+        for key, new_value in config.items():
+            assert key in old_config, \
+                "mismatch in old/new config for key \"" + str(key) + "\": " \
+                + "missing key in old config"
+
+    # Write the config file
+    with open(config_filename, "w") as f:
         yaml.dump(config, f)
+
+    # Also write out the flags into a file that can easily be loaded with
+    # --flagfile=config.flags
+    with open(flag_filename, "w") as f:
+        f.write(FLAGS.flags_into_string())

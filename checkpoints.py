@@ -22,7 +22,7 @@ import tensorflow as tf
 
 from absl import flags
 
-from file_utils import get_best_valid_accuracy, write_best_valid_accuracy, \
+from file_utils import get_best_valid, write_best_valid, \
     get_last_int
 
 FLAGS = flags.FLAGS
@@ -47,16 +47,7 @@ class CheckpointManager:
             checkpoint, directory=model_dir, max_to_keep=FLAGS.latest_checkpoints)
 
         # Keeps track of our best model for use after training
-        #
-        # For backwards consistency at the moment, if "best_source" doesn't
-        # exist, then look for "best" directory as well since that's what it was
-        # previously named. TODO remove this ..._old one eventually
         best_model_dir_source = os.path.join(model_dir, "best_source")
-        best_model_dir_source_old = os.path.join(model_dir, "best")
-
-        if not os.path.exists(best_model_dir_source) and \
-                os.path.exists(best_model_dir_source_old):
-            best_model_dir_source = best_model_dir_source_old
 
         self.best_manager_source = tf.train.CheckpointManager(
             checkpoint, directory=best_model_dir_source,
@@ -68,15 +59,10 @@ class CheckpointManager:
             max_to_keep=FLAGS.best_checkpoints)
 
         # Restore best from file or if no file yet, set it to zero
-        self.best_validation_source = get_best_valid_accuracy(self.log_dir,
+        self.best_validation_source = get_best_valid(self.log_dir,
             filename="best_valid_accuracy_source.txt")
 
-        # TODO remove this eventually, but for now if new name failed, try old
-        # name
-        if self.best_validation_source is None:
-            self.best_validation_source = get_best_valid_accuracy(self.log_dir)
-
-        self.best_validation_target = get_best_valid_accuracy(self.log_dir,
+        self.best_validation_target = get_best_valid(self.log_dir,
             filename="best_valid_accuracy_target.txt")
 
         # Do we have these checkpoints -- used to verify we were able to load
@@ -151,7 +137,7 @@ class CheckpointManager:
                     or not self.found_best_source:
                 self.best_manager_source.save(checkpoint_number=step)
                 self.best_validation_source = validation_accuracy_source
-                write_best_valid_accuracy(self.log_dir,
+                write_best_valid(self.log_dir,
                     self.best_validation_source,
                     filename="best_valid_accuracy_source.txt")
 
@@ -160,6 +146,6 @@ class CheckpointManager:
                     or not self.found_best_target:
                 self.best_manager_target.save(checkpoint_number=step)
                 self.best_validation_target = validation_accuracy_target
-                write_best_valid_accuracy(self.log_dir,
+                write_best_valid(self.log_dir,
                     self.best_validation_target,
                     filename="best_valid_accuracy_target.txt")

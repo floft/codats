@@ -14,9 +14,9 @@ graph.pbtxt
 *.tar.gz
 *.tfrecord
 slurm_logs
-trivial/
-*_TRAIN
-*_TEST
 *.pdf
 *.yaml
 *.tex
+*.pb
+*.json
+*.flags

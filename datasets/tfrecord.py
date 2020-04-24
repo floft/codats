@@ -30,16 +30,6 @@ def write_tfrecord(filename, x, y):
             writer.write(tf_example.SerializeToString())
 
 
-def tfrecord_filename(dataset_name, train_or_test):
-    """
-    Version of tfrecord_filename ignoring the pairs and just creating a
-    separate file for each domain. This works if there's no changes in the
-    data based on the pairing (e.g. no resizing to match image dimensions)
-    """
-    # Sanity checks
-    assert train_or_test in ["train", "valid", "test"], \
-        "train_or_test must be train, valid, or test"
-
-    filename = "%s_%s.tfrecord"%(dataset_name, train_or_test)
-
-    return filename
+def tfrecord_filename(dataset_name, postfix):
+    """ Filename for tfrecord files, e.g. ucihar_1_train.tfrecord """
+    return "%s_%s.tfrecord"%(dataset_name, postfix)

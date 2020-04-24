@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_real
+#SBATCH --job-name=train
 #SBATCH --output=slurm_logs/train_%A_%a.out
 #SBATCH --error=slurm_logs/train_%A_%a.err
 #SBATCH --cpus-per-task=1
@@ -10,6 +10,8 @@
 #SBATCH --array=0-899
 
 . kamiak_config.sh
+. kamiak_tensorflow_gpu.sh
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # Errors
 handle_terminate() { echo "Exiting"; exit 1; }
@@ -79,8 +81,6 @@ echo "UID: $uid"
 echo "$dataset_name $source --> $target"
 
 cd "$remotedir"
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-module load cuda/10.1.105 cudnn/7.6.4.38_cuda10.1 python3/3.7.4
 python3 main.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
     --method="$method" --dataset="$dataset_name" --sources="$source" \

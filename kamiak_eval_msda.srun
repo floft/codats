@@ -10,6 +10,8 @@
 #SBATCH --array=0-2564
 
 . kamiak_config.sh
+. kamiak_tensorflow_gpu.sh
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # Errors
 handle_terminate() { echo "Exiting"; exit 1; }
@@ -59,7 +61,7 @@ source="${sources[$index1]}"
 target="${targets[$index1]}"
 
 # Output name uses method from above not the "none" for "upper"
-out="results/results_${suffix}_$variant-$dataset_name-$uid-$method.txt"
+out="results/results_${suffix}_$variant-$dataset_name-$uid-$method.yaml"
 
 # Upper bound is actually "none" but without a target domain and with other args
 additional_args=()
@@ -69,24 +71,18 @@ if [[ $method == "upper" ]]; then
     target=""
 fi
 
-# Which model to evaluate
-additional_args+=("--selection=$variant")
-
-echo "$suffix #$SLURM_ARRAY_TASK_ID" > "$out"
-echo "Selection: $variant" >> "$out"
-echo "Method: $method" >> "$out"
-echo "Other args: $@" >> "$out"
-echo "UID: $uid" >> "$out"
-echo "$dataset_name $source --> $target" >> "$out"
+echo "$suffix #$SLURM_ARRAY_TASK_ID"
+echo "Selection: $variant"
+echo "Method: $method"
+echo "Other args: $@"
+echo "UID: $uid"
+echo "$dataset_name $source --> $target"
 
 cd "$remotedir"
 mkdir -p results
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-module load cuda/10.1.105 cudnn/7.6.4.38_cuda10.1 python3/3.7.4
-set -o pipefail  # error if any of the commands in the pipe fail
-{ python3 main_eval.py \
+python3 main_eval.py \
     --logdir="$logFolder-$suffix" --modeldir="$modelFolder-$suffix" \
     --jobs=1 --gpus=1 --gpumem=0 \
     --match="${dataset_name}-${uid}-${method}-[0-9]*" \
-    "${additional_args[@]}" "$@" || handle_error; } | \
-    tee -a "$out"
+    --selection="$variant" --output_file="$out" \
+    "${additional_args[@]}" "$@" || handle_error

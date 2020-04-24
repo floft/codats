@@ -1,14 +1,10 @@
 # Multi-Source Time Series Domain Adaptation
 
-(add details later)
-
 Steps:
 
-- Convert to .tfrecord files for TensorFlow (*datasets/generate_tfrecords.py*)
-- Optionally view the datasets, look at class balance, etc. (*datasets/{view_datasets,class_balance}.py*)
-- Hyperparameter tune (*kamiak_{train,eval}_tune.srun*)
-- Train models (*main.py* or *kamiak_train_real.srun*)
-- Evaluate models (*main_eval.py* or *kamiak_eval_real.srun*)
+- Convert to .tfrecord files for TensorFlow (*./generate_tfrecords.sh*)
+- Train models (*main.py* or *kamiak_train.srun*)
+- Evaluate models (*main_eval.py* or *kamiak_eval.srun*)
 - Analyze results (*analysis.py*)
 
 ## Installation
@@ -16,28 +12,37 @@ Steps:
 This requires the following packages (*module load* for Kamiak):
 
     module load cuda/10.1.105 cudnn/7.6.4.38_cuda10.1 python3/3.7.4
-    pip3 install --user --upgrade pip
+    pip install --user --upgrade pip
     export PATH="$HOME/.local/bin:$PATH"
+    pip3 install --user --upgrade pip
     pip3 install --user --upgrade numpy cython
-    pip3 install --user --upgrade tensorflow-gpu==2.1.0rc2 pillow lxml jupyter matplotlib pandas sklearn scipy tensorboard==2.1.0 rarfile tqdm pyyaml POT dtw grpcio
+    pip3 install --user --upgrade tensorflow-gpu pillow lxml jupyter matplotlib pandas scikit-learn scipy tensorboard rarfile tqdm pyyaml grpcio absl-py
 
-## Hyperparameter tuning
-If you want to re-run hyperparameter tuning, you can train, eval, then pick
-the best hyperparameters and update the
+For the CPU-only jobs like *kamiak_train_simple.srun*:
 
-    sbatch -J tune kamiak_train_tune.srun tune
-    sbatch -J tune_eval kamiak_eval_tune.srun tune
-    # Update hyperparameter_{source,target} in pick_multi_source.py
-    ./hyperparameters.py --selection=best_source
-    ./hyperparameters.py --selection=best_target
-    datasets/pick_multi_source.py  # then, update kamiak_{train,eval}_real.srun
+    module load python3/3.7.4
+    export PATH="$HOME/.local/bin:$PATH"
+    pip3 install --user --upgrade virtualenvwrapper
+    export VIRTUALENVWRAPPER_PYTHON="$(which python3)"
+    mkdir -p ~/Envs
+    export WORKON_HOME=~/Envs
+    source ~/.local/bin/virtualenvwrapper.sh
+    mkvirtualenv -p python3 tensorflow_cpu
+
+    which pip # check it's ~/Envs/tensorflow_cpu/bin/pip
+    which python3 # check it's ~/Envs/tensorflow_cpu/bin/python3
+
+    # Note: we don't use --user for virtual environments
+    pip install --upgrade numpy cython
+    # Note: here it's "tensorflow" not "tensorflow-gpu" -- the rest is the same.
+    pip install --upgrade tensorflow pillow lxml jupyter matplotlib pandas scikit-learn scipy tensorboard rarfile tqdm pyyaml grpcio absl-py
 
 ## Training
 
-    sbatch -J train_real kamiak_train_real.srun real
+    sbatch -J train kamiak_train.srun adapt
 
 ## Evaluating
 
-    sbatch -J eval_real kamiak_eval_real.srun real
+    sbatch -J eval kamiak_eval.srun adapt
 
 Then look at the resulting *results/results_\*.txt* file or analyze with *analysis.py*.

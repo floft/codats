@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Create all the tfrecord files
+Process each dataset into .tfrecord files
+
+Run (or see ../generate_tfrecords.sh script):
+
+    python -m datasets.main <args>
 
 Note: probably want to run this prefixed with CUDA_VISIBLE_DEVICES= so that it
 doesn't use the GPU (if you're running other jobs). Does this by default if
 parallel=True since otherwise it'll error.
 """
 import os
-import sys
 import numpy as np
 import tensorflow as tf
 
@@ -15,26 +18,24 @@ from absl import app
 from absl import flags
 from sklearn.model_selection import train_test_split
 
-import datasets
-
-# Hack to import from ../pool.py
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from datasets import datasets
 from pool import run_job_pool
-from tfrecord import write_tfrecord, tfrecord_filename
+from datasets.tfrecord import write_tfrecord, tfrecord_filename
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_boolean("parallel", True, "Run multiple in parallel")
 flags.DEFINE_integer("jobs", 0, "Parallel jobs (if parallel=True), 0 = # of CPU cores")
+flags.DEFINE_boolean("debug", False, "Whether to print debug information")
 
 
 def write(filename, x, y):
     if x is not None and y is not None:
         if not os.path.exists(filename):
             write_tfrecord(filename, x, y)
-        else:
+        elif FLAGS.debug:
             print("Skipping:", filename, "(already exists)")
-    else:
+    elif FLAGS.debug:
         print("Skipping:", filename, "(no data)")
 
 
@@ -60,7 +61,8 @@ def valid_split(data, labels, seed=None, validation_size=1000):
     if percentage_size > validation_size:
         test_size = validation_size
     else:
-        print("Warning: using smaller validation set size", percentage_size)
+        if FLAGS.debug:
+            print("Warning: using smaller validation set size", percentage_size)
         test_size = 0.2  # 20% maximum
 
     x_train, x_valid, y_train, y_valid = \
@@ -70,28 +72,30 @@ def valid_split(data, labels, seed=None, validation_size=1000):
     return x_valid, y_valid, x_train, y_train
 
 
-def save_dataset(dataset_name, seed=0):
+def save_dataset(dataset_name, output_dir, seed=0):
     """ Save single dataset """
-    train_filename = tfrecord_filename(dataset_name, "train")
-    valid_filename = tfrecord_filename(dataset_name, "valid")
-    test_filename = tfrecord_filename(dataset_name, "test")
+    train_filename = os.path.join(output_dir,
+        tfrecord_filename(dataset_name, "train"))
+    valid_filename = os.path.join(output_dir,
+        tfrecord_filename(dataset_name, "valid"))
+    test_filename = os.path.join(output_dir,
+        tfrecord_filename(dataset_name, "test"))
 
     # Skip if they already exist
     if os.path.exists(train_filename) \
             and os.path.exists(valid_filename) \
             and os.path.exists(test_filename):
-        #print("Skipping:", train_filename, valid_filename, test_filename,
-        #    "already exist")
+        if FLAGS.debug:
+            print("Skipping:", train_filename, valid_filename, test_filename,
+               "already exist")
         return
 
-    print("Saving dataset", dataset_name)
-    dataset = datasets.load(dataset_name)
+    if FLAGS.debug:
+        print("Saving dataset", dataset_name)
+    dataset, dataset_class = datasets.load(dataset_name)
 
-    # UCI HAR datasets already normalized and bounded
-    already_normalized = False
-
-    if "ucihar" in dataset_name:
-        already_normalized = True
+    # Skip if already normalized/bounded, e.g. UCI HAR datasets
+    already_normalized = dataset_class.already_normalized
 
     # Split into training/valid datasets
     valid_data, valid_labels, train_data, train_labels = \
@@ -115,6 +119,11 @@ def save_dataset(dataset_name, seed=0):
 
 
 def main(argv):
+    output_dir = os.path.join("datasets", "tfrecords")
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     # Get all possible datasets we can generate
     adaptation_problems = datasets.names()
 
@@ -130,10 +139,11 @@ def main(argv):
         else:
             cores = FLAGS.jobs
 
-        run_job_pool(save_dataset, [(d,) for d in adaptation_problems], cores=cores)
+        run_job_pool(save_dataset,
+            [(d, output_dir) for d in adaptation_problems], cores=cores)
     else:
         for dataset_name in adaptation_problems:
-            save_dataset(dataset_name)
+            save_dataset(dataset_name, output_dir)
 
 
 if __name__ == "__main__":

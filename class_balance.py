@@ -7,7 +7,7 @@ Note: sets CUDA_VISIBLE_DEVICES= so that it doesn't use the GPU.
 Run something like the following to save the result:
     ./class_balance.py | tee class_balance.txt
 
-(Based on samples_per_target.py and datasets/class_balance.py)
+(Based on samples_per_target.py and datasets/class_balance.py [see git tag v2])
 """
 import os
 import numpy as np
@@ -15,8 +15,8 @@ import numpy as np
 from absl import app
 from absl import flags
 
+from datasets import datasets
 from load_datasets import load_da
-from datasets.datasets import dataset_users
 
 FLAGS = flags.FLAGS
 
@@ -83,10 +83,10 @@ def main(argv):
     # Don't bother using the GPU for this
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-    for dataset_name, users in dataset_users.items():
+    for dataset_name in datasets.list_datasets():
         user_source_pairs = []
 
-        for user in users:
+        for user in datasets.get_dataset_users(dataset_name):
             # Note: test=False so we only look at the training samples, where
             # train=80% of training set, test=20% of training set, i.e. the
             # validation set

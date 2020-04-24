@@ -13,7 +13,7 @@ from absl import app
 from absl import flags
 
 from load_datasets import load_da
-from datasets.datasets import dataset_users
+from datasets import datasets
 from print_dictionary import print_dictionary
 
 FLAGS = flags.FLAGS
@@ -33,10 +33,10 @@ def count_training_samples(sources):
 def main(argv):
     counts = collections.defaultdict(dict)
 
-    for dataset_name, users in dataset_users.items():
+    for dataset_name in datasets.list_datasets():
         # Note: test=False so we only look at the training samples, which is what
         # we will vary in the vary-amount-of-target-data experiments
-        for user in users:
+        for user in datasets.get_dataset_users(dataset_name):
             sources, _ = load_da(dataset_name, str(user), "", test=False)
             train_count = count_training_samples(sources)
             counts[dataset_name][user] = train_count

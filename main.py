@@ -14,6 +14,7 @@ import methods
 import file_utils
 import load_datasets
 
+from datasets import datasets
 from metrics import Metrics
 from checkpoints import CheckpointManager
 from gpu_memory import set_gpu_memory
@@ -23,8 +24,8 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
-flags.DEFINE_enum("method", None, methods.names(), "What method of domain adaptation to perform (or none)")
-flags.DEFINE_string("dataset", None, "What dataset to use (e.g. \"ucihar\")")
+flags.DEFINE_enum("method", None, methods.list_methods(), "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("dataset", None, datasets.list_datasets(), "What dataset to use (e.g. \"ucihar\")")
 flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
 flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")
 flags.DEFINE_string("uid", None, "A unique ID saved in the log/model folder names to avoid conflicts")
@@ -103,15 +104,22 @@ def main(argv):
     global_step = tf.Variable(0, name="global_step", trainable=False)
 
     # Load the method, model, etc.
-    method = methods.load(FLAGS.method,
+    method = methods.get_method(FLAGS.method,
         source_datasets=source_datasets,
         target_dataset=target_dataset,
         global_step=global_step,
         total_steps=FLAGS.steps)
 
+    # Check that this method is supposed to be trainable. If not, we're done.
+    # (Basically, we just wanted to write the config file for non-trainable
+    # models.)
+    if not method.trainable:
+        print("Method not trainable. Exiting now.")
+        return
+
     # Checkpoints
-    checkpoint = tf.train.Checkpoint(global_step=global_step,
-        **method.checkpoint_variables)
+    checkpoint = tf.train.Checkpoint(
+        global_step=global_step, **method.checkpoint_variables)
     checkpoint_manager = CheckpointManager(checkpoint, model_dir, log_dir)
     checkpoint_manager.restore_latest()
 
@@ -121,6 +129,9 @@ def main(argv):
         has_target_domain)
 
     # Start training
+    #
+    # TODO maybe eventually rewrite this in the more-standard Keras way
+    # See: https://www.tensorflow.org/guide/keras/train_and_evaluate
     for i in range(int(global_step), FLAGS.steps+1):
         t = time.time()
         data_sources, data_target = method.get_next_train_data()

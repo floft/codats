@@ -38,10 +38,10 @@ def is_numpy(x):
     return type(x).__module__ == np.__name__
 
 
-def to_numpy_if_not(x):
+def to_numpy_if_not(x, dtype=np.float32):
     # Create a numpy array, if not one already
     if not is_numpy(x):
-        x = np.array(x, dtype=np.float32)
+        x = np.array(x, dtype=dtype)
 
     return x
 

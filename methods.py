@@ -16,9 +16,33 @@ FLAGS = flags.FLAGS
 flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 
+methods = {}
+
+
+def register_method(name):
+    """ Add method to the list of methods, e.g. add @register_method("name")
+    before a class definition """
+    def decorator(cls):
+        methods[name] = cls
+        return cls
+    return decorator
+
+
+def get_method(name, *args, **kwargs):
+    """ Based on the given name, call the correct method """
+    assert name in methods.keys(), \
+        "Unknown method name " + name
+    return methods[name](*args, **kwargs)
+
+
+def list_methods():
+    """ Returns list of all the available methods """
+    return list(methods.keys())
+
 
 class MethodBase:
-    def __init__(self, source_datasets, target_dataset, *args, **kwargs):
+    def __init__(self, source_datasets, target_dataset, *args,
+            trainable=True, **kwargs):
         self.source_datasets = source_datasets
         self.target_dataset = target_dataset
 
@@ -58,6 +82,10 @@ class MethodBase:
 
         # Names of the losses returned in compute_losses
         self.loss_names = ["total"]
+
+        # Should this method be trained (if not, then in main.py the config
+        # is written and then it exits)
+        self.trainable = trainable
 
     def calculate_domain_outputs(self):
         """ Calculate the number of outputs for the domain classifier. By
@@ -284,12 +312,18 @@ class MethodBase:
 
         return task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses
 
+#
+# Domain adaptation
+#
 
 # The base method class performs no adaptation
+@register_method("none")
 class MethodNone(MethodBase):
     pass
 
 
+# with the model architecture and multi-source support = CoDATS
+@register_method("dann")
 class MethodDann(MethodBase):
     def __init__(self, source_datasets, target_dataset,
             global_step, total_steps, *args, **kwargs):
@@ -357,6 +391,7 @@ class MethodDann(MethodBase):
         self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
 
 
+@register_method("dann_gs")
 class MethodDannGS(MethodDann):
     """ Same as DANN but only has 2 domains, any source is domain 1 (i.e. group
     them) and the target is still domain 0 """
@@ -382,6 +417,7 @@ class MethodDannGS(MethodDann):
             return 1
 
 
+@register_method("dann_smooth")
 class MethodDannSmooth(MethodDannGS):
     """ MDAN Smooth method based on MethodDannGS since we want binary source = 1,
     target = 0 for the domain labels """
@@ -508,6 +544,166 @@ class MethodDannSmooth(MethodDannGS):
         self.opt.apply_gradients(zip(gradients, self.model.trainable_variables_task_domain))
 
 
+@register_method("rdann")
+class MethodRDann(MethodDann):
+    """ Same as DANN but uses a different model -- LSTM with some dense layers """
+    def create_model(self):
+        self.model = models.RDannModel(self.num_classes, self.domain_outputs,
+            self.global_step, self.total_steps)
+
+
+@register_method("vrada")
+class MethodVrada(MethodDann):
+    """ DANN but with the VRADA model and VRNN loss """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.loss_names += ["vrnn"]
+
+    def create_model(self):
+        self.model = models.VradaModel(self.num_classes, self.domain_outputs,
+            self.global_step, self.total_steps)
+
+    def compute_vrnn_loss(self, vrnn_state, x, epsilon=1e-9):
+        """
+        Compute VRNN loss
+
+        KL loss/divergence:
+        - https://stats.stackexchange.com/q/7440
+        - https://github.com/kimkilho/tensorflow-vrnn/blob/master/main.py
+
+        Negative log likelihood loss:
+        - https://papers.nips.cc/paper/7219-simple-and-scalable-predictive-uncertainty-estimation-using-deep-ensembles.pdf
+        - https://fairyonice.github.io/Create-a-neural-net-with-a-negative-log-likelihood-as-a-loss.html
+        """
+        encoder_mu, encoder_sigma, decoder_mu, decoder_sigma, \
+            prior_mu, prior_sigma = vrnn_state
+
+        kl_loss = tf.reduce_mean(tf.reduce_mean(
+            tf.math.log(tf.maximum(epsilon, prior_sigma)) - tf.math.log(tf.maximum(epsilon, encoder_sigma))
+            + 0.5*(tf.square(encoder_sigma) + tf.square(encoder_mu - prior_mu))
+            / tf.maximum(epsilon, tf.square(prior_sigma))
+            - 0.5, axis=1), axis=1)
+
+        likelihood_loss = 0.5*tf.reduce_mean(tf.reduce_mean(
+            tf.square(decoder_mu - x) / tf.maximum(epsilon, tf.square(decoder_sigma))
+            + tf.math.log(tf.maximum(epsilon, tf.square(decoder_sigma))),
+            axis=1), axis=1)
+
+        return tf.reduce_mean(kl_loss) + tf.reduce_mean(likelihood_loss)
+
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training):
+        _, task_loss, d_loss = super().compute_losses(
+            x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training)
+        vrnn_state = fe_output[1]  # fe_output = (vrnn_output, vrnn_state)
+        vrnn_loss = self.compute_vrnn_loss(vrnn_state, x)
+        total_loss = task_loss + d_loss + vrnn_loss
+        return [total_loss, task_loss, d_loss, vrnn_loss]
+
+    def compute_gradients(self, tape, losses):
+        # We only use vrnn_loss for plotting -- for computing gradients it's
+        # included in the total loss
+        total_loss, task_loss, d_loss, _ = losses
+        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
+
+
+@register_method("daws")
+class MethodDaws(MethodDann):
+    """ Domain adaptation with weak supervision (in this case, target-domain
+    label proportions)"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.loss_names += ["weak"]
+        self.compute_p_y()
+        # Used in loss
+        self.grl_schedule = models.DannGrlSchedule(self.total_steps)
+
+    def compute_p_y(self):
+        """ Compute P(y) (i.e. class balance) of the training target dataset
+
+        Note: we simulate the self-report label proportions from looking at
+        the target training labels (not validation or test sets). However, after
+        this function call, we don't use the labels themselves (outside of
+        computing evaluation accuracy), just the computed proportions for the
+        training.
+        """
+        # Compute proportion of each class
+        # Note: we use the "eval" train dataset since it doesn't repeat infinitely
+        # and we use "train" not test since we don't want to peak at the
+        # validation data we use for model selection.
+        self.p_y = class_balance(self.target_train_eval_dataset, self.num_classes)
+
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training):
+        # DANN losses
+        nontarget = tf.where(tf.not_equal(domain_y_true, 0))
+        task_y_true_nontarget = tf.gather(task_y_true, nontarget)
+        task_y_pred_nontarget = tf.gather(task_y_pred, nontarget)
+
+        task_loss = self.task_loss(task_y_true_nontarget, task_y_pred_nontarget)
+        d_loss = self.domain_loss(domain_y_true, domain_y_pred)
+
+        # DA-WS regularizer
+        #
+        # Get predicted target-domain labels. We ignore label proportions for
+        # the source domains since we train to predict the correct labels there.
+        # We don't know the target-domain labels, so instead we try using this
+        # additional P(y) label proportion information. Thus, we use it and the
+        # adversarial domain-invariant FE objectives as sort of auxiliary
+        # losses.
+        target = tf.where(tf.equal(domain_y_true, 0))
+        task_y_pred_target = tf.gather(task_y_pred, target)
+
+        # Idea:
+        # argmax, one-hot, reduce_sum(..., axis=1), /= batch_size, KL with p_y
+        # However, argmax yields essentially useless gradients (as far as I
+        # understand it, e.g. we use cross entropy loss for classification not
+        # the actual 0-1 loss or loss on the argmax of the softmax outputs)
+        #
+        # Thus, a soft version. Idea: softmax each, reduce sum vertically,
+        #   /= batch_size, then KL
+        # This is different than per-example-in-batch KLD because we average
+        # over the softmax outputs across the batch before KLD. So, the
+        # difference is whether averaging before or after KLD.
+        #
+        # Note: this depends on a large enough batch size. If you can't set it
+        # >=64 or so (like what we use in SS-DA for the target data, i.e. half
+        # the 128 batch size), then accumulate this gradient over multiple steps
+        # and then apply.
+        #
+        # cast batch_size to float otherwise:
+        # "x and y must have the same dtype, got tf.float32 != tf.int32"
+        batch_size = tf.cast(tf.shape(task_y_pred_target)[0], dtype=tf.float32)
+        p_y_batch = tf.reduce_sum(tf.nn.softmax(task_y_pred_target), axis=0) / batch_size
+        daws_loss = tf.keras.losses.KLD(self.p_y, p_y_batch)
+
+        # Sum up individual losses for the total
+        #
+        # Note: daws_loss doesn't have the DANN learning rate schedule because
+        # it goes with the task_loss. We want to learn predictions for the task
+        # classifier that both correctly predicts labels on the source data and
+        # on the target data aligns with the correct label proportions.
+        # Separately, we want the FE representation to also be domain invariant,
+        # which we apply the learning rate schedule to, I think, to help the
+        # adversarial part converge properly (recall GAN training instability
+        # stuff).
+        total_loss = task_loss + d_loss + daws_loss
+
+        return [total_loss, task_loss, d_loss, daws_loss]
+
+    def compute_gradients(self, tape, losses):
+        # We only use daws_loss for plotting -- for computing gradients it's
+        # included in the total loss
+        total_loss, task_loss, d_loss, _ = losses
+        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
+
+
+#
+# Domain generalization
+#
+
+@register_method("dann_dg")
 class MethodDannDG(MethodDann):
     """
     DANN but to make it generalization rather than adaptation:
@@ -579,6 +775,7 @@ class MethodDannDG(MethodDann):
         return [total_loss, task_loss, d_loss]
 
 
+@register_method("sleep_dg")
 class MethodSleepDG(MethodDannDG):
     """ Same as DANN-DG but uses sleep model that feeds task classifier output
     to domain classifier """
@@ -587,6 +784,7 @@ class MethodSleepDG(MethodDannDG):
             self.global_step, self.total_steps)
 
 
+@register_method("aflac_dg")
 class MethodAflacDG(MethodDannDG):
     """ AFLAC uses KL divergence rather than GRL
 
@@ -741,158 +939,6 @@ class MethodAflacDG(MethodDannDG):
         self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
 
 
-class MethodRDann(MethodDann):
-    """ Same as DANN but uses a different model -- LSTM with some dense layers """
-    def create_model(self):
-        self.model = models.RDannModel(self.num_classes, self.domain_outputs,
-            self.global_step, self.total_steps)
-
-
-class MethodVrada(MethodDann):
-    """ DANN but with the VRADA model and VRNN loss """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.loss_names += ["vrnn"]
-
-    def create_model(self):
-        self.model = models.VradaModel(self.num_classes, self.domain_outputs,
-            self.global_step, self.total_steps)
-
-    def compute_vrnn_loss(self, vrnn_state, x, epsilon=1e-9):
-        """
-        Compute VRNN loss
-
-        KL loss/divergence:
-        - https://stats.stackexchange.com/q/7440
-        - https://github.com/kimkilho/tensorflow-vrnn/blob/master/main.py
-
-        Negative log likelihood loss:
-        - https://papers.nips.cc/paper/7219-simple-and-scalable-predictive-uncertainty-estimation-using-deep-ensembles.pdf
-        - https://fairyonice.github.io/Create-a-neural-net-with-a-negative-log-likelihood-as-a-loss.html
-        """
-        encoder_mu, encoder_sigma, decoder_mu, decoder_sigma, \
-            prior_mu, prior_sigma = vrnn_state
-
-        kl_loss = tf.reduce_mean(tf.reduce_mean(
-            tf.math.log(tf.maximum(epsilon, prior_sigma)) - tf.math.log(tf.maximum(epsilon, encoder_sigma))
-            + 0.5*(tf.square(encoder_sigma) + tf.square(encoder_mu - prior_mu))
-            / tf.maximum(epsilon, tf.square(prior_sigma))
-            - 0.5, axis=1), axis=1)
-
-        likelihood_loss = 0.5*tf.reduce_mean(tf.reduce_mean(
-            tf.square(decoder_mu - x) / tf.maximum(epsilon, tf.square(decoder_sigma))
-            + tf.math.log(tf.maximum(epsilon, tf.square(decoder_sigma))),
-            axis=1), axis=1)
-
-        return tf.reduce_mean(kl_loss) + tf.reduce_mean(likelihood_loss)
-
-    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
-        _, task_loss, d_loss = super().compute_losses(
-            x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training)
-        vrnn_state = fe_output[1]  # fe_output = (vrnn_output, vrnn_state)
-        vrnn_loss = self.compute_vrnn_loss(vrnn_state, x)
-        total_loss = task_loss + d_loss + vrnn_loss
-        return [total_loss, task_loss, d_loss, vrnn_loss]
-
-    def compute_gradients(self, tape, losses):
-        # We only use vrnn_loss for plotting -- for computing gradients it's
-        # included in the total loss
-        total_loss, task_loss, d_loss, _ = losses
-        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
-
-
-class MethodDaws(MethodDann):
-    """ Domain adaptation with weak supervision (in this case, target-domain
-    label proportions)"""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.loss_names += ["weak"]
-        self.compute_p_y()
-        # Used in loss
-        self.grl_schedule = models.DannGrlSchedule(self.total_steps)
-
-    def compute_p_y(self):
-        """ Compute P(y) (i.e. class balance) of the training target dataset
-
-        Note: we simulate the self-report label proportions from looking at
-        the target training labels (not validation or test sets). However, after
-        this function call, we don't use the labels themselves (outside of
-        computing evaluation accuracy), just the computed proportions for the
-        training.
-        """
-        # Compute proportion of each class
-        # Note: we use the "eval" train dataset since it doesn't repeat infinitely
-        # and we use "train" not test since we don't want to peak at the
-        # validation data we use for model selection.
-        self.p_y = class_balance(self.target_train_eval_dataset, self.num_classes)
-
-    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
-        # DANN losses
-        nontarget = tf.where(tf.not_equal(domain_y_true, 0))
-        task_y_true_nontarget = tf.gather(task_y_true, nontarget)
-        task_y_pred_nontarget = tf.gather(task_y_pred, nontarget)
-
-        task_loss = self.task_loss(task_y_true_nontarget, task_y_pred_nontarget)
-        d_loss = self.domain_loss(domain_y_true, domain_y_pred)
-
-        # DA-WS regularizer
-        #
-        # Get predicted target-domain labels. We ignore label proportions for
-        # the source domains since we train to predict the correct labels there.
-        # We don't know the target-domain labels, so instead we try using this
-        # additional P(y) label proportion information. Thus, we use it and the
-        # adversarial domain-invariant FE objectives as sort of auxiliary
-        # losses.
-        target = tf.where(tf.equal(domain_y_true, 0))
-        task_y_pred_target = tf.gather(task_y_pred, target)
-
-        # Idea:
-        # argmax, one-hot, reduce_sum(..., axis=1), /= batch_size, KL with p_y
-        # However, argmax yields essentially useless gradients (as far as I
-        # understand it, e.g. we use cross entropy loss for classification not
-        # the actual 0-1 loss or loss on the argmax of the softmax outputs)
-        #
-        # Thus, a soft version. Idea: softmax each, reduce sum vertically,
-        #   /= batch_size, then KL
-        # This is different than per-example-in-batch KLD because we average
-        # over the softmax outputs across the batch before KLD. So, the
-        # difference is whether averaging before or after KLD.
-        #
-        # Note: this depends on a large enough batch size. If you can't set it
-        # >=64 or so (like what we use in SS-DA for the target data, i.e. half
-        # the 128 batch size), then accumulate this gradient over multiple steps
-        # and then apply.
-        #
-        # cast batch_size to float otherwise:
-        # "x and y must have the same dtype, got tf.float32 != tf.int32"
-        batch_size = tf.cast(tf.shape(task_y_pred_target)[0], dtype=tf.float32)
-        p_y_batch = tf.reduce_sum(tf.nn.softmax(task_y_pred_target), axis=0) / batch_size
-        daws_loss = tf.keras.losses.KLD(self.p_y, p_y_batch)
-
-        # Sum up individual losses for the total
-        #
-        # Note: daws_loss doesn't have the DANN learning rate schedule because
-        # it goes with the task_loss. We want to learn predictions for the task
-        # classifier that both correctly predicts labels on the source data and
-        # on the target data aligns with the correct label proportions.
-        # Separately, we want the FE representation to also be domain invariant,
-        # which we apply the learning rate schedule to, I think, to help the
-        # adversarial part converge properly (recall GAN training instability
-        # stuff).
-        total_loss = task_loss + d_loss + daws_loss
-
-        return [total_loss, task_loss, d_loss, daws_loss]
-
-    def compute_gradients(self, tape, losses):
-        # We only use daws_loss for plotting -- for computing gradients it's
-        # included in the total loss
-        total_loss, task_loss, d_loss, _ = losses
-        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
-
-
 def make_loss(from_logits=True):
     cce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=from_logits)
 
@@ -900,41 +946,3 @@ def make_loss(from_logits=True):
         return cce(y_true, y_pred)
 
     return loss
-
-
-# Load a method
-def load(name, *args, **kwargs):
-    """ Load a method (must be one of methods.names()) """
-    assert name in methods.keys(), "Name specified not in methods.names()"
-    return methods[name](*args, **kwargs)
-
-
-# List of methods
-methods = {
-    # No adaptation or training on target
-    "none": MethodNone,
-
-    # Domain adaptation
-    "vrada": MethodVrada,
-    "rdann": MethodRDann,
-
-    # Domain adaptation with weak supervision
-    "daws": MethodDaws,
-
-    # Multi-source domain adaptation
-    "dann": MethodDann,
-    "dann_gs": MethodDannGS,
-    "dann_smooth": MethodDannSmooth,
-
-    # Domain generalization
-    "dann_dg": MethodDannDG,
-    "sleep_dg": MethodSleepDG,
-    "aflac_dg": MethodAflacDG,
-    #"ciddg_dg": MethodCiddgDG,
-}
-
-
-# Get names
-def names():
-    """ Returns list of all the available methods """
-    return list(methods.keys())

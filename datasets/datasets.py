@@ -19,12 +19,55 @@ from sklearn.model_selection import train_test_split
 from absl import app
 from absl import flags
 
-from normalization import calc_normalization, calc_normalization_jagged, \
+from datasets.normalization import calc_normalization, calc_normalization_jagged, \
     apply_normalization, apply_normalization_jagged
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_enum("normalize", "meanstd", ["none", "minmax", "meanstd"], "How to normalize data")
+
+list_of_datasets = {}
+
+
+def register_dataset(name):
+    """ Add dataset to the list of datsets, e.g. add @register_dataset("name")
+    before a class definition """
+    def decorator(cls):
+        list_of_datasets[name] = cls
+        return cls
+    return decorator
+
+
+def get_dataset(name):
+    """ Based on the given name, get the correct dataset processor """
+    assert name in list_of_datasets.keys(), \
+        "Unknown dataset name " + name
+    return list_of_datasets[name]
+
+
+def get_dataset_users(name):
+    """ Get list of users for a dataset """
+    return get_dataset(name).users
+
+
+def call_dataset(name, *args, **kwargs):
+    """ Based on the given name, call the correct dataset processor """
+    return get_dataset(name)(*args, **kwargs)
+
+
+def list_datasets():
+    """ Returns list of all the available datasets """
+    return list(list_of_datasets.keys())
+
+
+def zero_to_n(n):
+    """ Return [0, 1, 2, ..., n] """
+    return list(range(0, n+1))
+
+
+def one_to_n(n):
+    """ Return [1, 2, 3, ..., n] """
+    return list(range(1, n+1))
 
 
 class Dataset:
@@ -52,6 +95,8 @@ class Dataset:
 
     Also, add to the datasets={"something": Something, ...} dictionary below.
     """
+    already_normalized = False
+
     def __init__(self, num_classes, class_labels, window_size, window_overlap,
             feature_names=None, test_percent=0.2):
         """
@@ -246,6 +291,7 @@ class Dataset:
         return self.class_labels[label_index]
 
 
+@register_dataset("uwave")
 class uWaveBase(Dataset):
     """
     uWave Gesture dataset
@@ -261,6 +307,7 @@ class uWaveBase(Dataset):
     num_classes = 8
     class_labels = list(range(num_classes))
     feature_names = ["accel_x", "accel_y", "accel_z"]
+    users = one_to_n(8)  # 8 people
 
     def __init__(self, users, *args, days=None, **kwargs):
         self.days = days
@@ -400,6 +447,7 @@ class uWaveBase(Dataset):
         return super().process(data, labels)
 
 
+#@register_dataset("sleep")
 class SleepBase(Dataset):
     """
     Loads sleep RF data files in datasets/RFSleep.zip/*.npy
@@ -415,6 +463,7 @@ class SleepBase(Dataset):
     class_labels = ["Awake", "N1", "N2", "N3", "Light N2", "REM"]
     feature_names = ["real1", "real2", "real3", "real4", "real5",
         "imag1", "imag2", "imag3", "imag4", "imag5"]
+    users = zero_to_n(25)  # 26 people
 
     def __init__(self, users, *args, days=None, **kwargs):
         self.days = days
@@ -506,6 +555,7 @@ class SleepBase(Dataset):
         return train_data, train_labels, test_data, test_labels
 
 
+@register_dataset("ucihar")
 class UciHarBase(Dataset):
     """
     Loads human activity recognition data files in datasets/UCI HAR Dataset.zip
@@ -523,6 +573,8 @@ class UciHarBase(Dataset):
         "walking", "walking_upstairs", "walking_downstairs",
         "sitting", "standing", "laying",
     ]
+    users = one_to_n(30)  # 30 people
+    already_normalized = True
 
     def __init__(self, users, *args, **kwargs):
         self.users = users
@@ -627,6 +679,7 @@ class UciHarBase(Dataset):
         return super().process(data, labels)
 
 
+@register_dataset("ucihhar")
 class UciHHarBase(Dataset):
     """
     Loads Heterogeneity Human Activity Recognition (HHAR) dataset
@@ -642,6 +695,7 @@ class UciHHarBase(Dataset):
     ]  # we throw out "null"
     window_size = 128  # to be relatively similar to HAR
     window_overlap = False
+    users = zero_to_n(8)  # 9 people
 
     def __init__(self, users, *args, **kwargs):
         self.users = users
@@ -748,6 +802,7 @@ class UciHHarBase(Dataset):
         return train_data, train_labels, test_data, test_labels
 
 
+#@register_dataset("ucihm")
 class UciHmBase(Dataset):
     """
     Loads sEMG for Basic Hand movements dataset
@@ -762,6 +817,7 @@ class UciHmBase(Dataset):
     ]
     window_size = 500  # 500 Hz, so 1 second
     window_overlap = False  # Note: using np.hsplit, so this has no effect
+    users = zero_to_n(5)  # 6 people
 
     def __init__(self, users, split=True, pad=True, subsample=True,
             *args, **kwargs):
@@ -1056,6 +1112,7 @@ class WisdmBase(Dataset):
         return train_data, train_labels, test_data, test_labels
 
 
+@register_dataset("wisdm_at")
 class WisdmAtBase(WisdmBase):
     """
     Loads Actitracker dataset
@@ -1066,6 +1123,7 @@ class WisdmAtBase(WisdmBase):
     class_labels = [
         "Walking", "Jogging", "Stairs", "Sitting", "Standing", "LyingDown",
     ]
+    users = zero_to_n(50)  # 51 people
 
     def __init__(self, users, *args, **kwargs):
         self.filename_prefix = "home/share/data/public_sets/WISDM_at_v2.0/WISDM_at_v2.0_"
@@ -1074,6 +1132,7 @@ class WisdmAtBase(WisdmBase):
             WisdmAtBase.num_classes, WisdmAtBase.class_labels, *args, **kwargs)
 
 
+@register_dataset("wisdm_ar")
 class WisdmArBase(WisdmBase):
     """
     Loads WISDM Activity prediction/recognition dataset
@@ -1083,6 +1142,7 @@ class WisdmArBase(WisdmBase):
     class_labels = [
         "Walking", "Jogging", "Sitting", "Standing", "Upstairs", "Downstairs",
     ]
+    users = zero_to_n(32)  # 33 people
 
     def __init__(self, users, *args, **kwargs):
         self.filename_prefix = "WISDM_ar_v1.1/WISDM_ar_v1.1_"
@@ -1143,87 +1203,53 @@ class WatchBase(Dataset):
         return None, None, None, None
 
 
+#@register_dataset("watch_withother")
 class WatchWithOther(WatchBase):
     num_classes = 7
     class_labels = [
         "Cook", "Eat", "Hygiene", "Work", "Exercise", "Travel", "Other",
     ]
+    users = one_to_n(15)  # 15 people
 
     def __init__(self, users, *args, **kwargs):
         super().__init__(users, WatchWithOther.num_classes,
             WatchWithOther.class_labels, *args, **kwargs)
 
 
+@register_dataset("watch_noother")
 class WatchWithoutOther(WatchBase):
     num_classes = 6
     class_labels = [
         "Cook", "Eat", "Hygiene", "Work", "Exercise", "Travel",
     ]
+    users = one_to_n(15)  # 15 people
 
     def __init__(self, users, *args, **kwargs):
         super().__init__(users, WatchWithoutOther.num_classes,
             WatchWithoutOther.class_labels, *args, **kwargs)
 
 
-def zero_to_n(n):
-    """ Return [0, 1, 2, ..., n] """
-    return list(range(0, n+1))
-
-
-def one_to_n(n):
-    """ Return [1, 2, 3, ..., n] """
-    return list(range(1, n+1))
-
-
-# Class names to generate datasets
-dataset_name_to_class = {
-    "uwave": uWaveBase,
-    "sleep": SleepBase,
-    "ucihar": UciHarBase,
-    "ucihhar": UciHHarBase,
-    "ucihm": UciHmBase,
-    "wisdm_at": WisdmAtBase,
-    "wisdm_ar": WisdmArBase,
-    "watch": WatchWithOther,
-    "watch_noother": WatchWithoutOther,
-}
-
-# List of which users are available for each dataset
-dataset_users = {
-    "ucihar": one_to_n(30),  # 30 people
-    "uwave": one_to_n(8),  # 8 people
-    "ucihhar": zero_to_n(8),  # 9 people
-    "wisdm_ar": zero_to_n(32),  # 33 people
-
-    "wisdm_at": zero_to_n(50),  # 51 people
-    "watch_noother": one_to_n(15),  # 15 people
-
-    #"watch": one_to_n(15),  # 15 people
-    #"sleep": zero_to_n(25),  # 26 people
-    #"ucihm": zero_to_n(5),  # 6 people
-    #"ucihm_full": zero_to_n(5),  # 6 people
-}
-
-
 # Get datasets
 def load(dataset_name_to_load, *args, **kwargs):
     """ Load a dataset based on the name (must be one of datasets.names()) """
+    dataset_class = None
     dataset_object = None
 
     # Go through list of valid datasets, create the one this matches
-    for name, users in dataset_users.items():
-        for user in users:
+    for name in list_datasets():
+        for user in get_dataset_users(name):
             dataset_name = name+"_"+str(user)
 
             if dataset_name_to_load == dataset_name:
-                dataset_object = dataset_name_to_class[name](users=[user],
+                dataset_class = get_dataset(name)
+                dataset_object = call_dataset(name, users=[user],
                     *args, **kwargs)
                 break
 
     if dataset_object is None:
         raise NotImplementedError("unknown dataset "+dataset_name_to_load)
 
-    return dataset_object
+    return dataset_object, dataset_class
 
 
 # Get attributes: num_classes, class_labels (required in load_datasets.py)
@@ -1233,13 +1259,14 @@ def attributes(dataset_name_to_load):
     class_labels = None
 
     # Go through list of valid datasets, load attributes of the one this matches
-    for name, users in dataset_users.items():
-        for user in users:
+    for name in list_datasets():
+        for user in get_dataset_users(name):
             dataset_name = name+"_"+str(user)
 
             if dataset_name_to_load == dataset_name:
-                num_classes = dataset_name_to_class[name].num_classes
-                class_labels = dataset_name_to_class[name].class_labels
+                d = get_dataset(name)
+                num_classes = d.num_classes
+                class_labels = d.class_labels
                 break
 
     return num_classes, class_labels
@@ -1251,8 +1278,8 @@ def names():
     datasets.load(name) """
     datasets = []
 
-    for name, users in dataset_users.items():
-        for user in users:
+    for name in list_datasets():
+        for user in get_dataset_users(name):
             datasets.append(name+"_"+str(user))
 
     return datasets
