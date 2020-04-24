@@ -134,15 +134,6 @@ def process_model(log_dir, model_dir, config, gpumem, multi_gpu):
     sources = config["sources"]
     target = config["target"]
 
-    # For backwards compatibility (TODO remove later)
-    #
-    # Previously sources was converted to a list of ints and target was
-    # converted to int in old file_utils.py:write_config_from_args()
-    if not isinstance(sources, str):
-        sources = ",".join([str(s) for s in sources])
-    if target is not None and not isinstance(target, str):
-        target = str(target)
-
     # Load datasets
     source_datasets, target_dataset = load_datasets.load_da(dataset_name,
         sources, target, test=FLAGS.test)

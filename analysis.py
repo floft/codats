@@ -136,32 +136,6 @@ def get_method(method, target):
     return method
 
 
-def get_sources(sources):
-    """ For backwards compatibility
-
-    Previously sources was converted to a list of ints and target was
-    converted to int in old file_utils.py:write_config_from_args()
-    """
-    if not isinstance(sources, str):
-        sources = ",".join([str(s) for s in sources])
-
-    return sources
-
-
-def get_target(target):
-    """ For backwards compatibility
-
-    Previously sources was converted to a list of ints and target was
-    converted to int in old file_utils.py:write_config_from_args()
-    """
-    if target is None:
-        target = ""
-    elif not isinstance(target, str):
-        target = str(target)
-
-    return target
-
-
 def _all_stats(name, filename):
     with open(filename) as f:
         # See: https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
@@ -181,20 +155,20 @@ def _all_stats(name, filename):
         config = d["config"]
 
         assert dataset is None or config["dataset"] == dataset, \
-            "runs disagree on dataset: " + config["dataset"] + " vs. " + str(dataset)
+            "runs disagree on dataset: " \
+            + config["dataset"] + " vs. " + str(dataset)
         dataset = config["dataset"]
 
-        new_sources = get_sources(config["sources"])
-        assert sources is None or new_sources == sources, \
-            "runs disagree on sources: " + new_sources + " vs. " + str(sources)
-        sources = new_sources
+        assert sources is None or config["sources"] == sources, \
+            "runs disagree on sources: " \
+            + config["sources"] + " vs. " + str(sources)
+        sources = config["sources"]
 
-        new_target = get_target(config["target"])
-        assert target is None or new_target == target, \
-            "runs disagree on target: " + new_target + " vs. " + str(target)
-        target = new_target
+        assert target is None or config["target"] == target, \
+            "runs disagree on target: " \
+            + config["target"] + " vs. " + str(target)
+        target = config["target"]
 
-        # Note: must come after we determine "target" above
         new_method = get_method(config["method"], target)
         assert method is None or new_method == method, \
             "runs disagree on method: " + new_method + " vs. " + str(method)
