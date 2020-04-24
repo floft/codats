@@ -1216,7 +1216,7 @@ class WatchWithOther(WatchBase):
             WatchWithOther.class_labels, *args, **kwargs)
 
 
-@register_dataset("watch_noother")
+# @register_dataset("watch_noother")
 class WatchWithoutOther(WatchBase):
     num_classes = 6
     class_labels = [
