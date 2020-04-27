@@ -65,8 +65,12 @@ class ModelBase(tf.keras.Model):
         super().__init__(*args, **kwargs)
 
     @property
+    def trainable_variables_fe(self):
+        return self.feature_extractor.trainable_variables
+
+    @property
     def trainable_variables_task(self):
-        return self.feature_extractor.trainable_variables \
+        return self.trainable_variables_fe \
             + self.task_classifier.trainable_variables
 
     @property
@@ -75,7 +79,7 @@ class ModelBase(tf.keras.Model):
 
     @property
     def trainable_variables_task_domain(self):
-        return self.feature_extractor.trainable_variables \
+        return self.trainable_variables_fe \
             + self.task_classifier.trainable_variables \
             + self.trainable_variables_domain
 
@@ -171,6 +175,52 @@ class DannModel(FcnModelBase):
         return self.domain_classifier(grl_output, **kwargs)
 
 
+class HeterogeneousDannModel(DannModel):
+    """ Heterogeneous DANN model has multiple feature extractors,
+    very similar to DannSmoothModel() code except this has multiple FE's
+    not multiple DC's """
+    def __init__(self, *args, num_feature_extractors, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Requires multiple feature extractors
+        new_feature_extractor = [self.feature_extractor]
+
+        # Start at 1 since we already have one
+        for i in range(1, num_feature_extractors):
+            new_feature_extractor.append(
+                tf.keras.models.clone_model(self.feature_extractor))
+
+        self.feature_extractor = new_feature_extractor
+
+    @property
+    def trainable_variables_fe(self):
+        # We have multiple feature extractors, so get all variables
+        fe_vars = []
+
+        for fe in self.feature_extractor:
+            fe_vars += fe.trainable_variables
+
+        return fe_vars
+
+    def call_feature_extractor(self, inputs, which_fe=None, **kwargs):
+        # Override so we don't pass which_fe argument to model
+        return self.feature_extractor(inputs)
+
+        assert which_fe is not None, \
+            "must specify which feature extractor to use"
+        return self.feature_extractor[which_fe](inputs, **kwargs)
+
+    def call_task_classifier(self, fe, which_fe=None, **kwargs):
+        # Override so we don't pass which_fe argument to model
+        return self.task_classifier(fe, **kwargs)
+
+    def call_domain_classifier(self, fe, task, which_fe=None, **kwargs):
+        # Override so we don't pass which_fe argument to model
+        # Copy of the DANN version only with above arg change
+        grl_output = self.flip_gradient(fe, **kwargs)
+        return self.domain_classifier(grl_output, **kwargs)
+
+
 class SleepModel(DannModel):
     """ Sleep model is DANN but concatenating task classifier output (with stop
     gradient) with feature extractor output when fed to the domain classifier """
@@ -187,6 +237,9 @@ class SleepModel(DannModel):
 
 
 class DannSmoothModel(DannModel):
+    """ DANN Smooth model hs multiple domain classifiers,
+    very similar to HeterogeneousDannModel() code except this has multiple DC's
+    not multiple FE's """
     def __init__(self, *args, num_domain_classifiers, **kwargs):
         # For MDAN Smooth, it's binary classification but we have a separate
         # discriminator for each source-target pair.
@@ -213,20 +266,20 @@ class DannSmoothModel(DannModel):
 
         return domain_vars
 
-    def call_feature_extractor(self, inputs, **kwargs):
-        # Override so we don't pass domain_classifier argument to model
-        return self.feature_extractor(inputs)
+    def call_feature_extractor(self, inputs, which_dc=None, **kwargs):
+        # Override so we don't pass which_dc argument to model
+        return self.feature_extractor(inputs, **kwargs)
 
-    def call_task_classifier(self, fe, **kwargs):
-        # Override so we don't pass domain_classifier argument to model
-        return self.task_classifier(fe)
+    def call_task_classifier(self, fe, which_dc=None, **kwargs):
+        # Override so we don't pass which_dc argument to model
+        return self.task_classifier(fe, **kwargs)
 
-    def call_domain_classifier(self, fe, task, domain_classifier=None, **kwargs):
-        assert domain_classifier is not None, \
+    def call_domain_classifier(self, fe, task, which_dc=None, **kwargs):
+        assert which_dc is not None, \
             "must specify which domain classifier to use with method Smooth"
         grl_output = self.flip_gradient(fe, **kwargs)
         # 0 = source domain 1 with target, 1 = source domain 2 with target, etc.
-        return self.domain_classifier[domain_classifier](grl_output, **kwargs)
+        return self.domain_classifier[which_dc](grl_output, **kwargs)
 
 
 class VradaFeatureExtractor(tf.keras.Model):

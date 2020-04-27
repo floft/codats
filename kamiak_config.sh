@@ -5,5 +5,5 @@
 modelFolder="kamiak-models"
 logFolder="kamiak-logs"
 remotessh="kamiak"  # in your .ssh/config file
-remotedir="/data/vcea/garrett.wilson/codats/"
-localdir="/home/garrett/Documents/Github/codats/"
+remotedir="/data/vcea/garrett.wilson/heterogeneous-da/"
+localdir="/home/garrett/Documents/Github/heterogeneous-da/"

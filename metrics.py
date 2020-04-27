@@ -308,7 +308,8 @@ class Metrics:
         assert dataset_name in self.datasets, "unknown dataset "+str(dataset_name)
         assert domain_name in self.domains, "unknown domain "+str(domain_name)
 
-        results = self.method.eval_step(data)
+        is_target = domain_name == "target"
+        results = self.method.eval_step(data, is_target)
 
         classifier = "task"  # Which classifier's task_y_pred are we looking at?
         self._process_batch(results, classifier, domain_name, dataset_name)
@@ -409,6 +410,9 @@ class Metrics:
         first_time = step == 1
 
         # Generate plots
+        #
+        # TODO probably broken with heterogeneous DA models since they have more
+        # than one feature extractor, so this will error
         t = time.time()
         plots = generate_plots(data_a, data_b,
             self.method.model.feature_extractor, first_time)

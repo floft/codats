@@ -244,7 +244,7 @@ class MethodBase:
         domain_y_pred = tf.nn.softmax(domain_y_pred)
         return task_y_true, task_y_pred, domain_y_true, domain_y_pred
 
-    def call_model(self, x, **kwargs):
+    def call_model(self, x, is_target=None, **kwargs):
         return self.model(x, **kwargs)
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
@@ -277,7 +277,7 @@ class MethodBase:
         del tape
         self.apply_gradients(gradients)
 
-    def eval_step(self, data):
+    def eval_step(self, data, is_target):
         """ Evaluate a batch of source or target data, called in metrics.py.
         This preprocesses the data to have x, y, domain always be lists so
         we can use the same compiled tf.function code in eval_step_list() for
@@ -291,15 +291,16 @@ class MethodBase:
         if not isinstance(domain, list):
             domain = [domain]
 
-        return self.eval_step_list((x, y, domain))
+        return self.eval_step_list((x, y, domain), is_target)
 
     #@tf.function  # faster not to compile
-    def eval_step_list(self, data):
+    def eval_step_list(self, data, is_target):
         """ Override preparation in prepare_data_eval() """
         x, task_y_true, domain_y_true = self.prepare_data_eval(data)
 
         # Run through model
-        task_y_pred, domain_y_pred, fe_output = self.call_model(x, training=False)
+        task_y_pred, domain_y_pred, fe_output = self.call_model(x,
+            is_target=is_target, training=False)
 
         # Calculate losses
         losses = self.compute_losses(x, task_y_true, domain_y_true,
@@ -313,7 +314,7 @@ class MethodBase:
         return task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses
 
 #
-# Domain adaptation
+# Homogeneous domain adaptation
 #
 
 # The base method class performs no adaptation
@@ -420,7 +421,8 @@ class MethodDannGS(MethodDann):
 @register_method("dann_smooth")
 class MethodDannSmooth(MethodDannGS):
     """ MDAN Smooth method based on MethodDannGS since we want binary source = 1,
-    target = 0 for the domain labels """
+    target = 0 for the domain labels, very similar to HeterogeneousBase()
+    code except this has multiple DC's not multiple FE's  """
     def create_model(self):
         self.model = models.DannSmoothModel(
             self.num_classes, self.domain_outputs,  # Note: domain_outputs=2
@@ -468,7 +470,7 @@ class MethodDannSmooth(MethodDannGS):
 
         return x, y, domain
 
-    def call_model(self, x, **kwargs):
+    def call_model(self, x, is_target=None, **kwargs):
         """ Run each source-target pair through model separately, using the
         corresponding domain classifier. """
         task_y_pred = []
@@ -482,7 +484,7 @@ class MethodDannSmooth(MethodDannGS):
 
         for i in range(len(x)):
             i_task_y_pred, i_domain_y_pred, i_fe_output = \
-                self.model(x[i], domain_classifier=i, **kwargs)
+                self.model(x[i], which_dc=i, **kwargs)
             task_y_pred.append(i_task_y_pred)
             domain_y_pred.append(i_domain_y_pred)
             fe_output.append(i_fe_output)
@@ -697,6 +699,123 @@ class MethodDaws(MethodDann):
         # included in the total loss
         total_loss, task_loss, d_loss, _ = losses
         return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
+
+
+#
+# Heterogeneous domain adaptation
+#
+
+class HeterogeneousBase:
+    """ Handle multiple feature extractors, very similar to MethodDannSmooth()
+    code except this has multiple FE's not multiple DC's """
+    def __init__(self, *args, **kwargs):
+        # Otherwise, with multiple inheritance, the other init's aren't called.
+        super().__init__(*args, **kwargs)
+
+    def create_model(self):
+        # For now we assume all sources have the same feature space. So, we need
+        # two feature extractors -- one for source and one for target.
+        num_feature_extractors = 2
+
+        self.model = models.HeterogeneousDannModel(
+            self.num_classes, self.domain_outputs,
+            self.global_step, self.total_steps,
+            num_feature_extractors)
+
+    def prepare_data(self, data_sources, data_target):
+        """ Prepare a batch of all source(s) data and target data separately,
+        so we run through the source/target feature extractors separately """
+        assert data_target is not None, \
+            "cannot run Heterogeneous DA without target"
+        x_a, y_a, domain_a = data_sources
+        x_b, y_b, domain_b = data_target
+
+        # Note: x_b, etc. isn't a list so doesn't need concat
+        x = [tf.concat(x_a, axis=0), x_b]
+        task_y_true = [tf.concat(y_a, axis=0), y_b]
+        domain_y_true = [tf.concat(domain_a, axis=0), domain_b]
+
+        return x, task_y_true, domain_y_true
+
+    def prepare_data_eval(self, data):
+        """ Don't concatenate elements of the list like in the base class since
+        we want to handle the source/target domains separately, to pass to the
+        right feature extractors."""
+        x, y, domain = data
+
+        assert isinstance(x, list), \
+            "Must pass x=[...] even if only one domain for tf.function consistency"
+        assert isinstance(y, list), \
+            "Must pass y=[...] even if only one domain for tf.function consistency"
+        assert isinstance(domain, list), \
+            "Must pass domain=[...] even if only one domain for tf.function consistency"
+
+        return x, y, domain
+
+    def call_model(self, x, is_target=None, training=None, **kwargs):
+        """ Run each source/target through appropriate feature extractor.
+        If is_target=None, then this is training. If is_target=True, then this
+        is evaluation of target data, and if is_target=False, then this is
+        evaluation of source data. """
+        task_y_pred = []
+        domain_y_pred = []
+        fe_output = []
+
+        # Should be 2 for source/target or 1 during evaluation for just one
+        assert (training is True and is_target is None and len(x) == 2) \
+            or (training is False and (is_target is True or is_target is False)
+                and len(x) == 1), \
+            "is_target=None and len(x)=2 during training but " \
+            "is_target=True/False and len(x)=1 during testing"
+
+        for i in range(len(x)):
+            # At test time, we set source/target explicitly -- use appropriate
+            # feature extractor: sources = 0, target = 1 (see ordering in
+            # prepare_data)
+            if is_target is not None:
+                which_fe = 1 if is_target else 0
+            else:
+                which_fe = i
+
+            i_task_y_pred, i_domain_y_pred, i_fe_output = \
+                self.model(x[i], which_fe=which_fe, training=training, **kwargs)
+            task_y_pred.append(i_task_y_pred)
+            domain_y_pred.append(i_domain_y_pred)
+            fe_output.append(i_fe_output)
+
+        return task_y_pred, domain_y_pred, fe_output
+
+    def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training):
+        """ Concatenate, then parent class's loss (e.g. DANN or DA-WS) """
+        x = tf.concat(x, axis=0)
+        task_y_true = tf.concat(task_y_true, axis=0)
+        domain_y_true = tf.concat(domain_y_true, axis=0)
+        task_y_pred = tf.concat(task_y_pred, axis=0)
+        domain_y_pred = tf.concat(domain_y_pred, axis=0)
+        fe_output = tf.concat(fe_output, axis=0)
+        super().compute_losses(x, task_y_true, domain_y_true, task_y_pred,
+            domain_y_pred, fe_output, training)
+
+    def post_data_eval(self, task_y_true, task_y_pred, domain_y_true,
+            domain_y_pred):
+        """ Concatenate, then parent class's post_data_eval """
+        task_y_true = tf.concat(task_y_true, axis=0)
+        task_y_pred = tf.concat(task_y_pred, axis=0)
+        domain_y_true = tf.concat(domain_y_true, axis=0)
+        domain_y_pred = tf.concat(domain_y_pred, axis=0)
+        return super().post_data_eval(task_y_true, task_y_pred, domain_y_true,
+            domain_y_pred)
+
+
+@register_method("dann_hda")
+class MethodHeterogeneousDann(HeterogeneousBase, MethodDann):
+    pass
+
+
+@register_method("daws_hda")
+class MethodHeterogeneousDaws(HeterogeneousBase, MethodDaws):
+    pass
 
 
 #
