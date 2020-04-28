@@ -720,7 +720,7 @@ class HeterogeneousBase:
         self.model = models.HeterogeneousDannModel(
             self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps,
-            num_feature_extractors)
+            num_feature_extractors=num_feature_extractors)
 
     def prepare_data(self, data_sources, data_target):
         """ Prepare a batch of all source(s) data and target data separately,
@@ -788,18 +788,53 @@ class HeterogeneousBase:
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
         """ Concatenate, then parent class's loss (e.g. DANN or DA-WS) """
-        x = tf.concat(x, axis=0)
-        task_y_true = tf.concat(task_y_true, axis=0)
-        domain_y_true = tf.concat(domain_y_true, axis=0)
-        task_y_pred = tf.concat(task_y_pred, axis=0)
-        domain_y_pred = tf.concat(domain_y_pred, axis=0)
-        fe_output = tf.concat(fe_output, axis=0)
-        super().compute_losses(x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training)
+        # Should all be the same length
+        num = len(x)
+        assert len(task_y_true) == num
+        assert len(domain_y_true) == num
+        assert len(task_y_pred) == num
+        assert len(domain_y_pred) == num
+        assert len(fe_output) == num
+
+        # Since source/target may be different sizes, we can't concat everything
+        # but instead need to compute the loss for source/target separately
+        losses = []
+
+        for i in range(num):
+            losses.append(super().compute_losses(
+                x[i], task_y_true[i], domain_y_true[i], task_y_pred[i],
+                domain_y_pred[i], fe_output[i], training))
+
+        # The returned losses are scalars, so now we can add them together, e.g.
+        # if each is [total_loss, task_loss, d_loss] then add the source and
+        # target total_loss's together, etc.
+        losses_added = None
+
+        for loss_list in losses:
+            # If no losses yet, then just set to this
+            if losses_added is None:
+                losses_added = loss_list
+            # Otherwise, add to the previous loss values
+            else:
+                assert len(losses_added) == len(loss_list), \
+                    "subsequent losses have different length than the first"
+
+                for i, loss in enumerate(loss_list):
+                    losses_added[i] += loss
+
+        assert losses_added is not None, \
+            "must return losses from at least one domain"
+
+        return losses_added
 
     def post_data_eval(self, task_y_true, task_y_pred, domain_y_true,
             domain_y_pred):
         """ Concatenate, then parent class's post_data_eval """
+        # Unlike in compute_losses() where source/target may be different sizes
+        # so we can't just concatenate, here during evaluation we only ever run
+        # all source data or all target data through the model at a time, i.e.
+        # we actually can concatenate the data here. Though, alternatively we
+        # could follow the compute_losses() logic instead...
         task_y_true = tf.concat(task_y_true, axis=0)
         task_y_pred = tf.concat(task_y_pred, axis=0)
         domain_y_true = tf.concat(domain_y_true, axis=0)

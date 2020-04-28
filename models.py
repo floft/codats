@@ -204,8 +204,6 @@ class HeterogeneousDannModel(DannModel):
 
     def call_feature_extractor(self, inputs, which_fe=None, **kwargs):
         # Override so we don't pass which_fe argument to model
-        return self.feature_extractor(inputs)
-
         assert which_fe is not None, \
             "must specify which feature extractor to use"
         return self.feature_extractor[which_fe](inputs, **kwargs)
