@@ -23,7 +23,9 @@ flags.DEFINE_integer("train_max_examples", 0, "Max number of examples to use for
 flags.DEFINE_integer("max_target_examples", 0, "Max number of target examples to use during training (default 0, i.e. all; overrides train_max_examples for target)")
 flags.DEFINE_integer("eval_max_examples", 0, "Max number of examples to evaluate for validation (default 0, i.e. all)")
 flags.DEFINE_integer("trim_time_steps", 0, "For testing RNN vs. CNN handling varying time series length, allow triming to set size (default 0, i.e. use all data)")
-flags.DEFINE_integer("feature_subset", 0, "For testing RNN vs. CNN handling varying numbers of features, allow only using a subset of the features (default 0, i.e. all the features")
+flags.DEFINE_integer("trim_features", 0, "For testing RNN vs. CNN handling varying numbers of features, allow only using the first n features (default 0, i.e. all the features)")
+flags.DEFINE_string("source_feature_subset", "", "Comma-separated zero-indexed integer list of which features (and in which order) to use for the source domain (default blank, i.e. all the features)")
+flags.DEFINE_string("target_feature_subset", "", "Comma-separated zero-indexed integer list of which features (and in which order) to use for the target domain (default blank, i.e. all the features)")
 flags.DEFINE_boolean("cache", True, "Cache datasets in memory to reduce filesystem usage")
 
 
@@ -35,7 +37,7 @@ class Dataset:
             shuffle_buffer=None, prefetch_buffer=None,
             eval_shuffle_seed=None, cache=None,
             train_max_examples=None, eval_max_examples=None,
-            tune_num_parallel_calls=None):
+            tune_num_parallel_calls=None, feature_subset=None):
         """
         Initialize dataset
 
@@ -62,6 +64,7 @@ class Dataset:
         self.eval_max_examples = eval_max_examples
         self.train_max_examples = train_max_examples
         self.tune_num_parallel_calls = tune_num_parallel_calls
+        self.feature_subset = feature_subset
 
         # Set defaults if not specified
         if self.train_batch is None:
@@ -123,10 +126,17 @@ class Dataset:
                 x = tf.slice(x, [0, 0],
                     [tf.minimum(tf.shape(x)[0], FLAGS.trim_time_steps), tf.shape(x)[1]])
 
-            # Trim to a certain number of features (the first feature_subset)
-            if FLAGS.feature_subset != 0:
+            # Trim to a certain number of features (the first n = trim_features)
+            if FLAGS.trim_features != 0:
                 x = tf.slice(x, [0, 0],
-                    [tf.shape(x)[0], tf.minimum(tf.shape(x)[1], FLAGS.feature_subset)])
+                    [tf.shape(x)[0], tf.minimum(tf.shape(x)[1], FLAGS.trim_features)])
+
+            # Select only the desired features, if specified
+            if self.feature_subset is not None:
+                assert FLAGS.trim_features == 0, \
+                    "cannot specify both {source,target}_feature_subset and trim_features"
+                # axis=-1 is the feature dimension
+                x = tf.gather(x, self.feature_subset, axis=-1)
 
             return x, y
 
@@ -312,12 +322,24 @@ def load_da(dataset, sources, target, *args, **kwargs):
     #print("Source batch size:", source_train_batch, "for", len(sources), "sources")
     #print("Target batch size:", target_train_batch)
 
+    # Which features from source/target to use (if not all of them)
+    if FLAGS.source_feature_subset == "":
+        source_feature_subset = None
+    else:
+        source_feature_subset = [int(x) for x in FLAGS.source_feature_subset.split(",")]
+
+    if FLAGS.target_feature_subset == "":
+        target_feature_subset = None
+    else:
+        target_feature_subset = [int(x) for x in FLAGS.target_feature_subset.split(",")]
+
     # Load each source
     source_datasets = []
 
     for s in sources:
-        source_datasets.append(load(s, num_domains,
-            train_batch=source_train_batch, *args, **kwargs))
+        source_datasets.append(load(s, num_domains, *args,
+            train_batch=source_train_batch,
+            feature_subset=source_feature_subset, **kwargs))
 
     # Check that they all have the same number of classes as the first one
     for i in range(1, len(source_datasets)):
@@ -339,10 +361,11 @@ def load_da(dataset, sources, target, *args, **kwargs):
             # we have during training.
             #eval_max_examples = FLAGS.max_target_examples
 
-        target_dataset = load(target, num_domains,
+        target_dataset = load(target, num_domains, *args,
             train_batch=target_train_batch,
             train_max_examples=train_max_examples,
-            eval_max_examples=eval_max_examples, *args, **kwargs)
+            eval_max_examples=eval_max_examples,
+            feature_subset=target_feature_subset, **kwargs)
 
         # Check that the target has the same number of classes as the first
         # source (since we already verified all sources have the same)
