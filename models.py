@@ -186,6 +186,195 @@ def make_model_fcn(num_classes, num_domains):
     return feature_extractor, task_classifier, domain_classifier
 
 
+class InceptionModule(tf.keras.layers.Layer):
+    """ See make_model_inceptiontime() """
+    def __init__(self, num_filters=32, activation="relu", **kwargs):
+        super().__init__(**kwargs)
+        self.num_filters = num_filters
+
+        # Step 1
+        self.bottleneck = self._conv1d(num_filters, kernel_size=1)
+        self.maxpool = tf.keras.layers.MaxPool1D(pool_size=3, strides=1,
+            padding="same")
+
+        # Step 2
+        #
+        # Note: if kernel_size=40 in the original code, and
+        # kernel_size_s = [self.kernel_size // (2 ** i) for i in range(3)]
+        # then we get 40, 20, 10 (note order doesn't matter since we concatenate
+        # them).
+        self.z1 = self._conv1d(num_filters, kernel_size=10)
+        self.z2 = self._conv1d(num_filters, kernel_size=20)
+        self.z3 = self._conv1d(num_filters, kernel_size=40)
+        self.z4 = self._conv1d(num_filters, kernel_size=1)
+
+        # Step 3 -- concatenate along feature dimension (axis=2 or axis=-1)
+        self.concat = tf.keras.layers.Concatenate(axis=-1)
+        self.bn = tf.keras.layers.BatchNormalization()
+        self.act = tf.keras.layers.Activation(activation)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_filters": self.num_filters,
+            "activation": self.activation,
+        })
+        return config
+
+    def _conv1d(self, filters, kernel_size):
+        # Note: the blog post has some differences (presumably not matching the
+        # paper's code then) leaves of padding="same" (implying padding="valid"
+        # instead) and activation="relu" rather than activation="linear" in the
+        # paper's code (or here activation=None, the default).
+        #
+        # Or, maybe this is TF vs. Keras default differences.
+        return tf.keras.layers.Conv1D(filters=filters, kernel_size=kernel_size,
+            padding="same", use_bias=False)
+
+    def call(self, inputs, **kwargs):
+        # Step 1
+        Z_bottleneck = self.bottleneck(inputs, **kwargs)
+        Z_maxpool = self.maxpool(inputs, **kwargs)
+
+        # Step 2
+        Z1 = self.z1(Z_bottleneck, **kwargs)
+        Z2 = self.z2(Z_bottleneck, **kwargs)
+        Z3 = self.z3(Z_bottleneck, **kwargs)
+        Z4 = self.z4(Z_maxpool, **kwargs)
+
+        # Step 3
+        Z = self.concat([Z1, Z2, Z3, Z4])
+        Z = self.bn(Z, **kwargs)
+
+        return self.act(Z)
+
+
+class InceptionShortcut(tf.keras.layers.Layer):
+    """ Shortcut for InceptionBlock -- required separate for a separate build()
+    since we don't know the right output dimension till running the network.
+
+    See make_model_inceptiontime() """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def build(self, input_shapes):
+        Z_residual_shape, Z_inception_shape = input_shapes
+        _, _, output_filters = Z_inception_shape
+
+        self.shortcut_conv1d = tf.keras.layers.Conv1D(filters=output_filters,
+            kernel_size=1, padding="same", use_bias=False)
+        self.shortcut_bn = tf.keras.layers.BatchNormalization()
+        self.shortcut_add = tf.keras.layers.Add()
+
+    def call(self, inputs, **kwargs):
+        Z_residual, Z_inception = inputs
+
+        # Create shortcut connection
+        Z_shortcut = self.shortcut_conv1d(Z_residual)
+        Z_shortcut = self.shortcut_bn(Z_shortcut)
+
+        # Add shortcut to Inception
+        return self.shortcut_add([Z_shortcut, Z_inception])
+
+
+class InceptionBlock(tf.keras.layers.Layer):
+    """ Block consisting of 3 InceptionModules with shortcut at the end
+    See make_model_inceptiontime() """
+    def __init__(self, num_modules=3, activation="relu", **kwargs):
+        super().__init__(**kwargs)
+        self.num_modules = num_modules
+        self.activation = activation
+        self.modules = [InceptionModule() for _ in range(num_modules)]
+        self.skip = InceptionShortcut()
+        self.act = tf.keras.layers.Activation(activation)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "num_modules": self.num_modules,
+            "activation": self.activation,
+        })
+        return config
+
+    def call(self, inputs, **kwargs):
+        Z = inputs
+        Z_residual = inputs
+
+        for i in range(self.num_modules):
+            Z = self.modules[i](Z, **kwargs)
+
+        Z = self.skip([Z_residual, Z], **kwargs)
+
+        return self.act(Z)
+
+
+class InceptionFeatureExtractor(tf.keras.layers.Layer):
+    """ The entire InceptionTime feature extractor (just doesn't have last
+    dense layer, i.e. stops at GAP). This isn't really needed but to ease
+    the ensemble of multiple of these we create a "Layer" that defines all
+    of this.
+
+    Note: their code has num_modules=6, and every third has a skip connection.
+    Thus, that's the same as 2 blocks.
+
+    See make_model_inceptiontime() """
+    def __init__(self, num_blocks=2, **kwargs):
+        super().__init__(**kwargs)
+        self.num_blocks = num_blocks
+        self.seq = tf.keras.Sequential([
+            InceptionBlock() for _ in range(num_blocks)
+        ] + [
+            tf.keras.layers.GlobalAveragePooling1D(),
+        ])
+
+    def get_config(self):
+        """ Required to save __init__ args when cloning
+        See: https://www.tensorflow.org/guide/keras/custom_layers_and_models#you_can_optionally_enable_serialization_on_your_layers
+        """
+        config = super().get_config()
+        config.update({'num_blocks': self.num_blocks})
+        return config
+
+    def call(self, inputs, **kwargs):
+        return self.seq(inputs, **kwargs)
+
+
+@register_model("inceptiontime")
+def make_model_inceptiontime(num_classes, num_domains):
+    """
+    InceptionTime -- but domain classifier has additional dense layers
+
+    Paper: https://arxiv.org/pdf/1909.04939.pdf
+    Keras code: https://towardsdatascience.com/deep-learning-for-time-series-classification-inceptiontime-245703f422db
+    Paper's code: https://github.com/hfawaz/InceptionTime
+    """
+    feature_extractor = tf.keras.Sequential([
+        InceptionFeatureExtractor(), # TODO ensemble of 5 of these??? 5 classifiers?
+    ])
+    # Copied from FCN -- note that InceptionTime is not designed for domain
+    # adaptation, just for time series classification.
+    task_classifier = tf.keras.Sequential([
+        tf.keras.layers.Dense(num_classes),
+    ])
+    domain_classifier = tf.keras.Sequential([
+        # Note: alternative is Dense(128, activation="tanh") like used by
+        # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
+        # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(0.3),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(0.3),
+
+        tf.keras.layers.Dense(num_domains),
+    ])
+    return feature_extractor, task_classifier, domain_classifier
+
+
 def make_dense_bn_dropout(units, dropout):
     return tf.keras.Sequential([
         tf.keras.layers.Dense(units, use_bias=False),  # BN has a bias term
