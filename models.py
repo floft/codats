@@ -162,8 +162,18 @@ class FcnModelBase(ModelBase):
         ])
 
 
-class DannModel(FcnModelBase):
-    """ DANN adds a gradient reversal layer before the domain classifier """
+class BasicModel(FcnModelBase):
+    """ Model without adaptation (i.e. no DANN) """
+    pass
+
+
+class DannModelBase:
+    """ DANN adds a gradient reversal layer before the domain classifier
+
+    Note: we don't inherit from FcnModelBase or any other specific model because
+    we want to support either FcnModelBase, RnnModelBase, etc. with multiple
+    inheritance.
+    """
     def __init__(self, num_classes, num_domains, global_step,
             total_steps, **kwargs):
         super().__init__(num_classes, num_domains, **kwargs)
@@ -175,7 +185,12 @@ class DannModel(FcnModelBase):
         return self.domain_classifier(grl_output, **kwargs)
 
 
-class HeterogeneousDannModel(DannModel):
+class DannModel(DannModelBase, FcnModelBase):
+    """ Model with adaptation (i.e. with DANN) """
+    pass
+
+
+class HeterogeneousDannModel(DannModelBase, FcnModelBase):
     """ Heterogeneous DANN model has multiple feature extractors,
     very similar to DannSmoothModel() code except this has multiple FE's
     not multiple DC's """
@@ -219,7 +234,7 @@ class HeterogeneousDannModel(DannModel):
         return self.domain_classifier(grl_output, **kwargs)
 
 
-class SleepModel(DannModel):
+class SleepModel(DannModelBase, FcnModelBase):
     """ Sleep model is DANN but concatenating task classifier output (with stop
     gradient) with feature extractor output when fed to the domain classifier """
     def __init__(self, *args, **kwargs):
@@ -234,7 +249,7 @@ class SleepModel(DannModel):
         return self.domain_classifier(domain_input, **kwargs)
 
 
-class DannSmoothModel(DannModel):
+class DannSmoothModel(DannModelBase, FcnModelBase):
     """ DANN Smooth model hs multiple domain classifiers,
     very similar to HeterogeneousDannModel() code except this has multiple DC's
     not multiple FE's """
@@ -319,7 +334,7 @@ class VradaFeatureExtractor(tf.keras.Model):
 
 class RnnModelBase(ModelBase):
     """ RNN-based model - for R-DANN and VRADA """
-    def __init__(self, vrada, num_classes, num_domains, **kwargs):
+    def __init__(self, num_classes, num_domains, vrada, **kwargs):
         super().__init__(**kwargs)
         self.num_classes = num_classes
         self.num_domains = num_domains
@@ -348,26 +363,11 @@ class RnnModelBase(ModelBase):
         return task, domain, fe
 
 
-class DannRnnModel(RnnModelBase):
-    """ DannModel but for RnnModelBase not FcnModelBase """
-    def __init__(self, vrada, num_classes, num_domains, global_step,
-            total_steps, **kwargs):
-        super().__init__(vrada, num_classes, num_domains, **kwargs)
-        grl_schedule = DannGrlSchedule(total_steps)
-        self.flip_gradient = FlipGradient(global_step, grl_schedule)
-
-    def call_domain_classifier(self, fe, task, **kwargs):
-        grl_output = self.flip_gradient(fe, **kwargs)
-        return self.domain_classifier(grl_output, **kwargs)
-
-
-class VradaModel(DannRnnModel):
+class VradaModel(DannModelBase, RnnModelBase):
     def __init__(self, *args, **kwargs):
-        vrada = True
-        super().__init__(vrada, *args, **kwargs)
+        super().__init__(*args, vrada=True, **kwargs)
 
 
-class RDannModel(DannRnnModel):
+class RDannModel(DannModelBase, RnnModelBase):
     def __init__(self, *args, **kwargs):
-        vrada = False
-        super().__init__(vrada, *args, **kwargs)
+        super().__init__(*args, vrada=False, **kwargs)

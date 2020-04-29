@@ -114,7 +114,7 @@ class MethodBase:
         self.checkpoint_variables["opt"] = self.opt
 
     def create_model(self):
-        self.model = models.FcnModelBase(self.num_classes, self.domain_outputs)
+        self.model = models.BasicModel(self.num_classes, self.domain_outputs)
 
     def create_losses(self):
         self.task_loss = make_loss()
@@ -1028,7 +1028,7 @@ class MethodAflacDG(MethodDannDG):
         self.p_d_given_y = p_d_given_y
 
     def create_model(self):
-        self.model = models.FcnModelBase(self.num_classes, self.domain_outputs)
+        self.model = models.BasicModel(self.num_classes, self.domain_outputs)
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):
