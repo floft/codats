@@ -14,9 +14,12 @@ models = {}
 def register_model(name):
     """ Add model to the list of models, e.g. add @register_model("name")
     before a class definition """
+    assert name not in models, "duplicate model named " + name
+
     def decorator(cls):
         models[name] = cls
         return cls
+
     return decorator
 
 

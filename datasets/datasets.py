@@ -32,9 +32,12 @@ list_of_datasets = {}
 def register_dataset(name):
     """ Add dataset to the list of datsets, e.g. add @register_dataset("name")
     before a class definition """
+    assert name not in list_of_datasets, "duplicate dataset named " + name
+
     def decorator(cls):
         list_of_datasets[name] = cls
         return cls
+
     return decorator
 
 

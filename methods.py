@@ -22,9 +22,12 @@ methods = {}
 def register_method(name):
     """ Add method to the list of methods, e.g. add @register_method("name")
     before a class definition """
+    assert name not in methods, "duplicate method named " + name
+
     def decorator(cls):
         methods[name] = cls
         return cls
+
     return decorator
 
 
