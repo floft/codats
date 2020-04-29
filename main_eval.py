@@ -131,6 +131,7 @@ def process_model(log_dir, model_dir, config, gpumem, multi_gpu):
 
     dataset_name = config["dataset"]
     method_name = config["method"]
+    model_name = config["model"]
     sources = config["sources"]
     target = config["target"]
 
@@ -144,6 +145,7 @@ def process_model(log_dir, model_dir, config, gpumem, multi_gpu):
     method = methods.get_method(method_name,
         source_datasets=source_datasets,
         target_dataset=target_dataset,
+        model_name=model_name,
         global_step=1, total_steps=1)
 
     # Load model from checkpoint (if there's anything in the checkpoint)

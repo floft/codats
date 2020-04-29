@@ -41,7 +41,7 @@ def list_methods():
 
 
 class MethodBase:
-    def __init__(self, source_datasets, target_dataset, *args,
+    def __init__(self, source_datasets, target_dataset, model_name, *args,
             trainable=True, **kwargs):
         self.source_datasets = source_datasets
         self.target_dataset = target_dataset
@@ -74,7 +74,7 @@ class MethodBase:
         # Initialize components
         self.create_iterators()
         self.create_optimizers()
-        self.create_model()
+        self.create_model(model_name)
         self.create_losses()
 
         # Always save the model in the checkpoint
@@ -113,8 +113,9 @@ class MethodBase:
         self.opt = tf.keras.optimizers.Adam(FLAGS.lr)
         self.checkpoint_variables["opt"] = self.opt
 
-    def create_model(self):
-        self.model = models.BasicModel(self.num_classes, self.domain_outputs)
+    def create_model(self, model_name):
+        self.model = models.BasicModel(self.num_classes, self.domain_outputs,
+            model_name=model_name)
 
     def create_losses(self):
         self.task_loss = make_loss()
@@ -333,9 +334,9 @@ class MethodDann(MethodBase):
         super().__init__(source_datasets, target_dataset, *args, **kwargs)
         self.loss_names += ["task", "domain"]
 
-    def create_model(self):
+    def create_model(self, model_name):
         self.model = models.DannModel(self.num_classes, self.domain_outputs,
-            self.global_step, self.total_steps)
+            self.global_step, self.total_steps, model_name=model_name)
 
     def create_optimizers(self):
         super().create_optimizers()
@@ -423,10 +424,11 @@ class MethodDannSmooth(MethodDannGS):
     """ MDAN Smooth method based on MethodDannGS since we want binary source = 1,
     target = 0 for the domain labels, very similar to HeterogeneousBase()
     code except this has multiple DC's not multiple FE's  """
-    def create_model(self):
+    def create_model(self, model_name):
         self.model = models.DannSmoothModel(
             self.num_classes, self.domain_outputs,  # Note: domain_outputs=2
             self.global_step, self.total_steps,
+            model_name=model_name,
             num_domain_classifiers=self.num_source_domains)
 
     def prepare_data(self, data_sources, data_target):
@@ -549,9 +551,9 @@ class MethodDannSmooth(MethodDannGS):
 @register_method("rdann")
 class MethodRDann(MethodDann):
     """ Same as DANN but uses a different model -- LSTM with some dense layers """
-    def create_model(self):
+    def create_model(self, model_name):
         self.model = models.RDannModel(self.num_classes, self.domain_outputs,
-            self.global_step, self.total_steps)
+            self.global_step, self.total_steps, model_name=model_name)
 
 
 @register_method("vrada")
@@ -561,9 +563,9 @@ class MethodVrada(MethodDann):
         super().__init__(*args, **kwargs)
         self.loss_names += ["vrnn"]
 
-    def create_model(self):
+    def create_model(self, model_name):
         self.model = models.VradaModel(self.num_classes, self.domain_outputs,
-            self.global_step, self.total_steps)
+            self.global_step, self.total_steps, model_name=model_name)
 
     def compute_vrnn_loss(self, vrnn_state, x, epsilon=1e-9):
         """
@@ -712,7 +714,7 @@ class HeterogeneousBase:
         # Otherwise, with multiple inheritance, the other init's aren't called.
         super().__init__(*args, **kwargs)
 
-    def create_model(self):
+    def create_model(self, model_name):
         # For now we assume all sources have the same feature space. So, we need
         # two feature extractors -- one for source and one for target.
         num_feature_extractors = 2
@@ -720,6 +722,7 @@ class HeterogeneousBase:
         self.model = models.HeterogeneousDannModel(
             self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps,
+            model_name=model_name,
             num_feature_extractors=num_feature_extractors)
 
     def prepare_data(self, data_sources, data_target):
@@ -933,9 +936,9 @@ class MethodDannDG(MethodDann):
 class MethodSleepDG(MethodDannDG):
     """ Same as DANN-DG but uses sleep model that feeds task classifier output
     to domain classifier """
-    def create_model(self):
+    def create_model(self, model_name):
         self.model = models.SleepModel(self.num_classes, self.domain_outputs,
-            self.global_step, self.total_steps)
+            self.global_step, self.total_steps, model_name=model_name)
 
 
 @register_method("aflac_dg")
@@ -1027,8 +1030,9 @@ class MethodAflacDG(MethodDannDG):
 
         self.p_d_given_y = p_d_given_y
 
-    def create_model(self):
-        self.model = models.BasicModel(self.num_classes, self.domain_outputs)
+    def create_model(self, model_name):
+        self.model = models.BasicModel(self.num_classes, self.domain_outputs,
+            model_name=model_name)
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
             domain_y_pred, fe_output, training):

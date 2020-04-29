@@ -8,6 +8,29 @@ from vrnn import VRNN
 
 FLAGS = flags.FLAGS
 
+models = {}
+
+
+def register_model(name):
+    """ Add model to the list of models, e.g. add @register_model("name")
+    before a class definition """
+    def decorator(cls):
+        models[name] = cls
+        return cls
+    return decorator
+
+
+def get_model(name, *args, **kwargs):
+    """ Based on the given name, call the correct model """
+    assert name in models.keys(), \
+        "Unknown model name " + name
+    return models[name](*args, **kwargs)
+
+
+def list_models():
+    """ Returns list of all the available models """
+    return list(models.keys())
+
 
 @tf.custom_gradient
 def flip_gradient(x, grl_lambda):
@@ -111,7 +134,8 @@ class ModelBase(tf.keras.Model):
         return task, domain, fe
 
 
-class FcnModelBase(ModelBase):
+@register_model("fcn")
+def make_model_fcn(num_classes, num_domains):
     """
     FCN (fully CNN) -- but domain classifier has additional dense layers
 
@@ -119,50 +143,59 @@ class FcnModelBase(ModelBase):
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
     Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/fcn.py
     """
-    def __init__(self, num_classes, num_domains, **kwargs):
+    feature_extractor = tf.keras.Sequential([
+        tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
+            use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+
+        tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
+            use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+
+        tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
+            use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+
+        tf.keras.layers.GlobalAveragePooling1D(),
+    ])
+    task_classifier = tf.keras.Sequential([
+        tf.keras.layers.Dense(num_classes),
+    ])
+    domain_classifier = tf.keras.Sequential([
+        # Note: alternative is Dense(128, activation="tanh") like used by
+        # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
+        # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(0.3),
+
+        tf.keras.layers.Dense(500, use_bias=False),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Activation("relu"),
+        tf.keras.layers.Dropout(0.3),
+
+        tf.keras.layers.Dense(num_domains),
+    ])
+    return feature_extractor, task_classifier, domain_classifier
+
+
+class CnnModelBase(ModelBase):
+    """
+    Support a variety of CNN-based models, pick via command-line argument
+    """
+    def __init__(self, num_classes, num_domains, model_name, **kwargs):
         super().__init__(**kwargs)
         self.num_classes = num_classes
         self.num_domains = num_domains
-        self.feature_extractor = tf.keras.Sequential([
-            tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.GlobalAveragePooling1D(),
-        ])
-        self.task_classifier = tf.keras.Sequential([
-            tf.keras.layers.Dense(num_classes),
-        ])
-        self.domain_classifier = tf.keras.Sequential([
-            # Note: alternative is Dense(128, activation="tanh") like used by
-            # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
-            # I'm not sure if that means 1-0.7 = 0.3 or 0.7 itself.
-            tf.keras.layers.Dense(500, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-            tf.keras.layers.Dropout(0.3),
-
-            tf.keras.layers.Dense(500, use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-            tf.keras.layers.Dropout(0.3),
-
-            tf.keras.layers.Dense(num_domains),
-        ])
+        self.feature_extractor, self.task_classifier, self.domain_classifier \
+            = get_model(model_name, num_classes, num_domains)
 
 
-class BasicModel(FcnModelBase):
+class BasicModel(CnnModelBase):
     """ Model without adaptation (i.e. no DANN) """
     pass
 
@@ -170,8 +203,8 @@ class BasicModel(FcnModelBase):
 class DannModelBase:
     """ DANN adds a gradient reversal layer before the domain classifier
 
-    Note: we don't inherit from FcnModelBase or any other specific model because
-    we want to support either FcnModelBase, RnnModelBase, etc. with multiple
+    Note: we don't inherit from CnnModelBase or any other specific model because
+    we want to support either CnnModelBase, RnnModelBase, etc. with multiple
     inheritance.
     """
     def __init__(self, num_classes, num_domains, global_step,
@@ -185,12 +218,12 @@ class DannModelBase:
         return self.domain_classifier(grl_output, **kwargs)
 
 
-class DannModel(DannModelBase, FcnModelBase):
+class DannModel(DannModelBase, CnnModelBase):
     """ Model with adaptation (i.e. with DANN) """
     pass
 
 
-class HeterogeneousDannModel(DannModelBase, FcnModelBase):
+class HeterogeneousDannModel(DannModelBase, CnnModelBase):
     """ Heterogeneous DANN model has multiple feature extractors,
     very similar to DannSmoothModel() code except this has multiple FE's
     not multiple DC's """
@@ -234,7 +267,7 @@ class HeterogeneousDannModel(DannModelBase, FcnModelBase):
         return self.domain_classifier(grl_output, **kwargs)
 
 
-class SleepModel(DannModelBase, FcnModelBase):
+class SleepModel(DannModelBase, CnnModelBase):
     """ Sleep model is DANN but concatenating task classifier output (with stop
     gradient) with feature extractor output when fed to the domain classifier """
     def __init__(self, *args, **kwargs):
@@ -249,7 +282,7 @@ class SleepModel(DannModelBase, FcnModelBase):
         return self.domain_classifier(domain_input, **kwargs)
 
 
-class DannSmoothModel(DannModelBase, FcnModelBase):
+class DannSmoothModel(DannModelBase, CnnModelBase):
     """ DANN Smooth model hs multiple domain classifiers,
     very similar to HeterogeneousDannModel() code except this has multiple DC's
     not multiple FE's """
@@ -305,6 +338,7 @@ class VradaFeatureExtractor(tf.keras.Model):
     """
     def __init__(self, vrada=True, **kwargs):
         super().__init__(**kwargs)
+        assert vrada is True or vrada is False
         self.vrada = vrada
 
         if self.vrada:
@@ -334,7 +368,8 @@ class VradaFeatureExtractor(tf.keras.Model):
 
 class RnnModelBase(ModelBase):
     """ RNN-based model - for R-DANN and VRADA """
-    def __init__(self, num_classes, num_domains, vrada, **kwargs):
+    def __init__(self, num_classes, num_domains, model_name, vrada, **kwargs):
+        # Note: we ignore model_name here and only define one RNN-based model
         super().__init__(**kwargs)
         self.num_classes = num_classes
         self.num_domains = num_domains

@@ -10,6 +10,7 @@ import tensorflow as tf
 from absl import app
 from absl import flags
 
+import models
 import methods
 import file_utils
 import load_datasets
@@ -25,6 +26,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, methods.list_methods(), "What method of domain adaptation to perform (or none)")
+flags.DEFINE_enum("model", "fcn", models.list_models(), "What CNN-based model to use (ignored for RNN-based methods)")
 flags.DEFINE_enum("dataset", None, datasets.list_datasets(), "What dataset to use (e.g. \"ucihar\")")
 flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
 flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")
@@ -107,6 +109,7 @@ def main(argv):
     method = methods.get_method(FLAGS.method,
         source_datasets=source_datasets,
         target_dataset=target_dataset,
+        model_name=FLAGS.model,
         global_step=global_step,
         total_steps=FLAGS.steps)
 
