@@ -257,10 +257,10 @@ class MethodBase:
         return self.task_loss(task_y_true, task_y_pred)
 
     def compute_gradients(self, tape, loss):
-        return tape.gradient(loss, self.model.trainable_variables_task)
+        return tape.gradient(loss, self.model.trainable_variables_task_fe)
 
     def apply_gradients(self, grad):
-        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task))
+        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task_fe))
 
     @tf.function
     def train_step(self, data_sources, data_target):
@@ -385,13 +385,13 @@ class MethodDann(MethodBase):
 
     def compute_gradients(self, tape, losses):
         total_loss, task_loss, d_loss = losses
-        grad = tape.gradient(total_loss, self.model.trainable_variables_task_domain)
+        grad = tape.gradient(total_loss, self.model.trainable_variables_task_fe_domain)
         d_grad = tape.gradient(d_loss, self.model.trainable_variables_domain)
         return [grad, d_grad]
 
     def apply_gradients(self, gradients):
         grad, d_grad = gradients
-        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task_domain))
+        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task_fe_domain))
         # Update discriminator again
         self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
 
@@ -545,10 +545,10 @@ class MethodDannSmooth(MethodDannGS):
 
     def compute_gradients(self, tape, losses):
         """ We have one loss, update everything with it """
-        return tape.gradient(losses, self.model.trainable_variables_task_domain)
+        return tape.gradient(losses, self.model.trainable_variables_task_fe_domain)
 
     def apply_gradients(self, gradients):
-        self.opt.apply_gradients(zip(gradients, self.model.trainable_variables_task_domain))
+        self.opt.apply_gradients(zip(gradients, self.model.trainable_variables_task_fe_domain))
 
 
 @register_method("rdann")
@@ -1090,13 +1090,13 @@ class MethodAflacDG(MethodDannDG):
 
     def compute_gradients(self, tape, losses):
         fe_tc_loss, d_loss, _, _ = losses
-        grad = tape.gradient(fe_tc_loss, self.model.trainable_variables_task)
+        grad = tape.gradient(fe_tc_loss, self.model.trainable_variables_task_fe)
         d_grad = tape.gradient(d_loss, self.model.trainable_variables_domain)
         return [grad, d_grad]
 
     def apply_gradients(self, gradients):
         grad, d_grad = gradients
-        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task))
+        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task_fe))
         self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
 
 
