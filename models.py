@@ -254,7 +254,8 @@ def FcnModelMaker(CodatsModelMakerBase):
 
 
 class InceptionModule(tf.keras.layers.Layer):
-    """ See make_model_inceptiontime() """
+    """ Consists of the multiple kernel-size conv1d outputs concatenated
+    together """
     def __init__(self, num_filters=32, activation="relu", **kwargs):
         super().__init__(**kwargs)
         self.num_filters = num_filters
@@ -318,9 +319,7 @@ class InceptionModule(tf.keras.layers.Layer):
 
 class InceptionShortcut(tf.keras.layers.Layer):
     """ Shortcut for InceptionBlock -- required separate for a separate build()
-    since we don't know the right output dimension till running the network.
-
-    See make_model_inceptiontime() """
+    since we don't know the right output dimension till running the network. """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -345,8 +344,7 @@ class InceptionShortcut(tf.keras.layers.Layer):
 
 
 class InceptionBlock(tf.keras.layers.Layer):
-    """ Block consisting of 3 InceptionModules with shortcut at the end
-    See make_model_inceptiontime() """
+    """ Block consisting of 3 InceptionModules with shortcut at the end """
     def __init__(self, num_modules=3, activation="relu", **kwargs):
         super().__init__(**kwargs)
         self.num_modules = num_modules
