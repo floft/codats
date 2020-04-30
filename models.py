@@ -129,6 +129,11 @@ class ModelBase(tf.keras.Model):
             + self.trainable_variables_task \
             + self.trainable_variables_domain
 
+    @property
+    def trainable_variables(self):
+        """ Returns all trainable variables in the model """
+        return self.trainable_variables_task_fe_domain
+
     def set_learning_phase(self, training):
         # Manually set the learning phase since we probably aren't using .fit()
         # but layers like batch norm and dropout still need to know if

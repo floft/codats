@@ -18,6 +18,9 @@ This requires the following packages (*module load* for Kamiak):
     pip3 install --user --upgrade numpy cython
     pip3 install --user --upgrade tensorflow-gpu pillow lxml jupyter matplotlib pandas scikit-learn scipy tensorboard rarfile tqdm pyyaml grpcio absl-py
 
+    # If using --moving_average (typically tensorflow-addons, but that errors at the moment with TF 2.2)
+    pip3 install --user git+https://github.com/tensorflow/addons.git@r0.9
+
 For the CPU-only jobs like *kamiak_train_simple.srun*:
 
     module load python3/3.7.4
@@ -36,6 +39,9 @@ For the CPU-only jobs like *kamiak_train_simple.srun*:
     pip install --upgrade numpy cython
     # Note: here it's "tensorflow" not "tensorflow-gpu" -- the rest is the same.
     pip install --upgrade tensorflow pillow lxml jupyter matplotlib pandas scikit-learn scipy tensorboard rarfile tqdm pyyaml grpcio absl-py
+
+    # If using --moving_average
+    pip install git+https://github.com/tensorflow/addons.git@r0.9
 
 ## Training
 

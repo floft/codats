@@ -41,6 +41,7 @@ flags.DEFINE_boolean("test", False, "Use real test set for evaluation rather tha
 flags.DEFINE_boolean("subdir", True, "Save models/logs in subdirectory of prefix")
 flags.DEFINE_boolean("debug", False, "Start new log/model/images rather than continuing from previous run")
 flags.DEFINE_boolean("time_training", False, "Print how long each step takes, instead of every 100 steps")
+flags.DEFINE_boolean("moving_average", True, "Whether to use an exponential moving average of the weights rather than the weights directly (requires tensorflow_addons)")
 flags.DEFINE_integer("debugnum", -1, "Specify exact log/model/images number to use rather than incrementing from last. (Don't pass both this and --debug at the same time.)")
 
 flags.mark_flag_as_required("method")
@@ -111,7 +112,8 @@ def main(argv):
         target_dataset=target_dataset,
         model_name=FLAGS.model,
         global_step=global_step,
-        total_steps=FLAGS.steps)
+        total_steps=FLAGS.steps,
+        moving_average=FLAGS.moving_average)
 
     # Check that this method is supposed to be trainable. If not, we're done.
     # (Basically, we just wanted to write the config file for non-trainable

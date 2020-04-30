@@ -3,6 +3,9 @@ Methods
 """
 import numpy as np
 import tensorflow as tf
+# If you don't want to install this, then pass --nomoving_average and comment
+# this out.
+import tensorflow_addons as tfa
 
 from absl import flags
 
@@ -45,9 +48,10 @@ def list_methods():
 
 class MethodBase:
     def __init__(self, source_datasets, target_dataset, model_name, *args,
-            trainable=True, **kwargs):
+            trainable=True, moving_average=False, **kwargs):
         self.source_datasets = source_datasets
         self.target_dataset = target_dataset
+        self.moving_average = moving_average
 
         # Support multiple targets when we add that functionality
         self.num_source_domains = len(source_datasets)
@@ -112,8 +116,17 @@ class MethodBase:
             self.target_train_eval_dataset = None
             self.target_test_eval_dataset = None
 
+    def create_optimizer(self, *args, **kwargs):
+        """ Create a single optimizer """
+        opt = tf.keras.optimizers.Adam(*args, **kwargs)
+
+        if self.moving_average:
+            opt = tfa.optimizers.MovingAverage(opt)
+
+        return opt
+
     def create_optimizers(self):
-        self.opt = tf.keras.optimizers.Adam(FLAGS.lr)
+        self.opt = self.create_optimizer(learning_rate=FLAGS.lr)
         self.checkpoint_variables["opt"] = self.opt
 
     def create_model(self, model_name):
@@ -344,7 +357,8 @@ class MethodDann(MethodBase):
     def create_optimizers(self):
         super().create_optimizers()
         # We need an additional optimizer for DANN
-        self.d_opt = tf.keras.optimizers.Adam(FLAGS.lr*FLAGS.lr_domain_mult)
+        self.d_opt = self.create_optimizer(
+            learning_rate=FLAGS.lr*FLAGS.lr_domain_mult)
         self.checkpoint_variables["d_opt"] = self.d_opt
 
     def create_losses(self):
