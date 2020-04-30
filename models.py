@@ -102,7 +102,7 @@ class ModelBase(tf.keras.Model):
     def _get_trainable_variables(self, model):
         """ Get trainable variables if model is a list or not """
         if isinstance(model, list):
-            return self._get_trainable_variables(model)
+            return self._get_trainable_variables_list(model)
 
         return model.trainable_variables
 
@@ -196,7 +196,7 @@ class ModelMakerBase:
         raise NotImplementedError("must implement for ModelMaker class")
 
 
-def CodatsModelMakerBase(ModelMakerBase):
+class CodatsModelMakerBase(ModelMakerBase):
     """ Task and domain classifiers used for CoDATS and thus used for a number
     of these models """
     def make_task_classifier(self, num_classes):
@@ -224,7 +224,7 @@ def CodatsModelMakerBase(ModelMakerBase):
 
 
 @register_model("fcn")
-def FcnModelMaker(CodatsModelMakerBase):
+class FcnModelMaker(CodatsModelMakerBase):
     """
     FCN (fully CNN) -- but domain classifier has additional dense layers
 
@@ -421,7 +421,7 @@ def make_dense_ln_dropout(units, dropout):
 
 
 @register_model("mlp")
-def MlpModelMaker(CodatsModelMakerBase):
+class MlpModelMaker(CodatsModelMakerBase):
     """
     MLP -- but split task/domain classifier at last dense layer, and additional
     dense layer for domain classifier
@@ -568,7 +568,7 @@ class WangResnetBlock(tf.keras.layers.Layer):
 
 
 @register_model("resnet")
-def ResNetModelMaker(CodatsModelMakerBase):
+class ResNetModelMaker(CodatsModelMakerBase):
     """
     ResNet -- but domain classifier has additional dense layers
     From: https://arxiv.org/pdf/1611.06455.pdf
@@ -585,7 +585,7 @@ def ResNetModelMaker(CodatsModelMakerBase):
 
 
 @register_model("timenet")
-def TimeNetModelMaker(ModelMakerBase):
+class TimeNetModelMaker(ModelMakerBase):
     """
     TimeNet https://arxiv.org/pdf/1706.08838.pdf
     So, basically 3-layer GRU with 60 units followed by the rest in my "flat"
@@ -636,7 +636,7 @@ def TimeNetModelMaker(ModelMakerBase):
 
 
 @register_model("images_dann_mnist")
-def DannMnistModelMaker(ModelMakerBase):
+class DannMnistModelMaker(ModelMakerBase):
     """ Figure 4(a) MNIST architecture -- Ganin et al. DANN JMLR 2016 paper """
     def make_feature_extractor(self):
         return tf.keras.Sequential([
@@ -662,7 +662,7 @@ def DannMnistModelMaker(ModelMakerBase):
 
 
 @register_model("images_dann_svhn")
-def DannSvhnModelMaker(ModelMakerBase):
+class DannSvhnModelMaker(ModelMakerBase):
     """ Figure 4(b) SVHN architecture -- Ganin et al. DANN JMLR 2016 paper """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -723,7 +723,7 @@ def DannSvhnModelMaker(ModelMakerBase):
 
 
 @register_model("images_dann_gtsrb")
-def DannGtsrbModelMaker(ModelMakerBase):
+class DannGtsrbModelMaker(ModelMakerBase):
     """ Figure 4(c) SVHN architecture -- Ganin et al. DANN JMLR 2016 paper """
     def make_feature_extractor(self):
         return tf.keras.Sequential([
@@ -750,7 +750,7 @@ def DannGtsrbModelMaker(ModelMakerBase):
         ])
 
 
-def VadaModelMakerBase(ModelMakerBase):
+class VadaModelMakerBase(ModelMakerBase):
     """ Table 6 Small CNN -- Shu et al. VADA / DIRT-T ICLR 2018 paper
     Note: they used small for digits, traffic signs, and WiFi and large for
     CIFAR-10 and STL-10."""
@@ -810,19 +810,19 @@ def VadaModelMakerBase(ModelMakerBase):
 
 
 @register_model("images_vada_small")
-def VadaSmallModelMaker(VadaModelMakerBase):
+class VadaSmallModelMaker(VadaModelMakerBase):
     def __init__(self, **kwargs):
         super().__init__(small=True, **kwargs)
 
 
 @register_model("images_vada_large")
-def VadaLargeModelMaker(VadaModelMakerBase):
+class VadaLargeModelMaker(VadaModelMakerBase):
     def __init__(self, **kwargs):
         super().__init__(small=False, **kwargs)
 
 
 @register_model("images_resnet50")
-def ResNet50ModelMaker(ModelMakerBase):
+class ResNet50ModelMaker(ModelMakerBase):
     """ ResNet50 pre-trained on ImageNet -- for use with Office-31 datasets
     Input should be 224x224x3 """
     def make_feature_extractor(self):
@@ -907,10 +907,11 @@ class DannModel(DannModelBase, CnnModelBase):
 
 class HeterogeneousDannModel(DannModelBase, CnnModelBase):
     """ Heterogeneous DANN model has multiple feature extractors """
-    def __init__(self, *args, num_feature_extractors, **kwargs):
+    def __init__(self, *args, num_feature_extractors=None, **kwargs):
         # Require that we have num_feature_extractors
         assert num_feature_extractors is not None
-        super().__init__(*args, num_feature_extractors, **kwargs)
+        super().__init__(*args, num_feature_extractors=num_feature_extractors,
+            **kwargs)
 
 
 class SleepModel(DannModelBase, CnnModelBase):
@@ -936,10 +937,11 @@ class SleepModel(DannModelBase, CnnModelBase):
 
 class DannSmoothModel(DannModelBase, CnnModelBase):
     """ DANN Smooth model has multiple domain classifiers """
-    def __init__(self, *args, num_domain_classifiers, **kwargs):
+    def __init__(self, *args, num_domain_classifiers=None, **kwargs):
         # Require that we have num_feature_extractors
         assert num_domain_classifiers is not None
-        super().__init__(*args, num_domain_classifiers, **kwargs)
+        super().__init__(*args, num_domain_classifiers=num_domain_classifiers,
+            **kwargs)
 
 
 class VradaFeatureExtractor(tf.keras.Model):
