@@ -384,6 +384,7 @@ class InceptionTimeModelMaker(CodatsModelMakerBase):
     Paper: https://arxiv.org/pdf/1909.04939.pdf
     Keras code: https://towardsdatascience.com/deep-learning-for-time-series-classification-inceptiontime-245703f422db
     Paper's code: https://github.com/hfawaz/InceptionTime
+        and in particular: https://github.com/hfawaz/InceptionTime/blob/master/classifiers/inception.py
 
     Inherit from FCN model since we'll use the same TC/DC maker functions.
     InceptionTime is not designed for domain adaptation, just for time series
@@ -395,6 +396,9 @@ class InceptionTimeModelMaker(CodatsModelMakerBase):
         every third has a skip connection. Thus, that's the same as 2 blocks.
         """
         # TODO ensemble of 5 of these? Maybe 5 task classifiers?
+        # See: https://github.com/hfawaz/InceptionTime/blob/master/classifiers/nne.py
+        # TODO Looks like they train each model separately then at test time
+        # average the softmax outputs then take argmax to predict.
         return tf.keras.Sequential([
             InceptionBlock(),
             InceptionBlock(),
