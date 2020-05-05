@@ -18,6 +18,8 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
+flags.DEFINE_float("hda_l2", 0.1, "Weight for regularizing each domain's feature extractor weights to be similar")
+flags.DEFINE_boolean("hda_by_layer", False, "Regularize lower layers less and higher layers more, only matters if hda_l2 != 0")
 
 methods = {}
 
@@ -716,8 +718,7 @@ class MethodDaws(MethodDann):
     def compute_gradients(self, tape, losses):
         # We only use daws_loss for plotting -- for computing gradients it's
         # included in the total loss
-        total_loss, task_loss, d_loss, _ = losses
-        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
+        return super().compute_gradients(tape, losses[:-1])
 
 
 #
@@ -730,6 +731,72 @@ class HeterogeneousBase:
     def __init__(self, *args, **kwargs):
         # Otherwise, with multiple inheritance, the other init's aren't called.
         super().__init__(*args, **kwargs)
+
+        # For regularizing the weights to be similar
+        self.regularizer = tf.keras.regularizers.L1L2(l2=FLAGS.hda_l2)
+        self.loss_names += ["fe_regularizer"]
+
+    def regularize_fe_weights_similar(self):
+        """
+        Regularize the target feature extractor to be similar to each
+        (probably only 1) source feature extractors. We assume the last
+        FE is the target (see ordering in prepare_data).
+        """
+        # We should now have multiple feature extractors
+        assert len(self.model.feature_extractor) > 1, \
+            "for HDA must have >= 2 FE's"
+
+        regularizer_loss = 0
+        total_weights = 0
+
+        target_fe = self.model.feature_extractor[-1]
+        target_vars = target_fe.trainable_variables
+        num_vars = len(target_vars)
+
+        for source_fe in self.model.feature_extractor[:-1]:
+            source_vars = source_fe.trainable_variables
+            assert len(source_vars) == num_vars, \
+                "FE's must have the same number of weights"
+
+            # Regularize to be similar, i.e. the difference toward zero
+            for i, (source_weight, target_weight) in \
+                    enumerate(zip(source_vars, target_vars)):
+                # Skip the BN weights since we expect those might be different
+                # between source/target. For example, some DA methods (see
+                # survey) rely *entirely* on different BN weights per-domain.
+                #
+                # Note: alternative is skip all but those with "kernel" in their
+                # name.
+                if "batch_normalization" in source_weight.name:
+                    continue
+
+                # If they're not the same shape, then we can't do this.
+                # For example, if this is the first layer and the source/target
+                # input feature shapes differ. Or, if this is not the FCN but
+                # InceptionTime model, then the shortcuts also differ in shape.
+                if source_weight.shape != target_weight.shape:
+                    continue
+
+                # Regularize different layers by different amounts, smaller at
+                # the beginning and larger at the end/top of the network.
+                #
+                # Note: this makes it so the first layer differences don't
+                # matter regardless of if they're the same shape or not.
+                if FLAGS.hda_by_layer:
+                    layer_weight = i/num_vars
+                    # layer_weight = (num_vars-i)/num_vars
+                else:
+                    layer_weight = 1
+
+                regularizer_loss += \
+                    layer_weight * self.regularizer(target_weight - source_weight)
+                total_weights += 1
+
+        # Normalize by the number of weights, which hopefully helps this not
+        # differ too much between models
+        regularizer_loss /= total_weights
+
+        return regularizer_loss
 
     def create_model(self, model_name):
         # For now we assume all sources have the same feature space. So, we need
@@ -827,7 +894,8 @@ class HeterogeneousBase:
 
         # The returned losses are scalars, so now we can add them together, e.g.
         # if each is [total_loss, task_loss, d_loss] then add the source and
-        # target total_loss's together, etc.
+        # target total_loss's together, etc. Note: if inheriting from DAWS,
+        # then we have a 4th loss "daws".
         losses_added = None
 
         for loss_list in losses:
@@ -845,6 +913,13 @@ class HeterogeneousBase:
         assert losses_added is not None, \
             "must return losses from at least one domain"
 
+        # We additionally regularize the FE's to be similar which we add to the
+        # total loss. Element [0] is the total_loss from the parent class since
+        # that is the loss we use to compute gradients w.r.t. the FE weights.
+        fe_regularizer_loss = self.regularize_fe_weights_similar()
+        losses_added[0] += fe_regularizer_loss
+        losses_added.append(fe_regularizer_loss)
+
         return losses_added
 
     def post_data_eval(self, task_y_true, task_y_pred, domain_y_true,
@@ -861,6 +936,16 @@ class HeterogeneousBase:
         domain_y_pred = tf.concat(domain_y_pred, axis=0)
         return super().post_data_eval(task_y_true, task_y_pred, domain_y_true,
             domain_y_pred)
+
+    def compute_gradients(self, tape, losses):
+        # We only use fe_regularizer_loss for plotting -- for computing
+        # gradients it's included in the total loss
+        #
+        # Note: if we inherit from DANN, then we have 4 here and skip the 4th.
+        # If we inherit from DAWS though, then we have 5 here and skip the 5th,
+        # passing in the 4th to get removed in the DAWS (identical)
+        # compute_gradients() function.
+        return super().compute_gradients(tape, losses[:-1])
 
 
 @register_method("dann_hda")
