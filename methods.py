@@ -20,6 +20,7 @@ flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 flags.DEFINE_float("hda_l2", 0.1, "Weight for regularizing each domain's feature extractor weights to be similar")
 flags.DEFINE_boolean("hda_by_layer", False, "Regularize lower layers less and higher layers more, only matters if hda_l2 != 0")
+flags.DEFINE_boolean("share_most_weights", False, "Instead of regularizing, share same-shape weights")
 
 methods = {}
 
@@ -807,7 +808,8 @@ class HeterogeneousBase:
             self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps,
             model_name=model_name,
-            num_feature_extractors=num_feature_extractors)
+            num_feature_extractors=num_feature_extractors,
+            share_most_weights=self.share_most_weights)  # TODO load this in eval
 
     def prepare_data(self, data_sources, data_target):
         """ Prepare a batch of all source(s) data and target data separately,

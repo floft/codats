@@ -191,25 +191,25 @@ class ModelMakerBase:
     def __init__(self, **kwargs):
         pass
 
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         raise NotImplementedError("must implement for ModelMaker class")
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         raise NotImplementedError("must implement for ModelMaker class")
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         raise NotImplementedError("must implement for ModelMaker class")
 
 
 class CodatsModelMakerBase(ModelMakerBase):
     """ Task and domain classifiers used for CoDATS and thus used for a number
     of these models """
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(num_classes),
         ])
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         return tf.keras.Sequential([
             # Note: alternative is Dense(128, activation="tanh") like used by
             # https://arxiv.org/pdf/1902.09820.pdf They say dropout of 0.7 but
@@ -228,6 +228,27 @@ class CodatsModelMakerBase(ModelMakerBase):
         ])
 
 
+# class AdjustmentLayer(tf.keras.layers.Layer):
+#     def __init__(self, layers, **kwargs):
+#         self.layers = layers
+#         super().__init__(**kwargs)
+
+#         # TODO add regularization / L2 norm or something
+
+#     def build(self, input_shapes):
+#         # Keep track of the weights
+#         weights = []
+
+#         # We want each layer but adjusted: multiply by variable and add variable
+#         for i, layer in enumerate(self.layers):
+#             for j, variable in enumerate(self.layer.trainable_variables):
+#                 m = self.add_weight("layer"+str(i)+"_var"+str(j),
+#                 shape=(self.n_h, self.n_prior_hidden), initializer="glorot_uniform")
+
+#     def call(self, inputs, **kwargs):
+#         return self.seq(inputs, **kwargs)
+
+
 @register_model("fcn")
 class FcnModelMaker(CodatsModelMakerBase):
     """
@@ -237,25 +258,48 @@ class FcnModelMaker(CodatsModelMakerBase):
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
     Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/fcn.py
     """
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, previous_model=None, **kwargs):
+        # Make a new feature extractor if no previous feature extractor
+        if previous_model is None:
+            return tf.keras.Sequential([
+                tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
+                    use_bias=False),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Activation("relu"),
+
+                tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
+                    use_bias=False),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Activation("relu"),
+
+                tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
+                    use_bias=False),
+                tf.keras.layers.BatchNormalization(),
+                tf.keras.layers.Activation("relu"),
+
+                tf.keras.layers.GlobalAveragePooling1D(),
+            ])
+
+        # Only totally separate layer is the first Conv1D layer since the
+        # input shape may be different. The rest of the layers will be the
+        # layers from the other model.
         return tf.keras.Sequential([
             tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+                    use_bias=False)
+        ] + previous_model.layers[1:])
 
-            tf.keras.layers.Conv1D(filters=256, kernel_size=5, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
+        # However, if we do have a previous feature extractor, this one will
+        # be *changes* to the previous one, and regularized to be similar.
+        # return tf.keras.Sequential([
+        #     tf.keras.layers.Conv1D(filters=128, kernel_size=8, padding="same",
+        #             use_bias=False),
 
-            tf.keras.layers.Conv1D(filters=128, kernel_size=3, padding="same",
-                use_bias=False),
-            tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation("relu"),
-
-            tf.keras.layers.GlobalAveragePooling1D(),
-        ])
+        #     # The rest of the layers will be the layers from the other model but
+        #     # with some changes (multiply by some value and/or add by some
+        #     # value). Note we skip the first layer since we replaced it above
+        #     # with a new one entirely.
+        #     AdjustmentLayer(layers=previous_model.layers[1:]),
+        # ])
 
 
 class InceptionModule(tf.keras.layers.Layer):
@@ -395,20 +439,24 @@ class InceptionTimeModelMaker(CodatsModelMakerBase):
     InceptionTime is not designed for domain adaptation, just for time series
     classification, so we'll use our CoDATS TC/DC choices.
     """
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, previous_model=None, **kwargs):
         """ The entire InceptionTime feature extractor (just doesn't have last
         dense layer, i.e. stops at GAP). Note: their code has num_modules=6, and
         every third has a skip connection. Thus, that's the same as 2 blocks.
         """
-        # TODO ensemble of 5 of these? Maybe 5 task classifiers?
-        # See: https://github.com/hfawaz/InceptionTime/blob/master/classifiers/nne.py
-        # TODO Looks like they train each model separately then at test time
-        # average the softmax outputs then take argmax to predict.
-        return tf.keras.Sequential([
-            InceptionBlock(),
-            InceptionBlock(),
-            tf.keras.layers.GlobalAveragePooling1D(),
-        ])
+        if previous_model is None:
+            # TODO ensemble of 5 of these? Maybe 5 task classifiers?
+            # See: https://github.com/hfawaz/InceptionTime/blob/master/classifiers/nne.py
+            # TODO Looks like they train each model separately then at test time
+            # average the softmax outputs then take argmax to predict.
+            return tf.keras.Sequential([
+                InceptionBlock(),
+                InceptionBlock(),
+                tf.keras.layers.GlobalAveragePooling1D(),
+            ])
+        else:
+            raise NotImplementedError(
+                "currently only FCN works with --share_most_weights")
 
 
 def make_dense_bn_dropout(units, dropout):
@@ -438,7 +486,7 @@ class MlpModelMaker(CodatsModelMakerBase):
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
     Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/mlp.py
     """
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dropout(0.1),
@@ -448,7 +496,7 @@ class MlpModelMaker(CodatsModelMakerBase):
             tf.keras.layers.Dropout(0.2),
         ])
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(500, activation="relu"),
             tf.keras.layers.Dropout(0.3),
@@ -584,7 +632,7 @@ class ResNetModelMaker(CodatsModelMakerBase):
     Tested in: https://arxiv.org/pdf/1809.04356.pdf
     Code from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/resnet.py
     """
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.Sequential([
             WangResnetBlock(64),
             WangResnetBlock(128),
@@ -619,7 +667,7 @@ class TimeNetModelMaker(ModelMakerBase):
         last = [tf.keras.layers.Dense(num_outputs)]
         return tf.keras.Sequential(layers + last)
 
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.GRU(60, return_sequences=True),
             tf.keras.layers.GRU(60, return_sequences=True),
@@ -633,12 +681,12 @@ class TimeNetModelMaker(ModelMakerBase):
             for _ in range(self.fe_layers-1)
         ])
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential([
             self.make_classifier(self.task_layers, num_classes),
         ])
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         return tf.keras.Sequential([
             self.make_classifier(self.domain_layers, num_domains),
         ])
@@ -647,7 +695,7 @@ class TimeNetModelMaker(ModelMakerBase):
 @register_model("images_dann_mnist")
 class DannMnistModelMaker(ModelMakerBase):
     """ Figure 4(a) MNIST architecture -- Ganin et al. DANN JMLR 2016 paper """
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Conv2D(32, (5, 5), (1, 1), "valid", activation="relu"),
             tf.keras.layers.MaxPool2D((2, 2), (2, 2), "valid"),
@@ -656,14 +704,14 @@ class DannMnistModelMaker(ModelMakerBase):
             tf.keras.layers.Flatten(),
         ])
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(100, "relu"),
             tf.keras.layers.Dense(100, "relu"),
             tf.keras.layers.Dense(num_classes),
         ])
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(100, "relu"),
             tf.keras.layers.Dense(num_domains),
@@ -677,7 +725,7 @@ class DannSvhnModelMaker(ModelMakerBase):
         super().__init__(**kwargs)
         self.dropout = FLAGS.dropout
 
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Conv2D(64, (5, 5), (1, 1), "same"),
             tf.keras.layers.BatchNormalization(),
@@ -700,7 +748,7 @@ class DannSvhnModelMaker(ModelMakerBase):
             tf.keras.layers.Flatten(),
         ])
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(3072),
             tf.keras.layers.BatchNormalization(),
@@ -715,7 +763,7 @@ class DannSvhnModelMaker(ModelMakerBase):
             tf.keras.layers.Dense(num_classes),
         ])
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(1024),
             tf.keras.layers.BatchNormalization(),
@@ -734,7 +782,7 @@ class DannSvhnModelMaker(ModelMakerBase):
 @register_model("images_dann_gtsrb")
 class DannGtsrbModelMaker(ModelMakerBase):
     """ Figure 4(c) SVHN architecture -- Ganin et al. DANN JMLR 2016 paper """
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Conv2D(96, (5, 5), (1, 1), "valid", activation="relu"),
             tf.keras.layers.MaxPool2D((2, 2), (2, 2), "valid"),
@@ -745,13 +793,13 @@ class DannGtsrbModelMaker(ModelMakerBase):
             tf.keras.layers.Flatten(),
         ])
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(512, "relu"),
             tf.keras.layers.Dense(num_classes),
         ])
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Dense(1024, "relu"),
             tf.keras.layers.Dense(1024, "relu"),
@@ -790,14 +838,14 @@ class VadaModelMakerBase(ModelMakerBase):
             tf.keras.layers.GaussianNoise(1),
         ]
 
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.Sequential(
             self._conv_blocks(64 if self.small else 96)
             + self._pool_blocks()
             + self._conv_blocks(64 if self.small else 192)
             + self._pool_blocks())
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential(
             self._conv_blocks(64 if self.small else 192)
             + [
@@ -806,7 +854,7 @@ class VadaModelMakerBase(ModelMakerBase):
                 tf.keras.layers.Dense(num_classes),
             ])
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Flatten(),
 
@@ -834,17 +882,17 @@ class VadaLargeModelMaker(VadaModelMakerBase):
 class ResNet50ModelMaker(ModelMakerBase):
     """ ResNet50 pre-trained on ImageNet -- for use with Office-31 datasets
     Input should be 224x224x3 """
-    def make_feature_extractor(self):
+    def make_feature_extractor(self, **kwargs):
         return tf.keras.applications.ResNet50(
             include_top=False, pooling="avg")
 
-    def make_task_classifier(self, num_classes):
+    def make_task_classifier(self, num_classes, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(num_classes),
         ])
 
-    def make_domain_classifier(self, num_domains):
+    def make_domain_classifier(self, num_domains, **kwargs):
         return tf.keras.Sequential([
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(num_domains),
@@ -861,7 +909,8 @@ class CnnModelBase(ModelBase):
     def __init__(self, num_classes, num_domains, model_name,
             num_feature_extractors=None,
             num_task_classifiers=None,
-            num_domain_classifiers=None, **kwargs):
+            num_domain_classifiers=None,
+            share_most_weights=False, **kwargs):
         super().__init__(**kwargs)
         self.num_classes = num_classes
         self.num_domains = num_domains
@@ -870,17 +919,32 @@ class CnnModelBase(ModelBase):
 
         self.feature_extractor = self._make_single_or_multiple(
             model_maker.make_feature_extractor,
-            num_feature_extractors)
+            num_feature_extractors, share_most_weights)
         self.task_classifier = self._make_single_or_multiple(
-            lambda: model_maker.make_task_classifier(num_classes),
-            num_task_classifiers)
+            lambda **kwargs: model_maker.make_task_classifier(num_classes, **kwargs),
+            num_task_classifiers, share_most_weights)
         self.domain_classifier = self._make_single_or_multiple(
-            lambda: model_maker.make_domain_classifier(num_domains),
-            num_domain_classifiers)
+            lambda **kwargs: model_maker.make_domain_classifier(num_domains, **kwargs),
+            num_domain_classifiers, share_most_weights)
 
-    def _make_single_or_multiple(self, f, num):
+    def _make_single_or_multiple(self, f, num, share_most_weights):
         if num is not None:
-            return [f() for _ in range(num)]
+            if share_most_weights:
+                # Share most weights via passing in the previous model
+                # Note: only used for in feature extractor creation.
+                results = []
+
+                for _ in range(num):
+                    previous_model = None
+
+                    if len(results) > 0:
+                        previous_model = results[-1]
+
+                    results.append(f(previous_model=previous_model))
+
+                return results
+            else:
+                return [f() for _ in range(num)]
 
         return f()
 
