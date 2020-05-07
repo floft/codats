@@ -31,6 +31,7 @@ flags.DEFINE_enum("dataset", None, datasets.list_datasets(), "What dataset to us
 flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
 flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")
 flags.DEFINE_string("uid", None, "A unique ID saved in the log/model folder names to avoid conflicts")
+flags.DEFINE_integer("ensemble", 5, "Number of models in the ensemble, 1 = no ensemble")
 flags.DEFINE_integer("steps", 30000, "Number of training steps to run")
 flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 0, "Save the model every so many steps (0 for only when log_val_steps)")
@@ -113,6 +114,7 @@ def main(argv):
         model_name=FLAGS.model,
         global_step=global_step,
         total_steps=FLAGS.steps,
+        ensemble_size=FLAGS.ensemble,
         moving_average=FLAGS.moving_average)
 
     # Check that this method is supposed to be trainable. If not, we're done.

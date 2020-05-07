@@ -50,11 +50,14 @@ def list_methods():
 
 
 class MethodBase:
-    def __init__(self, source_datasets, target_dataset, model_name, *args,
-            trainable=True, moving_average=False, **kwargs):
+    def __init__(self, source_datasets, target_dataset, model_name,
+            *args, ensemble_size=1, trainable=True, moving_average=False,
+            **kwargs):
         self.source_datasets = source_datasets
         self.target_dataset = target_dataset
         self.moving_average = moving_average
+        self.ensemble_size = ensemble_size
+        assert ensemble_size > 0, "ensemble_size should be >= 1"
 
         # Support multiple targets when we add that functionality
         self.num_source_domains = len(source_datasets)
@@ -81,14 +84,20 @@ class MethodBase:
         # What we want in the checkpoint
         self.checkpoint_variables = {}
 
-        # Initialize components
+        # Initialize components -- support ensemble, training all simultaneously
+        # I think will be faster / more efficient overall time-wise
         self.create_iterators()
-        self.create_optimizers()
-        self.create_model(model_name)
+        self.opt = [self.create_optimizers() for _ in range(ensemble_size)]
+        self.model = [self.create_model(model_name) for _ in range(ensemble_size)]
         self.create_losses()
 
-        # Always save the model in the checkpoint
-        self.checkpoint_variables["model"] = self.model
+        # Checkpoint/save the model and optimizers
+        for i, model in enumerate(self.model):
+            self.checkpoint_variables["model_" + str(i)] = model
+
+        for i, opt_dict in enumerate(self.opt):
+            for name, opt in opt_dict.items():
+                self.checkpoint_variables["opt_" + name + "_" + str(i)] = opt
 
         # Names of the losses returned in compute_losses
         self.loss_names = ["total"]
@@ -129,11 +138,10 @@ class MethodBase:
         return opt
 
     def create_optimizers(self):
-        self.opt = self.create_optimizer(learning_rate=FLAGS.lr)
-        self.checkpoint_variables["opt"] = self.opt
+        return {"opt": self.create_optimizer(learning_rate=FLAGS.lr)}
 
     def create_model(self, model_name):
-        self.model = models.BasicModel(self.num_classes, self.domain_outputs,
+        return models.BasicModel(self.num_classes, self.domain_outputs,
             model_name=model_name)
 
     def create_losses(self):
@@ -264,19 +272,21 @@ class MethodBase:
         domain_y_pred = tf.nn.softmax(domain_y_pred)
         return task_y_true, task_y_pred, domain_y_true, domain_y_pred
 
-    def call_model(self, x, is_target=None, **kwargs):
-        return self.model(x, **kwargs)
+    def call_model(self, x, which_model, is_target=None, **kwargs):
+        return self.model[which_model](x, **kwargs)
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         # Maybe: regularization = sum(model.losses) and add to loss
         return self.task_loss(task_y_true, task_y_pred)
 
-    def compute_gradients(self, tape, loss):
-        return tape.gradient(loss, self.model.trainable_variables_task_fe)
+    def compute_gradients(self, tape, loss, which_model):
+        return tape.gradient(loss,
+            self.model[which_model].trainable_variables_task_fe)
 
-    def apply_gradients(self, grad):
-        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task_fe))
+    def apply_gradients(self, grad, which_model):
+        self.opt[which_model]["opt"].apply_gradients(zip(grad,
+            self.model[which_model].trainable_variables_task_fe))
 
     @tf.function
     def train_step(self, data_sources, data_target):
@@ -286,16 +296,20 @@ class MethodBase:
         Override the individual parts with prepare_data(), call_model(),
         compute_losses(), compute_gradients(), and apply_gradients()
         """
-        x, task_y_true, domain_y_true = self.prepare_data(data_sources, data_target)
+        x, task_y_true, domain_y_true = self.prepare_data(data_sources,
+            data_target)
 
-        with tf.GradientTape(persistent=True) as tape:
-            task_y_pred, domain_y_pred, fe_output = self.call_model(x, training=True)
-            losses = self.compute_losses(x, task_y_true, domain_y_true,
-                task_y_pred, domain_y_pred, fe_output, training=True)
+        for i in range(self.ensemble_size):
+            with tf.GradientTape(persistent=True) as tape:
+                task_y_pred, domain_y_pred, fe_output = self.call_model(
+                    x, which_model=i, training=True)
+                losses = self.compute_losses(x, task_y_true, domain_y_true,
+                    task_y_pred, domain_y_pred, fe_output, which_model=i,
+                    training=True)
 
-        gradients = self.compute_gradients(tape, losses)
-        del tape
-        self.apply_gradients(gradients)
+            gradients = self.compute_gradients(tape, losses, which_model=i)
+            del tape
+            self.apply_gradients(gradients, which_model=i)
 
     def eval_step(self, data, is_target):
         """ Evaluate a batch of source or target data, called in metrics.py.
@@ -313,25 +327,94 @@ class MethodBase:
 
         return self.eval_step_list((x, y, domain), is_target)
 
+    def add_multiple_losses(self, losses, average=False):
+        """
+        losses = [
+            [total_loss1, task_loss1, ...],
+            [total_loss2, task_loss2, ...],
+            ...
+        ]
+
+        returns [total_loss, task_loss, ...] either the sum or average
+        """
+        losses_added = None
+
+        for loss_list in losses:
+            # If no losses yet, then just set to this
+            if losses_added is None:
+                losses_added = loss_list
+            # Otherwise, add to the previous loss values
+            else:
+                assert len(losses_added) == len(loss_list), \
+                    "subsequent losses have different length than the first"
+
+                for i, loss in enumerate(loss_list):
+                    losses_added[i] += loss
+
+        assert losses_added is not None, \
+            "must return losses from at least one domain"
+
+        if average:
+            averaged_losses = []
+
+            for loss in losses_added:
+                averaged_losses.append(loss / len(losses))
+
+            return averaged_losses
+        else:
+            return losses_added
+
     #@tf.function  # faster not to compile
     def eval_step_list(self, data, is_target):
         """ Override preparation in prepare_data_eval() """
-        x, task_y_true, domain_y_true = self.prepare_data_eval(data)
+        x, orig_task_y_true, orig_domain_y_true = self.prepare_data_eval(data)
 
-        # Run through model
-        task_y_pred, domain_y_pred, fe_output = self.call_model(x,
-            is_target=is_target, training=False)
+        task_y_true_list = []
+        task_y_pred_list = []
+        domain_y_true_list = []
+        domain_y_pred_list = []
+        losses_list = []
 
-        # Calculate losses
-        losses = self.compute_losses(x, task_y_true, domain_y_true,
-            task_y_pred, domain_y_pred, fe_output, training=False)
+        for i in range(self.ensemble_size):
+            # Run through model
+            task_y_pred, domain_y_pred, fe_output = self.call_model(x,
+                which_model=i, is_target=is_target, training=False)
 
-        # Post-process data (e.g. compute softmax from logits)
-        task_y_true, task_y_pred, domain_y_true, domain_y_pred = \
-            self.post_data_eval(task_y_true, task_y_pred, domain_y_true,
-            domain_y_pred)
+            # Calculate losses
+            losses = self.compute_losses(x, orig_task_y_true,
+                orig_domain_y_true, task_y_pred, domain_y_pred, fe_output,
+                which_model=i, training=False)
 
-        return task_y_true, task_y_pred, domain_y_true, domain_y_pred, losses
+            if not isinstance(losses, list):
+                losses = [losses]
+
+            losses_list.append(losses)
+
+            # Post-process data (e.g. compute softmax from logits)
+            task_y_true, task_y_pred, domain_y_true, domain_y_pred = \
+                self.post_data_eval(orig_task_y_true, task_y_pred,
+                    orig_domain_y_true, domain_y_pred)
+
+            task_y_true_list.append(task_y_true)
+            task_y_pred_list.append(task_y_pred)
+            domain_y_true_list.append(domain_y_true)
+            domain_y_pred_list.append(domain_y_pred)
+
+        # Combine information from each model in the ensemble -- averaging.
+        #
+        # Note: this is how the ensemble predictions are made with InceptionTime
+        # having an ensemble of 5 models -- they average the softmax outputs
+        # over the ensemble (and we now have softmax after the post_data_eval()
+        # call). See their code:
+        # https://github.com/hfawaz/InceptionTime/blob/master/classifiers/nne.py
+        task_y_true_avg = tf.math.reduce_mean(task_y_true_list, axis=0)
+        task_y_pred_avg = tf.math.reduce_mean(task_y_pred_list, axis=0)
+        domain_y_true_avg = tf.math.reduce_mean(domain_y_true_list, axis=0)
+        domain_y_pred_avg = tf.math.reduce_mean(domain_y_pred_list, axis=0)
+        losses_avg = self.add_multiple_losses(losses_list, average=True)
+
+        return task_y_true_avg, task_y_pred_avg, domain_y_true_avg, \
+            domain_y_pred_avg, losses_avg
 
 #
 # Homogeneous domain adaptation
@@ -354,15 +437,15 @@ class MethodDann(MethodBase):
         self.loss_names += ["task", "domain"]
 
     def create_model(self, model_name):
-        self.model = models.DannModel(self.num_classes, self.domain_outputs,
+        return models.DannModel(self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps, model_name=model_name)
 
     def create_optimizers(self):
-        super().create_optimizers()
+        opt = super().create_optimizers()
         # We need an additional optimizer for DANN
-        self.d_opt = self.create_optimizer(
+        opt["d_opt"] = self.create_optimizer(
             learning_rate=FLAGS.lr*FLAGS.lr_domain_mult)
-        self.checkpoint_variables["d_opt"] = self.d_opt
+        return opt
 
     def create_losses(self):
         # Note: at the moment these are the same, but if we go back to
@@ -390,7 +473,7 @@ class MethodDann(MethodBase):
         return x, task_y_true, domain_y_true
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         nontarget = tf.where(tf.not_equal(domain_y_true, 0))
         task_y_true = tf.gather(task_y_true, nontarget)
         task_y_pred = tf.gather(task_y_pred, nontarget)
@@ -400,17 +483,21 @@ class MethodDann(MethodBase):
         total_loss = task_loss + d_loss
         return [total_loss, task_loss, d_loss]
 
-    def compute_gradients(self, tape, losses):
+    def compute_gradients(self, tape, losses, which_model):
         total_loss, task_loss, d_loss = losses
-        grad = tape.gradient(total_loss, self.model.trainable_variables_task_fe_domain)
-        d_grad = tape.gradient(d_loss, self.model.trainable_variables_domain)
+        grad = tape.gradient(total_loss,
+            self.model[which_model].trainable_variables_task_fe_domain)
+        d_grad = tape.gradient(d_loss,
+            self.model[which_model].trainable_variables_domain)
         return [grad, d_grad]
 
-    def apply_gradients(self, gradients):
+    def apply_gradients(self, gradients, which_model):
         grad, d_grad = gradients
-        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task_fe_domain))
+        self.opt[which_model]["opt"].apply_gradients(zip(grad,
+            self.model[which_model].trainable_variables_task_fe_domain))
         # Update discriminator again
-        self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
+        self.opt[which_model]["d_opt"].apply_gradients(zip(d_grad,
+            self.model[which_model].trainable_variables_domain))
 
 
 @register_method("dann_gs")
@@ -445,7 +532,7 @@ class MethodDannSmooth(MethodDannGS):
     target = 0 for the domain labels, very similar to HeterogeneousBase()
     code except this has multiple DC's not multiple FE's  """
     def create_model(self, model_name):
-        self.model = models.DannSmoothModel(
+        return models.DannSmoothModel(
             self.num_classes, self.domain_outputs,  # Note: domain_outputs=2
             self.global_step, self.total_steps,
             model_name=model_name,
@@ -492,7 +579,7 @@ class MethodDannSmooth(MethodDannGS):
 
         return x, y, domain
 
-    def call_model(self, x, is_target=None, **kwargs):
+    def call_model(self, x, which_model, is_target=None, **kwargs):
         """ Run each source-target pair through model separately, using the
         corresponding domain classifier. """
         task_y_pred = []
@@ -506,7 +593,7 @@ class MethodDannSmooth(MethodDannGS):
 
         for i in range(len(x)):
             i_task_y_pred, i_domain_y_pred, i_fe_output = \
-                self.model(x[i], which_dc=i, **kwargs)
+                self.model[which_model](x[i], which_dc=i, **kwargs)
             task_y_pred.append(i_task_y_pred)
             domain_y_pred.append(i_domain_y_pred)
             fe_output.append(i_fe_output)
@@ -514,7 +601,7 @@ class MethodDannSmooth(MethodDannGS):
         return task_y_pred, domain_y_pred, fe_output
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         """
         MDAN losses - domain classifiers' losses weighted by task
         classifier's loss per domain
@@ -560,19 +647,21 @@ class MethodDannSmooth(MethodDannGS):
         return super().post_data_eval(task_y_true, task_y_pred, domain_y_true,
             domain_y_pred)
 
-    def compute_gradients(self, tape, losses):
+    def compute_gradients(self, tape, losses, which_model):
         """ We have one loss, update everything with it """
-        return tape.gradient(losses, self.model.trainable_variables_task_fe_domain)
+        return tape.gradient(losses,
+            self.model[which_model].trainable_variables_task_fe_domain)
 
-    def apply_gradients(self, gradients):
-        self.opt.apply_gradients(zip(gradients, self.model.trainable_variables_task_fe_domain))
+    def apply_gradients(self, gradients, which_model):
+        self.opt[which_model]["opt"].apply_gradients(zip(gradients,
+            self.model[which_model].trainable_variables_task_fe_domain))
 
 
 @register_method("rdann")
 class MethodRDann(MethodDann):
     """ Same as DANN but uses a different model -- LSTM with some dense layers """
     def create_model(self, model_name):
-        self.model = models.RDannModel(self.num_classes, self.domain_outputs,
+        return models.RDannModel(self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps, model_name=model_name)
 
 
@@ -584,7 +673,7 @@ class MethodVrada(MethodDann):
         self.loss_names += ["vrnn"]
 
     def create_model(self, model_name):
-        self.model = models.VradaModel(self.num_classes, self.domain_outputs,
+        return models.VradaModel(self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps, model_name=model_name)
 
     def compute_vrnn_loss(self, vrnn_state, x, epsilon=1e-9):
@@ -616,20 +705,21 @@ class MethodVrada(MethodDann):
         return tf.reduce_mean(kl_loss) + tf.reduce_mean(likelihood_loss)
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         _, task_loss, d_loss = super().compute_losses(
             x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training)
+            domain_y_pred, fe_output, which_model, training)
         vrnn_state = fe_output[1]  # fe_output = (vrnn_output, vrnn_state)
         vrnn_loss = self.compute_vrnn_loss(vrnn_state, x)
         total_loss = task_loss + d_loss + vrnn_loss
         return [total_loss, task_loss, d_loss, vrnn_loss]
 
-    def compute_gradients(self, tape, losses):
+    def compute_gradients(self, tape, losses, which_model):
         # We only use vrnn_loss for plotting -- for computing gradients it's
         # included in the total loss
         total_loss, task_loss, d_loss, _ = losses
-        return super().compute_gradients(tape, [total_loss, task_loss, d_loss])
+        return super().compute_gradients(tape, [total_loss, task_loss, d_loss],
+            which_model)
 
 
 @register_method("daws")
@@ -659,7 +749,7 @@ class MethodDaws(MethodDann):
         self.p_y = class_balance(self.target_train_eval_dataset, self.num_classes)
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         # DANN losses
         nontarget = tf.where(tf.not_equal(domain_y_true, 0))
         task_y_true_nontarget = tf.gather(task_y_true, nontarget)
@@ -716,10 +806,10 @@ class MethodDaws(MethodDann):
 
         return [total_loss, task_loss, d_loss, daws_loss]
 
-    def compute_gradients(self, tape, losses):
+    def compute_gradients(self, tape, losses, which_model):
         # We only use daws_loss for plotting -- for computing gradients it's
         # included in the total loss
-        return super().compute_gradients(tape, losses[:-1])
+        return super().compute_gradients(tape, losses[:-1], which_model)
 
 
 #
@@ -737,24 +827,24 @@ class HeterogeneousBase:
         self.regularizer = tf.keras.regularizers.L1L2(l2=FLAGS.hda_l2)
         self.loss_names += ["fe_regularizer"]
 
-    def regularize_fe_weights_similar(self):
+    def regularize_fe_weights_similar(self, which_model):
         """
         Regularize the target feature extractor to be similar to each
         (probably only 1) source feature extractors. We assume the last
         FE is the target (see ordering in prepare_data).
         """
         # We should now have multiple feature extractors
-        assert len(self.model.feature_extractor) > 1, \
+        assert len(self.model[which_model].feature_extractor) > 1, \
             "for HDA must have >= 2 FE's"
 
         regularizer_loss = 0
         total_weights = 0
 
-        target_fe = self.model.feature_extractor[-1]
+        target_fe = self.model[which_model].feature_extractor[-1]
         target_vars = target_fe.trainable_variables
         num_vars = len(target_vars)
 
-        for source_fe in self.model.feature_extractor[:-1]:
+        for source_fe in self.model[which_model].feature_extractor[:-1]:
             source_vars = source_fe.trainable_variables
             assert len(source_vars) == num_vars, \
                 "FE's must have the same number of weights"
@@ -804,12 +894,12 @@ class HeterogeneousBase:
         # two feature extractors -- one for source and one for target.
         num_feature_extractors = 2
 
-        self.model = models.HeterogeneousDannModel(
+        return models.HeterogeneousDannModel(
             self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps,
             model_name=model_name,
             num_feature_extractors=num_feature_extractors,
-            share_most_weights=self.share_most_weights)  # TODO load this in eval
+            share_most_weights=FLAGS.share_most_weights)  # TODO load this in eval
 
     def prepare_data(self, data_sources, data_target):
         """ Prepare a batch of all source(s) data and target data separately,
@@ -841,7 +931,7 @@ class HeterogeneousBase:
 
         return x, y, domain
 
-    def call_model(self, x, is_target=None, training=None, **kwargs):
+    def call_model(self, x, which_model, is_target=None, training=None, **kwargs):
         """ Run each source/target through appropriate feature extractor.
         If is_target=None, then this is training. If is_target=True, then this
         is evaluation of target data, and if is_target=False, then this is
@@ -867,7 +957,8 @@ class HeterogeneousBase:
                 which_fe = i
 
             i_task_y_pred, i_domain_y_pred, i_fe_output = \
-                self.model(x[i], which_fe=which_fe, training=training, **kwargs)
+                self.model[which_model](x[i], which_fe=which_fe,
+                    training=training, **kwargs)
             task_y_pred.append(i_task_y_pred)
             domain_y_pred.append(i_domain_y_pred)
             fe_output.append(i_fe_output)
@@ -875,7 +966,7 @@ class HeterogeneousBase:
         return task_y_pred, domain_y_pred, fe_output
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         """ Concatenate, then parent class's loss (e.g. DANN or DA-WS) """
         # Should all be the same length
         num = len(x)
@@ -892,33 +983,18 @@ class HeterogeneousBase:
         for i in range(num):
             losses.append(super().compute_losses(
                 x[i], task_y_true[i], domain_y_true[i], task_y_pred[i],
-                domain_y_pred[i], fe_output[i], training))
+                domain_y_pred[i], fe_output[i], which_model, training))
 
         # The returned losses are scalars, so now we can add them together, e.g.
         # if each is [total_loss, task_loss, d_loss] then add the source and
         # target total_loss's together, etc. Note: if inheriting from DAWS,
         # then we have a 4th loss "daws".
-        losses_added = None
-
-        for loss_list in losses:
-            # If no losses yet, then just set to this
-            if losses_added is None:
-                losses_added = loss_list
-            # Otherwise, add to the previous loss values
-            else:
-                assert len(losses_added) == len(loss_list), \
-                    "subsequent losses have different length than the first"
-
-                for i, loss in enumerate(loss_list):
-                    losses_added[i] += loss
-
-        assert losses_added is not None, \
-            "must return losses from at least one domain"
+        losses_added = self.add_multiple_losses(losses, average=False)
 
         # We additionally regularize the FE's to be similar which we add to the
         # total loss. Element [0] is the total_loss from the parent class since
         # that is the loss we use to compute gradients w.r.t. the FE weights.
-        fe_regularizer_loss = self.regularize_fe_weights_similar()
+        fe_regularizer_loss = self.regularize_fe_weights_similar(which_model)
         losses_added[0] += fe_regularizer_loss
         losses_added.append(fe_regularizer_loss)
 
@@ -939,7 +1015,7 @@ class HeterogeneousBase:
         return super().post_data_eval(task_y_true, task_y_pred, domain_y_true,
             domain_y_pred)
 
-    def compute_gradients(self, tape, losses):
+    def compute_gradients(self, tape, losses, which_model):
         # We only use fe_regularizer_loss for plotting -- for computing
         # gradients it's included in the total loss
         #
@@ -947,7 +1023,7 @@ class HeterogeneousBase:
         # If we inherit from DAWS though, then we have 5 here and skip the 5th,
         # passing in the 4th to get removed in the DAWS (identical)
         # compute_gradients() function.
-        return super().compute_gradients(tape, losses[:-1])
+        return super().compute_gradients(tape, losses[:-1], which_model)
 
 
 @register_method("dann_hda")
@@ -1027,7 +1103,7 @@ class MethodDannDG(MethodDann):
         return x, task_y_true, domain_y_true
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         # Since we don't have target domain data, don't throw out anything like
         # we did in MethodDANN()
         task_loss = self.task_loss(task_y_true, task_y_pred)
@@ -1041,7 +1117,7 @@ class MethodSleepDG(MethodDannDG):
     """ Same as DANN-DG but uses sleep model that feeds task classifier output
     to domain classifier """
     def create_model(self, model_name):
-        self.model = models.SleepModel(self.num_classes, self.domain_outputs,
+        return models.SleepModel(self.num_classes, self.domain_outputs,
             self.global_step, self.total_steps, model_name=model_name)
 
 
@@ -1135,11 +1211,11 @@ class MethodAflacDG(MethodDannDG):
         self.p_d_given_y = p_d_given_y
 
     def create_model(self, model_name):
-        self.model = models.BasicModel(self.num_classes, self.domain_outputs,
+        return models.BasicModel(self.num_classes, self.domain_outputs,
             model_name=model_name)
 
     def compute_losses(self, x, task_y_true, domain_y_true, task_y_pred,
-            domain_y_pred, fe_output, training):
+            domain_y_pred, fe_output, which_model, training):
         task_loss = self.task_loss(task_y_true, task_y_pred)
         d_loss = self.domain_loss(domain_y_true, domain_y_pred)
 
@@ -1189,16 +1265,20 @@ class MethodAflacDG(MethodDannDG):
 
         return [fe_tc_loss, d_loss, task_loss, kl_loss]
 
-    def compute_gradients(self, tape, losses):
+    def compute_gradients(self, tape, losses, which_model):
         fe_tc_loss, d_loss, _, _ = losses
-        grad = tape.gradient(fe_tc_loss, self.model.trainable_variables_task_fe)
-        d_grad = tape.gradient(d_loss, self.model.trainable_variables_domain)
+        grad = tape.gradient(fe_tc_loss,
+            self.model[which_model].trainable_variables_task_fe)
+        d_grad = tape.gradient(d_loss,
+            self.model[which_model].trainable_variables_domain)
         return [grad, d_grad]
 
-    def apply_gradients(self, gradients):
+    def apply_gradients(self, gradients, which_model):
         grad, d_grad = gradients
-        self.opt.apply_gradients(zip(grad, self.model.trainable_variables_task_fe))
-        self.d_opt.apply_gradients(zip(d_grad, self.model.trainable_variables_domain))
+        self.opt[which_model]["opt"].apply_gradients(zip(grad,
+            self.model[which_model].trainable_variables_task_fe))
+        self.opt[which_model]["d_opt"].apply_gradients(zip(d_grad,
+            self.model[which_model].trainable_variables_domain))
 
 
 def make_loss(from_logits=True):

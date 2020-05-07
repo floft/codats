@@ -135,6 +135,7 @@ def process_model(log_dir, model_dir, config, gpumem, multi_gpu):
     sources = config["sources"]
     target = config["target"]
     moving_average = config["moving_average"]
+    ensemble_size = config["ensemble"]
 
     # Load datasets
     source_datasets, target_dataset = load_datasets.load_da(dataset_name,
@@ -148,7 +149,8 @@ def process_model(log_dir, model_dir, config, gpumem, multi_gpu):
         target_dataset=target_dataset,
         model_name=model_name,
         global_step=1, total_steps=1,
-        moving_average=moving_average)
+        moving_average=moving_average,
+        ensemble_size=ensemble_size)
 
     # Load model from checkpoint (if there's anything in the checkpoint)
     if len(method.checkpoint_variables) > 0:

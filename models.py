@@ -445,10 +445,6 @@ class InceptionTimeModelMaker(CodatsModelMakerBase):
         every third has a skip connection. Thus, that's the same as 2 blocks.
         """
         if previous_model is None:
-            # TODO ensemble of 5 of these? Maybe 5 task classifiers?
-            # See: https://github.com/hfawaz/InceptionTime/blob/master/classifiers/nne.py
-            # TODO Looks like they train each model separately then at test time
-            # average the softmax outputs then take argmax to predict.
             return tf.keras.Sequential([
                 InceptionBlock(),
                 InceptionBlock(),
