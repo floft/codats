@@ -20,7 +20,6 @@ flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 flags.DEFINE_float("hda_l2", 0.1, "Weight for regularizing each domain's feature extractor weights to be similar")
 flags.DEFINE_boolean("hda_by_layer", False, "Regularize lower layers less and higher layers more, only matters if hda_l2 != 0")
-flags.DEFINE_boolean("share_most_weights", False, "Instead of regularizing, share same-shape weights")
 
 methods = {}
 
@@ -52,12 +51,13 @@ def list_methods():
 class MethodBase:
     def __init__(self, source_datasets, target_dataset, model_name,
             *args, ensemble_size=1, trainable=True, moving_average=False,
-            **kwargs):
+            share_most_weights=False, **kwargs):
         self.source_datasets = source_datasets
         self.target_dataset = target_dataset
         self.moving_average = moving_average
         self.ensemble_size = ensemble_size
         assert ensemble_size > 0, "ensemble_size should be >= 1"
+        self.share_most_weights = share_most_weights  # for HeterogeneousBase
 
         # Support multiple targets when we add that functionality
         self.num_source_domains = len(source_datasets)
@@ -899,7 +899,7 @@ class HeterogeneousBase:
             self.global_step, self.total_steps,
             model_name=model_name,
             num_feature_extractors=num_feature_extractors,
-            share_most_weights=FLAGS.share_most_weights)  # TODO load this in eval
+            share_most_weights=self.share_most_weights)
 
     def prepare_data(self, data_sources, data_target):
         """ Prepare a batch of all source(s) data and target data separately,
