@@ -143,8 +143,7 @@ def main(argv):
     # See: https://www.tensorflow.org/guide/keras/train_and_evaluate
     for i in range(int(global_step), FLAGS.steps+1):
         t = time.time()
-        data_sources, data_target = method.get_next_train_data()
-        method.train_step(data_sources, data_target)
+        data_sources, data_target = method.train_step()
         global_step.assign_add(1)
         t = time.time() - t
 

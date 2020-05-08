@@ -20,6 +20,7 @@ flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
 flags.DEFINE_float("hda_l2", 1000.0, "Weight for regularizing each domain's feature extractor weights to be similar")
 flags.DEFINE_boolean("hda_by_layer", False, "Regularize lower layers less and higher layers more, only matters if hda_l2 != 0")
+flags.DEFINE_boolean("ensemble_same_data", False, "Train each model on the same batch of data, or if false use a different random batch for each model")
 
 methods = {}
 
@@ -149,8 +150,8 @@ class MethodBase:
 
     def get_next_train_data(self):
         """ Get next batch of training data """
-        # This is a separate function from train_step() so that we can evaluate
-        # in Metrics() with the exact same data as we used in train_step()
+        # Note we will use this same exact data in Metrics() as we use in
+        # train_step()
         data_sources = [next(x) for x in self.source_train_iterators]
         data_target = next(self.target_train_iterator) \
             if self.target_train_iterator is not None else None
@@ -288,18 +289,61 @@ class MethodBase:
         self.opt[which_model]["opt"].apply_gradients(zip(grad,
             self.model[which_model].trainable_variables_task_fe))
 
-    @tf.function
-    def train_step(self, data_sources, data_target):
+    def train_step(self):
         """
-        Prepare data, run through model, compute losses, apply the gradients
+        Get batch of data, prepare data, run through model, compute losses,
+        apply the gradients
 
         Override the individual parts with prepare_data(), call_model(),
         compute_losses(), compute_gradients(), and apply_gradients()
+
+        We return the batch of data so we can use the exact same training batch
+        for the "train" evaluation metrics.
         """
-        x, task_y_true, domain_y_true = self.prepare_data(data_sources,
-            data_target)
+        # TensorFlow errors constructing the graph (with tf.function, which
+        # makes training faster) if we don't know the data size. Thus, first
+        # load batches, then pass to compiled train step.
+        all_data_sources = []
+        all_data_target = []
 
         for i in range(self.ensemble_size):
+            data_sources, data_target = self.get_next_train_data()
+            all_data_sources.append(data_sources)
+            all_data_target.append(data_target)
+
+            # If desired, use the same batch for each of the models.
+            if FLAGS.ensemble_same_data:
+                break
+
+        self._train_step(all_data_sources, all_data_target)
+
+        # We return the first one since we don't really care about the "train"
+        # evaluation metrics that much.
+        return all_data_sources[0], all_data_target[0]
+
+    @tf.function
+    def _train_step(self, all_data_sources, all_data_target):
+        """ The compiled part of train_step. We can't compile everything since
+        some parts of the model need to know the shape of the data apparently.
+
+        The first batch is passed in because to compile this, TF needs to know
+        the shape. Doesn't look pretty... but it runs...
+        """
+        for i in range(self.ensemble_size):
+            # Get random batch for this model in the ensemble (either same for
+            # all or different for each)
+            if FLAGS.ensemble_same_data:
+                data_sources = all_data_sources[0]
+                data_target = all_data_target[0]
+            else:
+                data_sources = all_data_sources[i]
+                data_target = all_data_target[i]
+
+            # Prepare
+            x, task_y_true, domain_y_true = self.prepare_data(data_sources,
+                data_target)
+
+            # Run batch through the model and compute loss
             with tf.GradientTape(persistent=True) as tape:
                 task_y_pred, domain_y_pred, fe_output = self.call_model(
                     x, which_model=i, training=True)
@@ -307,6 +351,7 @@ class MethodBase:
                     task_y_pred, domain_y_pred, fe_output, which_model=i,
                     training=True)
 
+            # Update model
             gradients = self.compute_gradients(tape, losses, which_model=i)
             del tape
             self.apply_gradients(gradients, which_model=i)
