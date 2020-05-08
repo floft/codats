@@ -18,7 +18,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_float("lr", 0.0001, "Learning rate for training")
 flags.DEFINE_float("lr_domain_mult", 1.0, "Learning rate multiplier for training domain classifier")
-flags.DEFINE_float("hda_l2", 0.1, "Weight for regularizing each domain's feature extractor weights to be similar")
+flags.DEFINE_float("hda_l2", 1000.0, "Weight for regularizing each domain's feature extractor weights to be similar")
 flags.DEFINE_boolean("hda_by_layer", False, "Regularize lower layers less and higher layers more, only matters if hda_l2 != 0")
 
 methods = {}
@@ -244,7 +244,7 @@ class MethodBase:
         domain_y_true = tf.concat(domain_a, axis=0)
         return x, task_y_true, domain_y_true
 
-    def prepare_data_eval(self, data):
+    def prepare_data_eval(self, data, is_target):
         """ Prepare the data for the model, e.g. by concatenating all sources
         together. This is like prepare_data() but use during evaluation. """
         x, y, domain = data
@@ -367,7 +367,8 @@ class MethodBase:
     #@tf.function  # faster not to compile
     def eval_step_list(self, data, is_target):
         """ Override preparation in prepare_data_eval() """
-        x, orig_task_y_true, orig_domain_y_true = self.prepare_data_eval(data)
+        x, orig_task_y_true, orig_domain_y_true = self.prepare_data_eval(data,
+            is_target)
 
         task_y_true_list = []
         task_y_pred_list = []
@@ -560,7 +561,7 @@ class MethodDannSmooth(MethodDannGS):
 
         return x, task_y_true, domain_y_true
 
-    def prepare_data_eval(self, data):
+    def prepare_data_eval(self, data, is_target):
         """ Don't concatenate elements of the list like in the base class since
         we want to handle all the source domains separately, to pass to the
         right domain classifiers.
@@ -916,7 +917,7 @@ class HeterogeneousBase:
 
         return x, task_y_true, domain_y_true
 
-    def prepare_data_eval(self, data):
+    def prepare_data_eval(self, data, is_target):
         """ Don't concatenate elements of the list like in the base class since
         we want to handle the source/target domains separately, to pass to the
         right feature extractors."""
@@ -1033,6 +1034,179 @@ class MethodHeterogeneousDann(HeterogeneousBase, MethodDann):
 
 @register_method("daws_hda")
 class MethodHeterogeneousDaws(HeterogeneousBase, MethodDaws):
+    pass
+
+
+class HeterogeneousBaselineBase:
+    """ Base class for HDA drop/pad baselines (since there's a lot of shared
+    code) """
+    def _prepare_both(self, x_a, x_b, features_a, features_b):
+        raise NotImplementedError("must implement _prepare_both()")
+        return x_a, x_b
+
+    def _prepare_one(self, x, features_a, features_b, is_target):
+        raise NotImplementedError("must implement _prepare_one()")
+        return x
+
+    def prepare_data(self, data_sources, data_target):
+        assert data_target is not None, "cannot run pad/drop baseline without target"
+        x_a, y_a, domain_a = data_sources
+        x_b, y_b, domain_b = data_target
+
+        # Compare shapes, if different number of features then pad
+        assert len(data_sources) > 0, "must have a least one source"
+        batch_a, timesteps_a, features_a = x_a[0].shape
+        batch_b, timesteps_b, features_b = x_b.shape
+        assert timesteps_a == timesteps_b, \
+            "should have padded source/target to get same number of timesteps"
+
+        # Do the padding or dropping of features
+        x_a, x_b = self._prepare_both(x_a, x_b, features_a, features_b)
+        assert x_a[0].shape[-1] == x_b.shape[-1], "failed - not same shape"
+
+        # Put back together and run the normal DANN prepare_data()
+        data_sources = [x_a, y_a, domain_a]
+        data_target = [x_b, y_b, domain_b]
+        return super().prepare_data(data_sources, data_target)
+
+    def prepare_data_eval(self, data, is_target):
+        x, y, domain = data
+
+        assert isinstance(x, list), \
+            "Must pass x=[...] even if only one domain for tf.function consistency"
+        assert isinstance(y, list), \
+            "Must pass y=[...] even if only one domain for tf.function consistency"
+        assert isinstance(domain, list), \
+            "Must pass domain=[...] even if only one domain for tf.function consistency"
+
+        source_features = self.source_datasets[0].feature_subset
+        target_features = self.target_dataset.feature_subset
+
+        assert source_features is not None \
+            and target_features is not None, \
+            "for HDA baselines, must specify --{source,target}_feature_subset " \
+            "so we know how many features are in each domain (to pad/drop " \
+            "accordingly)"
+
+        features_a = len(source_features)
+        features_b = len(target_features)
+
+        for s in self.source_datasets[1:]:
+            assert s.feature_subset == features_a, \
+                "sources must have the same shape"
+
+        # Do the padding/dropping of features
+        x = self._prepare_one(x, features_a, features_b, is_target)
+
+        # Put back together and run the normal prepare_data_eval()
+        data = x, y, domain
+        return super().prepare_data_eval(data, is_target)
+
+
+class HeterogeneousPadBase(HeterogeneousBaselineBase):
+    """ Pad source/target to same shape with zeros, then method """
+    def _pad_features(self, x, desired_features):
+        current_features = x.shape[-1]
+        assert desired_features >= current_features, \
+            "padding requires desired >= current"
+        return tf.pad(x,
+            [[0, 0], [0, 0], [0, desired_features - current_features]],
+            "CONSTANT", constant_values=0)
+
+    def _prepare_both(self, x_a, x_b, features_a, features_b):
+        # pad x_b to make same shape as x_a
+        if features_a > features_b:
+            x_b = self._pad_features(x_b, desired_features=features_a)
+        # pad each x_a to make same shape as x_b
+        elif features_a < features_b:
+            new_x_a = []
+            for x in x_a:
+                assert x.shape == x_a[0].shape, \
+                    "sources must have the same shape"
+                new_x_a.append(self._pad_features(x,
+                    desired_features=features_b))
+            x_a = new_x_a
+
+        return x_a, x_b
+
+    def _prepare_one(self, x, features_a, features_b, is_target):
+        # pad x_b to make same shape as x_a (if x is x_b, i.e. is_target)
+        if features_a > features_b and is_target:
+            new_x = []
+            for v in x:
+                new_x.append(self._pad_features(v, desired_features=features_a))
+            x = new_x
+        # pad each x_a to make same shape as x_b (if x is x_a, i.e. not is_target)
+        elif features_a < features_b and not is_target:
+            new_x = []
+            for v in x:
+                new_x.append(self._pad_features(v, desired_features=features_b))
+            x = new_x
+
+        return x
+
+
+@register_method("none_pad")
+class MethodNonePadBaseline(HeterogeneousPadBase, MethodNone):
+    pass
+
+
+@register_method("dann_pad")
+class MethodDannPadBaseline(HeterogeneousPadBase, MethodDann):
+    pass
+
+
+class HeterogeneousDropBase(HeterogeneousBaselineBase):
+    """ Drop features from source/target to make the same shape, then DANN """
+    def _drop_features(self, x, desired_features):
+        """ Take first desired_length features """
+        batch, timesteps, current_features = x.shape
+        assert desired_features <= current_features, \
+            "dropping requires desired <= current"
+        return tf.slice(x, [0, 0, 0], [batch, timesteps, desired_features])
+
+    def _prepare_both(self, x_a, x_b, features_a, features_b):
+        # drop features from each x_a to match x_b's shape
+        if features_a > features_b:
+            new_x_a = []
+            for x in x_a:
+                assert x.shape == x_a[0].shape, \
+                    "sources must have the same shape"
+                new_x_a.append(self._drop_features(x,
+                    desired_features=features_b))
+            x_a = new_x_a
+        # drop features from x_b to match x_a's shape
+        elif features_a < features_b:
+            x_b = self._drop_features(x_b, desired_features=features_a)
+
+        return x_a, x_b
+
+    def _prepare_one(self, x, features_a, features_b, is_target):
+        # drop features from each x_a to match x_b's shape (if x is x_a, i.e.
+        # not is_target)
+        if features_a > features_b and not is_target:
+            new_x = []
+            for v in x:
+                new_x.append(self._drop_features(v, desired_features=features_b))
+            x = new_x
+        # drop features from each x_b to match x_a's shape (if x is x_b, i.e.
+        # is_target)
+        elif features_a < features_b and is_target:
+            new_x = []
+            for v in x:
+                new_x.append(self._drop_features(v, desired_features=features_a))
+            x = new_x
+
+        return x
+
+
+@register_method("none_drop")
+class MethodNoneDropBaseline(HeterogeneousDropBase, MethodNone):
+    pass
+
+
+@register_method("dann_drop")
+class MethodDannDropBaseline(HeterogeneousDropBase, MethodDann):
     pass
 
 

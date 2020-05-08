@@ -33,7 +33,7 @@ flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be
 flags.DEFINE_string("uid", None, "A unique ID saved in the log/model folder names to avoid conflicts")
 flags.DEFINE_integer("ensemble", 5, "Number of models in the ensemble, 1 = no ensemble")
 flags.DEFINE_integer("steps", 30000, "Number of training steps to run")
-flags.DEFINE_float("gpumem", 3350, "GPU memory to let TensorFlow use, in MiB (0 for all)")
+flags.DEFINE_float("gpumem", 2300, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 0, "Save the model every so many steps (0 for only when log_val_steps)")
 flags.DEFINE_integer("log_train_steps", 500, "Log training information every so many steps (0 for never)")
 flags.DEFINE_integer("log_val_steps", 4000, "Log validation information every so many steps (also saves model, 0 for only at end)")
