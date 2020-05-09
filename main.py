@@ -26,7 +26,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("modeldir", "models", "Directory for saving model files")
 flags.DEFINE_string("logdir", "logs", "Directory for saving log files")
 flags.DEFINE_enum("method", None, methods.list_methods(), "What method of domain adaptation to perform (or none)")
-flags.DEFINE_enum("model", "inceptiontime", models.list_models(), "What model to use (note: ignored for vrada/rdann methods)")
+flags.DEFINE_enum("model", "fcn", models.list_models(), "What model to use (note: ignored for vrada/rdann methods)")
 flags.DEFINE_enum("dataset", None, datasets.list_datasets(), "What dataset to use (e.g. \"ucihar\")")
 flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
 flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")

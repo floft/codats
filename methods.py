@@ -1040,9 +1040,18 @@ class HeterogeneousBase:
         # We additionally regularize the FE's to be similar which we add to the
         # total loss. Element [0] is the total_loss from the parent class since
         # that is the loss we use to compute gradients w.r.t. the FE weights.
-        fe_regularizer_loss = self.regularize_fe_weights_similar(which_model)
-        losses_added[0] += fe_regularizer_loss
-        losses_added.append(fe_regularizer_loss)
+        #
+        # Note: this errors at evaluation (post-training eval, not
+        # during-training eval) since we run data through the model one domain
+        # at a time, meaning that the model won't have populated
+        # trainable_variables yet. Thus, since we don't look at the loss during
+        # post-training evaluation anyway... just set it to zero.
+        if training:
+            fe_regularizer_loss = self.regularize_fe_weights_similar(which_model)
+            losses_added[0] += fe_regularizer_loss
+            losses_added.append(fe_regularizer_loss)
+        else:
+            losses_added.append(0)
 
         return losses_added
 
