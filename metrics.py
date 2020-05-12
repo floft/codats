@@ -30,6 +30,7 @@ Usage after training (evaluating but not logging):
 """
 import time
 import tensorflow as tf
+import tensorflow_addons as tfa
 
 from absl import flags
 
@@ -98,6 +99,18 @@ class Metrics:
                     n = "recall_%s/%s/%s"%(classifier, domain, dataset)
                     self.batch_metrics[dataset][n] = tf.keras.metrics.Recall(name=n)
 
+                    n = "f1score_micro_%s/%s/%s"%(classifier, domain, dataset)
+                    self.batch_metrics[dataset][n] = tfa.metrics.F1Score(
+                        self.num_classes, name=n, average="micro")
+
+                    n = "f1score_macro_%s/%s/%s"%(classifier, domain, dataset)
+                    self.batch_metrics[dataset][n] = tfa.metrics.F1Score(
+                        self.num_classes, name=n, average="macro")
+
+                    n = "f1score_weighted_%s/%s/%s"%(classifier, domain, dataset)
+                    self.batch_metrics[dataset][n] = tfa.metrics.F1Score(
+                        self.num_classes, name=n, average="weighted")
+
         # Create all per-class metrics
         self.per_class_metrics = {dataset: {} for dataset in self.datasets}
         for i in range(self.num_classes):
@@ -155,6 +168,9 @@ class Metrics:
             "auc_%s/%s/%s",
             "precision_%s/%s/%s",
             "recall_%s/%s/%s",
+            "f1score_micro_%s/%s/%s",
+            "f1score_macro_%s/%s/%s",
+            "f1score_weighted_%s/%s/%s",
         ]
 
         # Since we are now using sparse

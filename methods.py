@@ -3,8 +3,6 @@ Methods
 """
 import numpy as np
 import tensorflow as tf
-# If you don't want to install this, then pass --nomoving_average and comment
-# this out.
 import tensorflow_addons as tfa
 
 from absl import flags
