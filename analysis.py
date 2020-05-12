@@ -68,7 +68,7 @@ method_lines = {
 
 nice_metric_names = {
     "accuracy": "Accuracy (%)",
-    "f1score": "F1 Score",
+    "f1score_macro": "F1 Score (Macro)",
 }
 
 dataset_replacements = [
