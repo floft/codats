@@ -460,6 +460,7 @@ class MethodBase:
         return task_y_true_avg, task_y_pred_avg, domain_y_true_avg, \
             domain_y_pred_avg, losses_avg
 
+
 #
 # Homogeneous domain adaptation
 #

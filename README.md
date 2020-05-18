@@ -1,15 +1,15 @@
 # Multi-Source Deep Domain Adaptation with Weak Supervision for Time-Series Sensor Data
 
 Steps:
-
 - Convert to .tfrecord files for TensorFlow (*./generate_tfrecords.sh*)
-- Train models (*main.py* or *kamiak_train.srun*)
-- Evaluate models (*main_eval.py* or *kamiak_eval.srun*)
+- Train models (*main.py* or *kamiak_train_\*.srun*)
+- Evaluate models (*main_eval.py* or *kamiak_eval_\*.srun*)
 - Analyze results (*analysis.py*)
 
 ## Installation
 
-This requires the following packages (*module load* for Kamiak):
+We require the following packages (*module load* for Kamiak). Adjust for your
+computer setup.
 
     module load cuda/10.1.105 cudnn/7.6.4.38_cuda10.1 python3/3.7.4
     pip install --user --upgrade pip
@@ -21,7 +21,8 @@ This requires the following packages (*module load* for Kamiak):
     # If using --moving_average (typically tensorflow-addons, but that errors at the moment with TF 2.2)
     pip3 install --user git+https://github.com/tensorflow/addons.git@r0.9
 
-For the CPU-only jobs like *kamiak_train_simple.srun*:
+Or, to use only the CPU, set up as follows and modify the train scripts to
+source *kamiak_tensorflow_cpu.sh*.
 
     module load python3/3.7.4
     export PATH="$HOME/.local/bin:$PATH"
@@ -43,12 +44,13 @@ For the CPU-only jobs like *kamiak_train_simple.srun*:
     # If using --moving_average
     pip install git+https://github.com/tensorflow/addons.git@r0.9
 
-## Training
+## Running
 
-    sbatch -J train kamiak_train.srun adapt
+See the single-source and multi-source domain adaptation training/evaluation
+scripts for examples.
 
-## Evaluating
+    sbatch -J train kamiak_train_ssda.srun adapt
+    sbatch -J eval kamiak_eval_ssda.srun adapt
 
-    sbatch -J eval kamiak_eval.srun adapt
-
-Then look at the resulting *results/results_\*.txt* file or analyze with *analysis.py*.
+Then look at the resulting *results/results_\*.txt* file or analyze with
+*analysis.py*.
