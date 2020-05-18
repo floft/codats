@@ -47,6 +47,13 @@ nice_method_names = {
     "sleep_dg": "DG-Sleep",
     "aflac_dg": "DG-AFLAC",
     "ciddg_dg": "DG-CIDDG",
+
+    # Heterogeneous DA
+    "dann_hda": "CoDATS-H",
+    "dann_pad": "Pad-DANN-H",
+    "dann_drop": "Drop-DANN-H",
+    "none_pad": "Pad-None-H",
+    "none_drop": "Drop-None-H",
 }
 
 method_lines = {
@@ -136,7 +143,7 @@ def get_method(method, target):
     return method
 
 
-def _all_stats(name, filename):
+def _all_stats(name, filename, source_feature_subset, target_feature_subset):
     with open(filename) as f:
         # See: https://github.com/yaml/pyyaml/wiki/PyYAML-yaml.load(input)-Deprecation
         data = yaml.load(f, Loader=yaml.SafeLoader)
@@ -174,6 +181,18 @@ def _all_stats(name, filename):
             "runs disagree on method: " + new_method + " vs. " + str(method)
         method = new_method
 
+        # Skip if not the right source/target features
+        current_source_feature_subset = config["source_feature_subset"]
+        current_target_feature_subset = config["target_feature_subset"]
+
+        if source_feature_subset is not None \
+                and source_feature_subset != current_source_feature_subset:
+            return {}
+
+        if target_feature_subset is not None \
+                and target_feature_subset != current_target_feature_subset:
+            return {}
+
     results = {
         "name": name,
         "dataset": dataset,
@@ -199,19 +218,21 @@ def _all_stats(name, filename):
     return results
 
 
-def all_stats(files):
+def all_stats(files, source_feature_subset, target_feature_subset):
     """ Process all files, but since we may have many, many thousands, do it
     with multiple cores by default """
     if FLAGS.jobs == 1:
         results = []
 
         for name, filename in files:
-            results.append(_all_stats(name, filename))
+            results.append(_all_stats(name, filename,
+                source_feature_subset, target_feature_subset))
     else:
         commands = []
 
         for name, filename in files:
-            commands.append((name, filename))
+            commands.append((name, filename, source_feature_subset,
+                target_feature_subset))
 
         jobs = FLAGS.jobs if FLAGS.jobs != 0 else None
         results = run_job_pool(_all_stats, commands, cores=jobs)
@@ -225,14 +246,15 @@ def all_stats(files):
     return results
 
 
-def get_results(dataset, variant, variant_match):
+def get_results(dataset, variant, variant_match, source_feature_subset,
+        target_feature_subset):
     """ Get the right result files and load them """
     if variant_match is None:
         variant_match = variant
 
     files = get_tuning_files("results",
         prefix="results_"+dataset+"_"+variant_match+"-")
-    results = all_stats(files)
+    results = all_stats(files, source_feature_subset, target_feature_subset)
 
     return results
 
@@ -514,9 +536,11 @@ def generate_plots(results, prefix, save_plot=True, show_title=False,
 def make_plots(run_suffix, variant, variant_match=None, save_plot=True,
         show_title=False, legend_separate=True, ncol=4, suffix="pdf",
         skip=[], figsize=(5, 3), dir_name="result_plots",
-        jitter_amount=0.005):
+        jitter_amount=0.005, source_feature_subset=None,
+        target_feature_subset=None):
     """ Load files, process, save plots """
-    results = get_results(run_suffix, variant, variant_match)
+    results = get_results(run_suffix, variant, variant_match,
+        source_feature_subset, target_feature_subset)
     averages = process_results(results, average_over_users=True, ssda=False)
     generate_plots(averages, run_suffix, save_plot,
         show_title, legend_separate, suffix, ncol=ncol, skip=skip,
@@ -801,9 +825,12 @@ def output_latex_ss_results(results, output_filename):
     write_table(output_filename, table, replace_bold=(1, 5))
 
 
-def table_singlesource(run_suffix, variant, variant_match=None, output="table.tex"):
+def table_singlesource(run_suffix, variant, variant_match=None,
+        output="table.tex", source_feature_subset=None,
+        target_feature_subset=None):
     """ Similar to make_plots(), but for the SS-DA table instead """
-    results = get_results(run_suffix, variant, variant_match)
+    results = get_results(run_suffix, variant, variant_match,
+        source_feature_subset, target_feature_subset)
     output_latex_ss_results(results, output)
 
 
@@ -879,9 +906,12 @@ def output_latex_ms_results(results, output_filename):
     write_table(output_filename, table, replace_bold=(1, 3))
 
 
-def table_multisource(run_suffix, variant, variant_match=None, output="table.tex"):
+def table_multisource(run_suffix, variant, variant_match=None,
+        output="table.tex", source_feature_subset=None,
+        target_feature_subset=None):
     """ Similar to make_plots(), but for the MS-DA table instead """
-    results = get_results(run_suffix, variant, variant_match)
+    results = get_results(run_suffix, variant, variant_match,
+        source_feature_subset, target_feature_subset)
     output_latex_ms_results(results, output)
 
 
