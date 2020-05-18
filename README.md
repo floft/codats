@@ -1,4 +1,4 @@
-# Multi-Source Time Series Domain Adaptation
+# Multi-Source Deep Domain Adaptation with Weak Supervision for Time-Series Sensor Data
 
 Steps:
 
