@@ -2,17 +2,20 @@
 """
 Generates the list of which single-source adaptation problems to perform
 
-For each dataset, generate 5 random source-target pairs (excluding the source
+For each dataset, generate 10 random source-target pairs (excluding the source
 as the target, otherwise it's not domain adaptation)
 
 Note: 3 runs for each, but that's in the .srun scripts not here
 (for mean +/- stdev)
+
+Usage: ./experiments_ssda.py > experiments_ssda.txt
 """
 import random
 import itertools
 
-from datasets import dataset_users
-from pick_multi_source import natural_keys
+import datasets.datasets as datasets
+
+from experiments_msda import natural_keys
 
 
 def generate_single_source(dataset_name, users, max_number=5):
@@ -35,11 +38,12 @@ if __name__ == "__main__":
     pairs = []
     uids = []
 
-    # Note: "dataset_users" is set in datasets.py
-    for name, users in dataset_users.items():
+    for name in datasets.list_datasets():
         # Tune on "watch_noother" not "watch"
         if name == "watch":
             continue
+
+        users = datasets.get_dataset_users(name)
 
         # Since sources-target aren't stored in filename anymore (too long), we
         # would run into folder name conflicts if we didn't append a unique ID
@@ -56,11 +60,6 @@ if __name__ == "__main__":
         # we can just increment uid's like before.
         bonus_uid = 0
 
-        # if name == "wisdm_at":
-        #     max_number = 10  # Note: we only used 5 for tuning though
-        # elif name == "watch_noother":
-        #     max_number = 15
-        # else:
         max_number = 10
 
         curr_pairs = generate_single_source(name, users, max_number=max_number)

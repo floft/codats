@@ -4,11 +4,13 @@ Generates the list of which multi-source adaptation problems to perform
 
 For each dataset, for each target user, pick n random source users (excluding
 the target user) 3 different times (so we can get mean +/- stdev).
+
+Usage: ./experiments_msda.py > experiments_msda.txt
 """
 import re
 import random
 
-from datasets import dataset_users
+import datasets.datasets as datasets
 
 
 def other_users(users, skip_user):
@@ -114,8 +116,9 @@ if __name__ == "__main__":
     pairs = []
     uids = []
 
-    # Note: "dataset_users" is set in datasets.py
-    for name, users in dataset_users.items():
+    for name in datasets.list_datasets():
+        users = datasets.get_dataset_users(name)
+
         # Tune on "watch_noother" not "watch"
         if name == "watch":
             continue
@@ -148,11 +151,6 @@ if __name__ == "__main__":
             # we can just increment uid's like before.
             bonus_uid = 0
 
-            # if name == "wisdm_at":
-            #     max_users = 10  # Note: we only used 5 for tuning though
-            # elif name == "watch_noother":
-            #     max_users = 15
-            # else:
             max_users = 10
 
             curr_pairs = generate_multi_source(name, users, n,
