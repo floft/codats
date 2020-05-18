@@ -31,7 +31,7 @@ flags.DEFINE_enum("dataset", None, datasets.list_datasets(), "What dataset to us
 flags.DEFINE_string("sources", None, "Which source domains to use (e.g. \"1,2,3\")")
 flags.DEFINE_string("target", "", "What target domain to use (e.g. \"4\", can be blank for no target)")
 flags.DEFINE_string("uid", None, "A unique ID saved in the log/model folder names to avoid conflicts")
-flags.DEFINE_integer("ensemble", 5, "Number of models in the ensemble, 1 = no ensemble")
+flags.DEFINE_integer("ensemble", 1, "Number of models in the ensemble, 1 = no ensemble")
 flags.DEFINE_integer("steps", 30000, "Number of training steps to run")
 flags.DEFINE_float("gpumem", 2300, "GPU memory to let TensorFlow use, in MiB (0 for all)")
 flags.DEFINE_integer("model_steps", 0, "Save the model every so many steps (0 for only when log_val_steps)")
@@ -42,7 +42,7 @@ flags.DEFINE_boolean("test", False, "Use real test set for evaluation rather tha
 flags.DEFINE_boolean("subdir", True, "Save models/logs in subdirectory of prefix")
 flags.DEFINE_boolean("debug", False, "Start new log/model/images rather than continuing from previous run")
 flags.DEFINE_boolean("time_training", False, "Print how long each step takes, instead of every 100 steps")
-flags.DEFINE_boolean("moving_average", True, "Whether to use an exponential moving average of the weights rather than the weights directly (requires tensorflow_addons)")
+flags.DEFINE_boolean("moving_average", False, "Whether to use an exponential moving average of the weights rather than the weights directly (requires tensorflow_addons)")
 flags.DEFINE_boolean("share_most_weights", False, "Instead of regularizing weights in heterogeneous domain adaptation, share same-shape weights")
 flags.DEFINE_integer("debugnum", -1, "Specify exact log/model/images number to use rather than incrementing from last. (Don't pass both this and --debug at the same time.)")
 
