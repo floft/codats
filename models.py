@@ -435,7 +435,7 @@ class InceptionTimeModelMaker(CodatsModelMakerBase):
     Paper's code: https://github.com/hfawaz/InceptionTime
         and in particular: https://github.com/hfawaz/InceptionTime/blob/master/classifiers/inception.py
 
-    Inherit from FCN model since we'll use the same TC/DC maker functions.
+    Inherit from CoDATS model base since we'll use the same TC/DC maker functions.
     InceptionTime is not designed for domain adaptation, just for time series
     classification, so we'll use our CoDATS TC/DC choices.
     """
