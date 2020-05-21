@@ -216,7 +216,8 @@ class Dataset:
         return self.class_labels[label_index]
 
 
-def load(dataset_name, num_domains, test=False, *args, **kwargs):
+def load(dataset_name, num_domains, test=False, train_on_everything=False,
+        *args, **kwargs):
     """ Load a dataset (source and target). Names must be in datasets.names().
 
     If test=True, then load real test set. Otherwise, load validation set as
@@ -242,8 +243,13 @@ def load(dataset_name, num_domains, test=False, *args, **kwargs):
     valid_filenames = _path(tfrecord_filename(dataset_name, "valid"))
     test_filenames = _path(tfrecord_filename(dataset_name, "test"))
 
+    # This is used for some plots not actual training
+    if train_on_everything:
+        print("Warning: training dataset contains all train/valid/test data")
+        train_filenames += valid_filenames + test_filenames
+        test_filenames = []
     # By default use validation data as the "test" data, unless test=True
-    if not test:
+    elif not test:
         test_filenames = valid_filenames
     # If test=True, then make "train" consist of both training and validation
     # data to match the original dataset.

@@ -90,9 +90,6 @@ def main(argv):
             # Note: test=False so we only look at the training samples, where
             # train=80% of training set, test=20% of training set, i.e. the
             # validation set
-            #
-            # Though, to validate/compare with datasets/class_balance.txt, you
-            # can set test=True which will then yield the exact same results.
             sources, _ = load_da(dataset_name, str(user), "", test=False)
 
             # We load them one at a time
