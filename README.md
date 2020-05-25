@@ -19,7 +19,7 @@ single-source DA significantly improves over the state-of-the-art methods, and
 we achieve additional improvements in accuracy using data from multiple source
 domains and weakly supervised signals.
 
-*(link to preprint coming soon)*
+Preprint: https://arxiv.org/abs/2005.10996
 
 Overview:
 
