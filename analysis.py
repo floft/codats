@@ -955,10 +955,10 @@ def main(argv):
         suffix=suffix, skip=skip, figsize=figsize, dir_name=outdir,
         jitter_amount=jitter_amount)
 
-    # table_multisource("msda1", "best_target", "*", output="table_msda.tex")
+    table_multisource("msda1", "best_target", "*", output="table_msda.tex")
 
     # Single-source table
-    # table_singlesource("ssda1", "best_target", "*", output="table.tex")
+    table_singlesource("ssda1", "best_target", "*", output="table.tex")
 
 
 if __name__ == "__main__":
