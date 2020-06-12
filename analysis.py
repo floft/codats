@@ -939,6 +939,11 @@ def main(argv):
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
+    # ACM doesn't like Type 3 fonts
+    # https://tex.stackexchange.com/q/18687
+    plt.rc('pdf', fonttype=42)
+    plt.rc('ps', fonttype=42)
+
     # Multi-source plots
     #
     # We pass variant=best_target, but match * variant since for the upper bound
@@ -950,10 +955,10 @@ def main(argv):
         suffix=suffix, skip=skip, figsize=figsize, dir_name=outdir,
         jitter_amount=jitter_amount)
 
-    table_multisource("msda1", "best_target", "*", output="table_msda.tex")
+    # table_multisource("msda1", "best_target", "*", output="table_msda.tex")
 
     # Single-source table
-    table_singlesource("ssda1", "best_target", "*", output="table.tex")
+    # table_singlesource("ssda1", "best_target", "*", output="table.tex")
 
 
 if __name__ == "__main__":

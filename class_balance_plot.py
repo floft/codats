@@ -207,6 +207,11 @@ def main(argv):
     # Don't bother using the GPU for this
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
+    # ACM doesn't like Type 3 fonts
+    # https://tex.stackexchange.com/q/18687
+    plt.rc('pdf', fonttype=42)
+    plt.rc('ps', fonttype=42)
+
     # We only want to plot this one dataset
     list_of_datasets = ["wisdm_ar", "ucihar", "uwave", "ucihhar"]
     dataset_names_nice = ["WISDM AR", "UCI HAR", "uWave", "UCI HHAR"]
